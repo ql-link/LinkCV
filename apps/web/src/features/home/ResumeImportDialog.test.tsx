@@ -33,10 +33,6 @@ describe("ResumeImportDialog", () => {
     const onAccepted = vi.fn();
     render(<ResumeImportDialog onClose={onClose} onAccepted={onAccepted} />);
 
-    const overlay = document.querySelector('[data-slot="alert-dialog-overlay"]');
-    expect(overlay).toHaveClass("bg-[var(--scrim)]");
-    expect(overlay).not.toHaveClass("bg-black/80");
-
     const file = new File(["# 张三"], "张三简历.md", { type: "text/markdown" });
     fireEvent.change(screen.getByLabelText("选择 Markdown、DOCX 或 PDF 文件"), {
       target: { files: [file] },
@@ -67,10 +63,10 @@ describe("ResumeImportDialog", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("内容结构化模型未配置或凭据不可用，请联系管理员配置后重试。");
-    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
+    expect(alert).toHaveClass("v3-toast");
     expect(alert.parentElement).toBe(document.body);
     expect(screen.getByText("resume.md")).toBeInTheDocument();
-    expect(screen.getByRole("alertdialog", { name: "导入简历" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "导入简历" })).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -80,7 +76,7 @@ describe("ResumeImportDialog", () => {
     render(<ResumeImportDialog onClose={vi.fn()} onAccepted={vi.fn()} />);
 
     const file = new File(["# 张三"], "拖放简历.pdf", { type: "application/pdf" });
-    fireEvent.drop(screen.getByLabelText("选择 Markdown、DOCX 或 PDF 文件"), {
+    fireEvent.drop(screen.getByLabelText("选择 Markdown、DOCX 或 PDF 文件").parentElement!, {
       dataTransfer: { files: [file] },
     });
 

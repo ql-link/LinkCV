@@ -1,0 +1,31 @@
+/* 演示与真实产品共用 token，但把整包思源黑体换成按字符分片的 Noto Sans SC（同一设计），首屏不再下载 13.8MB 字体 */
+:root,
+[data-ui-theme="light"] {
+  --ui-font-display: "Poppins", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ui-font-sans: var(--ui-font-display);
+  --ui-font: var(--ui-font-display);
+  --ui-font-number: var(--ui-font-display);
+  --display-font: var(--ui-font-display);
+  --ui-font-heading: "Poppins", "Noto Serif SC", "Songti SC", sans-serif;
+  --ui-font-content: "Lora", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ui-font-mono: "JetBrains Mono", SFMono-Regular, Consolas, "Liberation Mono", "Noto Sans SC Variable", monospace;
+  --mono-font: var(--ui-font-mono);
+}
+html, body, #root { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+.np-product { position: relative; min-width: 0; background: var(--v3-win); container-type: inline-size; }
+.np-product :is(button, input, select) { font-family: var(--ui-font-sans); }
+.np-product svg { flex-shrink: 0; }
+.np-product :is(button, a, input):focus-visible { outline: 2px solid var(--v3-bl); outline-offset: 3px; }
+.np-product.np-home { position: absolute; inset: 0; overflow: hidden; container-type: size; }
+.np-home .v3-window { position: absolute; inset: 0; }
+.np-home .v3-content { overscroll-behavior: contain; }
+.np-home .assistant-home { padding-top: clamp(40px, calc(40cqh - 130px), 251px); }
+
+/* 截图专用：侧栏全部按未选中 / 已选中样式渲染，落地页叠加两张侧栏图实现选中项滑动 */
+[data-capture-sidebar] .v3-side-indicator { display: none; }
+[data-capture-sidebar="neutral"] .v3-side-nav .v3-side-row.is-active { color: var(--v3-sub); background: transparent; }
+[data-capture-sidebar="neutral"] .v3-side-nav .v3-side-row.is-active svg { color: inherit; }
+[data-capture-sidebar="neutral"] .v3-side-session.is-active { background: transparent; color: var(--v3-sub); }
+[data-capture-sidebar="neutral"] .v3-side-session.is-active .v3-side-session-open { color: inherit; font-weight: 400; }
+[data-capture-sidebar="active"] .v3-side-nav .v3-side-row, [data-capture-sidebar="active"] .v3-side-session { background: var(--v3-hl) !important; color: var(--v3-txt); }
+[data-capture-sidebar="active"] .v3-side-session .v3-side-session-open { color: var(--v3-txt); font-weight: 500; }

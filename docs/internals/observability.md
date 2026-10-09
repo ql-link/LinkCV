@@ -1,5 +1,8 @@
 # 可观测性与业务审计架构
 
+
+Agent 的 Skill 读取复用工具审计，新增 read_skill 工具名和注册名称 skill_name；任意文件路径不进入日志。范围读取日志记录 scope、target_surface、target_section_kind（resume/other/none）、target_has_entry、target_has_section、selection_present 和稳定错误码，覆盖成功及 ApiError 失败，不包含正文、选区原文或哈希。
+
 ## 架构职责
 
 LinkResume 可观测性子系统负责请求上下文、结构化系统日志、客户端事件、业务审计和管理员日志查询。它区分系统运行事件与业务操作者行为，不把日志存储当作业务数据库，也不允许浏览器直连 Loki。
@@ -13,7 +16,9 @@ LinkResume 可观测性子系统负责请求上下文、结构化系统日志、
 - `audit.py`：固定审计动作目录和请求上下文绑定。
 - `loki.py`：面向固定筛选条件的共享 Loki 查询适配；`query_level_buckets` 以 `query_range` 按固定步长统计 ERROR、CRITICAL 与 WARNING 系统日志，供管理台热力图使用。
 - `routes.py`：受限客户端事件写入与管理员日志读取。
-- Web `ObservabilityBoundary.tsx`：捕获客户端异常；`AdminObservabilityPanels.tsx`：系统和审计日志界面。
+- Web `ObservabilityBoundary.tsx`：捕获客户端异常；管理端 `SecurityPages.tsx`：系统日志、业务审计、LLM 调用与 Agent 页面。
+
+管理端日志详情弹窗复用 Web 公共淡入、缩放和退出动效，退出时立即停止键盘监听并禁用交互，动画结束后移除；系统减少动态效果时仅保留短淡入淡出。具体动效规则见 [Web 视觉与交互基线](web.md#视觉与交互基线)。
 
 ## 数据流
 
@@ -22,6 +27,8 @@ LinkResume 可观测性子系统负责请求上下文、结构化系统日志、
 Agent 消息入口在解析上下文前由会话 ID 和幂等键确定性生成本轮 `operation_id`，并依次记录 `context_preflight` 和 `run_creation`；并发重试因此也落在同一观测链。成功创建的 `agent_runs.public_id` 复用同一值，FastAPI 到 Pi 的代理继续记录 `pi_dispatch`、`model_execution`、`stream_terminal` 和 `run_finalize` 的开始、结果、安全错误码与耗时；后续每次内部工具调用除写入 `agent_tool_calls` 的幂等终态外，也以它串联工具名、状态、scope、是否带选区、候选数量、目标字段、基础 lock version、耗时和稳定错误码。上下文不存在、越权、过期、澄清链冲突、Pi 连接失败、模型执行失败、缺失 SSE 终态和持久化失败都能按该 ID 定位。日志不记录用户提示词、澄清答案、简历正文、候选摘录或工具参数，因此可以定位阶段而不复制业务内容。
 
 LLM 调用日志保存在 MySQL，由 [Agent/LLM 运行时](agent-runtime.md) 管理；本子系统不复制模型计量。审计内容必须排除 Cookie、token、模型密钥、简历正文和文件内容等敏感数据。
+
+独立意图识别完成时记录 `action=recognize_intent`、run 的 `operation_id`、`intent_mode`、`call_id`、任务数量与稳定错误码。原生低置信度为 `INTENT_UNCERTAIN`，分类/目标/澄清矛盾为 `INTENT_DECISION_INCONSISTENT`，格式/schema 错误为 `LLM_RESPONSE_INVALID`；不确定或矛盾时可附加受限问题名 `decision_field` 与有界 `decision_confidence`。日志和消息元数据都不记录原始模型回答或提示词，不能把主模型完成回复等同于独立识别成功。
 
 ## 事件与存储边界
 
@@ -32,12 +39,17 @@ LLM 调用日志保存在 MySQL，由 [Agent/LLM 运行时](agent-runtime.md) �
 | Web 客户端事件 | 受限上报接口 | 结构化日志链 | 浏览器异常与兼容事件 |
 | LLM 调用日志 | `modules/llm` | MySQL | 模型、状态、Token、成本和验证证据 |
 | Agent 阶段轨迹 | `modules/agent/trace.py` | MySQL `agent_operations`、`agent_stage_events` | 按用户 ID、操作 ID 查询运行与提案的安全阶段事件 |
+| 产品漏斗事件 | `modules/product_events` | MySQL `product_events` | 注册到首次导出的逐步转化，管理端「转化漏斗」只读汇总 |
 
 Agent 轨迹由 FastAPI 在预检、运行创建、Pi 代理、工具事件、运行收尾和提案确认处直接写入 MySQL。管理端的「Agent 调用排障」是独立页面；列表包含旧 `agent_runs`，旧运行详情标记为 `legacy`。轨迹只保存受控阶段、结果、稳定错误码、耗时与关联键；用户原话、简历正文和工具参数仍留在各自业务数据中，不复制进轨迹。
 
-管理员写操作的固定审计目录覆盖：用户启停；模型接入连接的创建、编辑与目录同步（`admin.llm_connection_*`）、逻辑模型与线路的创建和编辑（`admin.llm_model_*`、`admin.llm_route_*`）、能力绑定的写入、编辑、解绑与探针（`admin.llm_binding_*`，目标为 `<use_case>:<route_id>`）；插件发布包的发布、下线、重新上架与删除（`admin.plugin_release_*`，目标为包版本号）；应用内公告的创建、编辑、删除、发布与下线（`admin.announcement_*`，目标类型 `announcement`）。审计目录登记的每个路由都由测试核对仍然存在，路由改名或删除后必须同步目录，否则对应操作会静默脱离审计。
+管理员写操作的固定审计目录覆盖：用户启停；模型接入连接的创建、编辑、删除与目录同步（`admin.llm_connection_*`）、逻辑模型与线路的创建、编辑和删除（`admin.llm_model_*`、`admin.llm_route_*`）、能力绑定的写入、编辑、解绑与探针（`admin.llm_binding_*`，目标为 `<use_case>:<route_id>`）；插件发布包的发布、下线、重新上架与删除（`admin.plugin_release_*`，目标为包版本号）；应用内公告的创建、编辑、删除、发布与下线（`admin.announcement_*`，目标类型 `announcement`）。审计目录登记的每个路由都由测试核对仍然存在，路由改名或删除后必须同步目录，否则对应操作会静默脱离审计。
 
 模拟面试的发起（含再练一次）、提前结束和删除分别登记为 `mock_interview.create`、`mock_interview.finish` 与 `mock_interview.delete`，语音面试的 AI 修正识别稿、手动修改、单题重新评估和删除录音登记为 `mock_interview.transcript_correct`、`mock_interview.transcript_edit`、`mock_interview.re_evaluate` 与 `mock_interview.recordings_delete`，均不含识别稿正文；目标为面试的 UUID 公共 ID；管理端动作筛选直接取自服务端动作目录，无需单独维护选项。后台准备与评估失败只写入场次 `error_code` 和不含正文的系统日志，不产生审计事件。
+
+产品漏斗事件只有五类：`user_registered`（`method`：`wechat_qr`/`wechat_miniprogram`/`email`）、`resume_created`（`source`：`template`/`import`/`copy`/`translate`，导入以解析成功为准）、`ai_customization_applied`（非翻译提案确认成功，`mode` 与 `entry`：`assistant`/`editor`/`unknown`）、`mock_interview_completed`（生成报告，`answer_mode`）与 `resume_pdf_exported`（本人导出成功，`channel`：`web`/`miniprogram`；分享页访客下载和小程序预览图不记录）。属性按事件白名单构造，只含枚举与业务对象编号，不保存简历、岗位、对话、面试内容或邮箱；事件随用户删除级联删除。前四类与业务写入同一事务，`dedupe_key`（`reg:`/`resume:`/`ai:`/`interview:` 加对象编号）保证同一对象只记一次；PDF 导出没有业务写事务，在响应生成后以独立短事务写入，失败只记错误日志、不影响已生成的 PDF。
+
+上线前的数据由 `apps/backend/scripts/release/backfill_product_events.py` 按相同去重键幂等补齐，先 `--dry-run` 查看数量；补齐事件带 `backfilled: true`，注册方式只能确定邮箱账号，模拟面试时间取 `finished_at`（缺失时取 `updated_at`），AI 定制入口记 `unknown`；历史复制与翻译简历沿用来源类型无法区分，上线前的 PDF 导出无法补齐。
 
 request ID 是跨日志关联键，不是用户身份；actor 只能来自已验证会话或成功登录结果，target 只能来自路由参数与通过归属校验的业务实体。
 
@@ -57,3 +69,8 @@ request ID 是跨日志关联键，不是用户身份；actor 只能来自已验
 ## 修改联动与验证
 
 修改上下文字段、审计动作或查询标签时，需同步 `middleware/audit/logging/loki/schemas`、管理端筛选、Promtail 配置、部署文档和接口契约。主要验证入口为 `test_observability.py`、`modules/observability/test_logging.py`、`test_loki.py`、管理端 `AdminObservabilityPanels` 测试和运行时契约检查。
+
+
+## 账号能力与客户端边界
+
+普通 Web 的错误边界、反馈提示和恢复操作使用账号界面语言；上报错误码、request ID 和原始诊断标识保持稳定。注销回执、微信操作 poll/action token 只随请求体传递，不进入 URL；清理日志仅记录安全错误码，不包含私有 manifest、邮箱或身份凭据。见[账号功能](../features/identity-account.md)。

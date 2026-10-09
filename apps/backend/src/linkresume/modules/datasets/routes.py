@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 import asyncio
 import logging
 from collections.abc import Iterator
@@ -50,7 +51,7 @@ from linkresume.modules.datasets.schemas import (
     UserDatasetRenameRequest,
     UserDatasetRecord,
 )
-from linkresume.modules.identity.dependencies import get_current_user, get_settings
+from linkresume.modules.identity.dependencies import get_current_dataset_user, get_settings
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import InterviewSession, JobApplication
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
@@ -252,7 +253,7 @@ def dataset_record(
         upload_status=task.upload_status,
         parse_status=task.parse_status,
         failure_reason=task.failure_reason,
-        created_at=dataset.created_at,
+        created_at=dataset.create_time,
         content_revision=str(dataset.content_revision or 0),
         content_updated_at=dataset.content_updated_at,
         asset_kind=dataset.asset_kind,
@@ -275,11 +276,12 @@ async def upload_dataset(
         alias="Idempotency-Key",
     ),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
     dataset_admission: ImportAdmissionController = Depends(get_dataset_admission),
 ) -> UserDatasetRecord:
+    user = lock_active_user(db, user.id)
     idempotency_key = canonical_dataset_idempotency_key(idempotency_key_header)
     if folder_id is None or not folder_id.strip():
         raise ApiError(400, "DATASET_FOLDER_REQUIRED")
@@ -349,7 +351,7 @@ async def upload_dataset(
 def list_datasets(
     folder_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     settings: Settings = Depends(get_settings),
 ) -> UserDatasetListResponse:
     query = (
@@ -376,7 +378,7 @@ def list_datasets(
             except ValueError:
                 raise ApiError(400, "INVALID_FOLDER_ID")
     rows = db.execute(
-        query.order_by(UserDataset.created_at.desc(), UserDataset.id.desc())
+        query.order_by(UserDataset.create_time.desc(), UserDataset.id.desc())
     ).all()
     return UserDatasetListResponse(
         datasets=[dataset_record(dataset, task) for dataset, task in rows],
@@ -411,13 +413,13 @@ def validate_folder_name(name: str) -> str:
 @router.get("/folders", response_model=DatasetFolderListResponse)
 def list_folders(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> DatasetFolderListResponse:
     folders = (
         db.execute(
             select(UserDatasetFolder)
             .where(UserDatasetFolder.user_id == user.id)
-            .order_by(UserDatasetFolder.created_at.asc(), UserDatasetFolder.id.asc())
+            .order_by(UserDatasetFolder.create_time.asc(), UserDatasetFolder.id.asc())
         )
         .scalars()
         .all()
@@ -447,8 +449,8 @@ def list_folders(
             id=str(f.id),
             name=f.name,
             dataset_count=counts_map.get(f.id, 0),
-            created_at=f.created_at,
-            updated_at=f.updated_at,
+            created_at=f.create_time,
+            updated_at=f.update_time,
         )
         for f in folders
     ]
@@ -463,8 +465,9 @@ def list_folders(
 def create_folder(
     payload: DatasetFolderCreateRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> DatasetFolderRecord:
+    user = lock_active_user(db, user.id)
     cleaned_name = validate_folder_name(payload.name)
     current_count = (
         db.execute(
@@ -502,8 +505,8 @@ def create_folder(
         id=str(folder.id),
         name=folder.name,
         dataset_count=0,
-        created_at=folder.created_at,
-        updated_at=folder.updated_at,
+        created_at=folder.create_time,
+        updated_at=folder.update_time,
     )
 
 
@@ -512,8 +515,9 @@ def rename_folder(
     folder_id: int,
     payload: DatasetFolderRenameRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> DatasetFolderRecord:
+    user = lock_active_user(db, user.id)
     cleaned_name = validate_folder_name(payload.name)
     content_service.lock_user(db, user.id)
     folder = db.execute(
@@ -560,8 +564,8 @@ def rename_folder(
         id=str(folder.id),
         name=folder.name,
         dataset_count=count,
-        created_at=folder.created_at,
-        updated_at=folder.updated_at,
+        created_at=folder.create_time,
+        updated_at=folder.update_time,
     )
 
 
@@ -570,9 +574,10 @@ def delete_folder(
     folder_id: int,
     confirm_contents: bool = Query(default=False),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> DatasetFolderDeleteResponse:
+    user = lock_active_user(db, user.id)
     content_service.lock_user(db, user.id)
     folder = db.execute(
         select(UserDatasetFolder)
@@ -614,6 +619,24 @@ def delete_folder(
     except Exception as error:
         db.rollback()
         raise ApiError(502, "ASSET_DELETE_FAILED") from error
+    if rows:
+        # Local import: interviews depends on datasets, not the other way round.
+        from linkresume.modules.interviews.models import (
+            InterviewRecordingTranscription,
+            JobApplicationOfferMaterial,
+        )
+
+        dataset_ids = [dataset.id for dataset, _ in rows]
+        db.execute(
+            delete(InterviewRecordingTranscription).where(
+                InterviewRecordingTranscription.dataset_id.in_(dataset_ids)
+            )
+        )
+        db.execute(
+            delete(JobApplicationOfferMaterial).where(
+                JobApplicationOfferMaterial.dataset_id.in_(dataset_ids)
+            )
+        )
     for dataset, task in rows:
         db.delete(dataset)
         db.delete(task)
@@ -627,8 +650,9 @@ def move_dataset(
     dataset_id: int,
     payload: DatasetMoveRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> UserDatasetRecord:
+    user = lock_active_user(db, user.id)
     row = load_owned_dataset(db, dataset_id, user.id)
     if row is None:
         raise ApiError(404, "DATASET_NOT_FOUND")
@@ -668,8 +692,9 @@ def move_dataset(
 def move_datasets_batch(
     payload: DatasetBatchMoveRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> DatasetBatchMoveResponse:
+    user = lock_active_user(db, user.id)
     if not payload.dataset_ids:
         raise ApiError(400, "DATASET_IDS_EMPTY")
 
@@ -731,8 +756,9 @@ def rename_dataset(
     dataset_id: int,
     payload: UserDatasetRenameRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> UserDatasetRecord:
+    user = lock_active_user(db, user.id)
     row = load_owned_dataset(db, dataset_id, user.id)
     if row is None:
         raise ApiError(404, "DATASET_NOT_FOUND")
@@ -764,10 +790,11 @@ async def retry_dataset(
     dataset_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
 ) -> UserDatasetRecord:
+    user = lock_active_user(db, user.id)
     row = load_owned_dataset(db, dataset_id, user.id)
     if row is None:
         raise ApiError(404, "DATASET_NOT_FOUND")
@@ -815,9 +842,10 @@ async def retry_dataset(
 def delete_dataset(
     dataset_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> UserDatasetDeleteResponse:
+    user = lock_active_user(db, user.id)
     row = load_owned_dataset(db, dataset_id, user.id)
     if row is None:
         raise ApiError(404, "DATASET_NOT_FOUND")
@@ -846,6 +874,23 @@ def delete_dataset(
 
     try:
         db.flush()
+        # Local import: interviews depends on datasets, not the other way round.
+        from linkresume.modules.interviews.models import (
+            InterviewRecordingTranscription,
+            JobApplicationOfferMaterial,
+        )
+
+        # No database foreign keys: remove every row that references this file.
+        db.execute(
+            delete(InterviewRecordingTranscription).where(
+                InterviewRecordingTranscription.dataset_id == dataset.id
+            )
+        )
+        db.execute(
+            delete(JobApplicationOfferMaterial).where(
+                JobApplicationOfferMaterial.dataset_id == dataset.id
+            )
+        )
         dataset_result = db.execute(
             delete(UserDataset).where(
                 UserDataset.id == dataset.id,
@@ -881,7 +926,7 @@ def _stream_object(response) -> Iterator[bytes]:
 def get_dataset_source(
     dataset_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> StreamingResponse:
     dataset, task = content_service.owned(db, user.id, dataset_id)
@@ -918,7 +963,7 @@ def get_dataset_content(
     dataset_id: int,
     response: Response,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
 ):
@@ -946,7 +991,7 @@ def get_dataset(
     dataset_id: int,
     response: Response,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ):
     dataset, task = content_service.owned(db, user.id, dataset_id)
     record = dataset_record(dataset, task)
@@ -968,11 +1013,12 @@ async def replace_dataset_file(
     if_match: str | None = Header(default=None),
     idempotency_key: str | None = Header(default=None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
     dataset_admission: ImportAdmissionController = Depends(get_dataset_admission),
 ):
+    user = lock_active_user(db, user.id)
     key = canonical_dataset_idempotency_key(idempotency_key)
     if not confirm_replace:
         raise ApiError(422, "REPLACEMENT_CONFIRMATION_REQUIRED")

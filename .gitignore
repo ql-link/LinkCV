@@ -30,3 +30,11 @@ apps/miniprogram/config/local.js
 
 # Local Spec documents; reusable templates live with their owning Skills.
 .specs/*/
+
+# Native desktop clients (apps/mac, apps/windows): build outputs and the generated paper renderer
+apps/mac/.build/
+apps/windows/**/bin/
+apps/windows/**/obj/
+apps/native/renderer/dist/
+apps/mac/Sources/LinkResumeRender/Resources/paper.html
+apps/windows/src/LinkResume.App/Assets/Renderer/paper.html

@@ -35,6 +35,10 @@ from linkresume.modules.agent.service import (
 from linkresume.modules.resumes.models import Resume
 from tests.legacy_models import ResumeVersion
 
+# Historical migration tests inspect the schema as it was before the 0111-0115
+# Alibaba naming migrations; 0115 renamed tables and time columns.
+PRE_NAMING_HEAD = "0110"
+
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
 EXPECTED_HEAD = "0065"
@@ -145,7 +149,7 @@ def test_mysql_0084_adds_current_resume_link_without_attachment_storage() -> Non
     try:
         assert "resume_id" not in {c["name"] for c in inspect(engine).get_columns("job_applications")}
         run_alembic(database_url, "upgrade", "0084")
-        run_alembic(database_url, "upgrade", "head")
+        run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
         inspector = inspect(engine)
         assert "application_resume_snapshots" not in inspector.get_table_names()
         columns = {c["name"]: c for c in inspector.get_columns("job_applications")}
@@ -376,8 +380,8 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     engine = create_engine(database_url)
 
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
 
     inspector = inspect(engine)
     assert {
@@ -957,8 +961,8 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             == template_id
         )
 
-    run_alembic(database_url, "upgrade", "head")
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
 
     inspector = inspect(engine)
     assert {
@@ -1302,7 +1306,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             )
         ).one() == ("chat", None)
 
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM resumes"))
         connection.execute(text("DELETE FROM resume_templates"))
@@ -1323,7 +1327,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert "job_descriptions" not in inspect(engine).get_table_names()
     assert "admin_operation_logs" not in inspect(engine).get_table_names()
 
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     assert {
         "users",
         "resume_templates",
@@ -1403,7 +1407,7 @@ def test_0065_removes_resume_binding_without_deleting_conversations() -> None:
                 {"session_id": session_id, "run_id": run_id},
             )
 
-        run_alembic(database_url, "upgrade", "head")
+        run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
 
         inspector = inspect(engine)
         columns = {
@@ -1449,7 +1453,7 @@ def test_0065_removes_resume_binding_without_deleting_conversations() -> None:
         ]
     finally:
         reset_test_database_to_base(database_url)
-        run_alembic(database_url, "upgrade", "head")
+        run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
         engine.dispose()
 
 
@@ -1481,8 +1485,8 @@ def test_resume_share_download_permission_upgrade_preserves_existing_shares() ->
             {"user_id": user_id, "template_id": template_id},
         ).lastrowid
 
-    run_alembic(database_url, "upgrade", "head")
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
 
     with engine.connect() as connection:
         row = connection.execute(
@@ -1520,13 +1524,13 @@ def test_storage_cleanup_forward_migration_refuses_pending_tasks() -> None:
                 )
             )
 
-        refused_upgrade = invoke_alembic(database_url, "upgrade", "head")
+        refused_upgrade = invoke_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
         assert refused_upgrade.returncode != 0
         assert "refuses to drop storage_cleanup_jobs" in refused_upgrade.stderr
 
         with engine.begin() as connection:
             connection.execute(text("DELETE FROM storage_cleanup_jobs"))
-        run_alembic(database_url, "upgrade", "head")
+        run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
         assert "storage_cleanup_jobs" not in inspect(engine).get_table_names()
     finally:
         engine.dispose()
@@ -2081,7 +2085,7 @@ def test_0047_binds_retired_blank_history_to_inactive_tombstone() -> None:
         assert resume_columns["template_id"]["nullable"] is False
         assert version_columns["template_id"]["nullable"] is False
 
-        run_alembic(database_url, "upgrade", "head")
+        run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
         with engine.connect() as connection:
             assert set(
                 connection.scalars(
@@ -2585,7 +2589,7 @@ def test_0051_repairs_a_stamped_legacy_profile_schema() -> None:
                 text("UPDATE alembic_version SET version_num = '0050'")
             )
 
-        run_alembic(database_url, "upgrade", "head")
+        run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
 
         inspector = inspect(engine)
         columns = {
@@ -2680,7 +2684,7 @@ def test_0051_advances_an_already_final_profile_schema_without_data_changes() ->
                 {"profile_id": profile_id},
             ).one()
 
-        run_alembic(database_url, "upgrade", "head")
+        run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
 
         with engine.connect() as connection:
             after = connection.execute(
@@ -2754,7 +2758,7 @@ def test_0053_and_0054_merge_offer_statuses_and_use_single_salary() -> None:
                 )
             )
 
-        run_alembic(database_url, "upgrade", "head")
+        run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
 
         columns = {
             column["name"]: column
@@ -3164,7 +3168,7 @@ def test_document_parse_task_forward_migration_preserves_import_data() -> None:
             == import_id
         )
 
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     assert "document_parse_tasks" in inspect(engine).get_table_names()
     reset_test_database_to_base(database_url)
     engine.dispose()
@@ -3202,7 +3206,7 @@ def test_resume_template_seed_conflict_does_not_overwrite_existing_data() -> Non
             text("DELETE FROM resume_templates WHERE `key` = 'blank-cn'")
         )
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     engine.dispose()
 
 
@@ -3240,7 +3244,7 @@ def test_classic_template_content_migration_refuses_customized_snapshots() -> No
         )
 
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     engine.dispose()
 
 
@@ -3287,7 +3291,7 @@ def test_professional_template_seed_conflict_is_atomic() -> None:
         )
 
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     engine.dispose()
 
 
@@ -3328,7 +3332,7 @@ def test_professional_template_preview_refresh_accepts_official_brand_snapshots(
         ).all()
         assert len(contents) == 4
         assert all('/templates/avatar-cat.jpg "linkresume-avatar:' in body for body in contents)
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     engine.dispose()
 
 
@@ -3378,7 +3382,7 @@ def test_professional_template_preview_refresh_refuses_customized_snapshots(
         )
 
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     engine.dispose()
 
 
@@ -3392,12 +3396,12 @@ def test_mysql_serializes_concurrent_normalized_resume_titles() -> None:
     with engine.begin() as connection:
         user_id = connection.execute(
             text(
-                "INSERT INTO users (email, password_hash, nickname) "
+                "INSERT INTO `user` (email, password_hash, nickname) "
                 "VALUES ('concurrent@example.invalid', '$2b$12$fictional', '张三')"
             )
         ).lastrowid
         template_id = connection.scalar(
-            text("SELECT id FROM resume_templates WHERE `key` = 'classic-technical-cn'")
+            text("SELECT id FROM resume_template WHERE `key` = 'classic-technical-cn'")
         )
     assert template_id is not None
 
@@ -3433,7 +3437,7 @@ def test_mysql_serializes_concurrent_normalized_resume_titles() -> None:
     with engine.connect() as connection:
         assert (
             connection.scalar(
-                text("SELECT COUNT(*) FROM resumes WHERE user_id = :user_id"),
+                text("SELECT COUNT(*) FROM resume WHERE user_id = :user_id"),
                 {"user_id": user_id},
             )
             == 1
@@ -3454,12 +3458,12 @@ def test_mysql_agent_session_creation_is_independent_from_resume_deletion() -> N
     with engine.begin() as connection:
         user_id = connection.execute(
             text(
-                "INSERT INTO users (email, password_hash, nickname) "
+                "INSERT INTO `user` (email, password_hash, nickname) "
                 "VALUES ('agent-delete-race@example.invalid', '$2b$12$fictional', '张三')"
             )
         ).lastrowid
         template_id = connection.scalar(
-            text("SELECT id FROM resume_templates WHERE `key` = 'classic-technical-cn'")
+            text("SELECT id FROM resume_template WHERE `key` = 'classic-technical-cn'")
         )
     assert template_id is not None
     with session_factory() as db:
@@ -3537,12 +3541,12 @@ def test_mysql_reject_cannot_overwrite_an_applied_proposal() -> None:
     with engine.begin() as connection:
         user_id = connection.execute(
             text(
-                "INSERT INTO users (email, password_hash, nickname) "
+                "INSERT INTO `user` (email, password_hash, nickname) "
                 "VALUES ('agent-proposal-race@example.invalid', '$2b$12$fictional', '张三')"
             )
         ).lastrowid
         template_id = connection.scalar(
-            text("SELECT id FROM resume_templates WHERE `key` = 'classic-technical-cn'")
+            text("SELECT id FROM resume_template WHERE `key` = 'classic-technical-cn'")
         )
     assert template_id is not None
     with session_factory() as db:
@@ -3642,7 +3646,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
 
     inspector = inspect(engine)
     columns = {
@@ -3981,7 +3985,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_forward_upgrade() -> Non
             )
         ).lastrowid
 
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     assert "admin_operation_logs" not in inspect(engine).get_table_names()
     assert inspect(engine).get_table_comment("llm_model_configs")["text"] == (
         "能力中立的模型连接配置"
@@ -4061,7 +4065,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_forward_upgrade() -> Non
         connection.execute(text("DELETE FROM llm_model_configs"))
         connection.execute(text("DELETE FROM users"))
 
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     with engine.connect() as connection:
         assert connection.execute(
             text(
@@ -4070,7 +4074,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_forward_upgrade() -> Non
             )
         ).one() == ("chat", None)
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     engine.dispose()
 
 
@@ -4193,7 +4197,7 @@ def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
             == "1.0"
         )
 
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     head_inspector = inspect(engine)
     assert "legacy_data_json_backup" not in {
         column["name"] for column in head_inspector.get_columns("resumes")
@@ -4239,7 +4243,7 @@ def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
         connection.execute(text("DELETE FROM resumes"))
         connection.execute(text("DELETE FROM users"))
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     engine.dispose()
 
 
@@ -4291,8 +4295,8 @@ def test_mysql_dataset_edit_upgrade_from_0060_preserves_existing_files() -> None
         user_id = conn.execute(text("INSERT INTO users (email,password_hash,nickname) VALUES ('dataset-migration@example.invalid','fictional','张三')")).lastrowid
         task_id = conn.execute(text("INSERT INTO document_parse_tasks (user_id,source_type,file_name,file_format,object_name,upload_status) VALUES (:uid,'dataset','fictional.md','md','users/fictional/datasets/source.md','uploading')"), {"uid":user_id}).lastrowid
         conn.execute(text("INSERT INTO user_dataset (user_id,parse_task_id,file_name,file_format,content_type,file_size,sha256,object_name,idempotency_key,request_fingerprint) VALUES (:uid,:tid,'fictional.md','md','text/markdown',10,:digest,'users/fictional/datasets/source.md','fictional-key',:digest)"), {"uid":user_id,"tid":task_id,"digest":"a"*64})
-    run_alembic(database_url, "upgrade", "head")
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
     with engine.connect() as conn:
         row = conn.execute(text("SELECT file_name,content_revision,content_object_name FROM user_dataset")).one()
         assert row == ("fictional.md",0,None)
@@ -4348,7 +4352,7 @@ def test_mysql_0090_retires_legacy_tables_and_preserves_current_resume() -> None
             ), {"id": resume_id})
             before = connection.execute(text("SELECT * FROM resumes WHERE id=:id"), {"id": resume_id}).mappings().one()
         run_alembic(database_url, "upgrade", "0090")
-        run_alembic(database_url, "upgrade", "head")
+        run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
         inspector = inspect(engine)
         assert {"interview_assets", "resume_versions"}.isdisjoint(inspector.get_table_names())
         assert "resume_version_id" not in {c["name"] for c in inspector.get_columns("job_applications")}
@@ -4363,7 +4367,7 @@ def test_mysql_0094_creates_announcement_tables_and_enforces_state_fields() -> N
     database_url = migration_test_url()
     engine = create_engine(database_url)
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
 
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
@@ -4411,7 +4415,7 @@ def test_mysql_0096_adds_voice_columns_with_text_defaults() -> None:
                 "resume_markdown_snapshot,interview_type,difficulty,question_count,language,status) "
                 "VALUES (:pid,:uid,'resume','简历','# 简历','technical','intermediate',3,'zh','completed')"
             ), {"pid": "00000000-0000-4000-8000-000000000095", "uid": user_id}).lastrowid
-        run_alembic(database_url, "upgrade", "head")
+        run_alembic(database_url, "upgrade", PRE_NAMING_HEAD)
         inspector = inspect(engine)
         interview_columns = {c["name"] for c in inspector.get_columns("mock_interviews")}
         assert {"answer_mode", "speech_snapshot_json", "hotwords_json", "transcript_corrected_at",
@@ -4428,5 +4432,92 @@ def test_mysql_0096_adds_voice_columns_with_text_defaults() -> None:
                 connection.execute(
                     text("UPDATE mock_interviews SET answer_mode='video' WHERE id=:id"), {"id": interview_id}
                 )
+    finally:
+        engine.dispose()
+
+
+def test_mysql_0097_adds_user_selectable_and_keeps_existing_models_selectable() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0096")
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO llm_models (display_name) VALUES ('示例模型')"))
+    run_alembic(database_url, "upgrade", "0097")
+
+    column = next(
+        item for item in inspect(engine).get_columns("llm_models")
+        if item["name"] == "user_selectable"
+    )
+    assert column["nullable"] is False
+    with engine.begin() as connection:
+        assert connection.scalar(text("SELECT user_selectable FROM llm_models")) == 1
+        connection.execute(text("INSERT INTO llm_models (display_name) VALUES ('新模型')"))
+        assert connection.scalar(
+            text("SELECT user_selectable FROM llm_models WHERE display_name = '新模型'")
+        ) == 1
+    engine.dispose()
+
+
+def test_mysql_0117_normalizes_builtin_sample_names_without_touching_user_content() -> None:
+    from copy import deepcopy
+    import re
+
+    from linkresume.core.migration_sql import execute_sql_file
+    from linkresume.modules.identity.models import User
+    from linkresume.modules.resumes.models import ResumeTemplate
+
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0116")
+    engine = create_engine(database_url)
+    Session = sessionmaker(engine)
+    seed_sql = (BACKEND_ROOT / "migrations/sql/0100.up.sql").read_text()
+    samples = {
+        key: json.loads(value.replace("''", "'"))
+        for key, value in re.findall(r"SET @muse_sample_(\w+) = CAST\('((?:[^']|'')*)' AS JSON\)", seed_sql)
+    }
+    expected_names = {
+        key: samples[sample]["identity"]["name"]["value"]
+        for key, sample in re.findall(
+            r"VALUES \('(muse-[a-z]+-cn)', '(?:[^']|'')*', '(?:[^']|'')*', @muse_sample_(\w+), CAST", seed_sql
+        )
+    }
+    try:
+        with Session.begin() as db:
+            original = db.scalar(select(ResumeTemplate).where(ResumeTemplate.key == "muse-blueprint-cn"))
+            assert original is not None
+            custom_data = deepcopy(original.data_json)
+            custom_data["identity"]["name"]["value"] = "测试自定义姓名"
+            edited = db.scalar(select(ResumeTemplate).where(ResumeTemplate.key == "muse-titleblock-cn"))
+            assert edited is not None
+            edited.data_json = custom_data
+            db.add(ResumeTemplate(key="custom-name-test", name="自定义模板", data_json=original.data_json,
+                                  style_json=original.style_json, is_active=0))
+            user = User(email="migration-name-test@example.com", nickname="迁移测试")
+            db.add(user)
+            db.flush()
+            resume = Resume(user_id=user.id, template_id=original.id, title="保留已有示例内容",
+                            data_json=original.data_json, style_json=original.style_json, source_type="template")
+            db.add(resume)
+        with engine.connect() as connection:
+            before = {row.key: json.loads(row.data_json) for row in connection.execute(text("SELECT `key`, data_json FROM resume_template"))}
+            resume_before = connection.execute(text("SELECT data_json FROM resume")).scalars().all()
+        run_alembic(database_url, "upgrade", "0117")
+        with engine.begin() as connection:
+            after = {row.key: json.loads(row.data_json) for row in connection.execute(text("SELECT `key`, data_json FROM resume_template"))}
+            changed = 0
+            for key, data in before.items():
+                expected = deepcopy(data)
+                name = data["identity"]["name"]["value"]
+                if key in expected_names and name == expected_names[key] and name != "张三":
+                    expected["identity"]["name"]["value"] = "张三"
+                    changed += 1
+                assert after[key] == expected, key
+            assert changed > 0
+            assert connection.execute(text("SELECT data_json FROM resume")).scalars().all() == resume_before
+            execute_sql_file(connection, BACKEND_ROOT / "migrations/sql/0117.up.sql")
+            rerun = {row.key: json.loads(row.data_json) for row in connection.execute(text("SELECT `key`, data_json FROM resume_template"))}
+            assert rerun == after
     finally:
         engine.dispose()

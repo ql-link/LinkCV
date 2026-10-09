@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { ReactNode, useCallback, useRef } from "react";
 import { useResumeStore } from "../store/resumeStore";
 
@@ -7,6 +8,7 @@ type SplitPaneProps = {
 };
 
 export function SplitPane({ left, right }: SplitPaneProps) {
+  useLocale();
   const ratio = useResumeStore((state) => state.splitRatio);
   const setSplitRatio = useResumeStore((state) => state.setSplitRatio);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -45,7 +47,7 @@ export function SplitPane({ left, right }: SplitPaneProps) {
       <div
         className="splitter"
         role="separator"
-        aria-label="调整编辑区和预览区宽度"
+        aria-label={t("调整编辑区和预览区宽度")}
         tabIndex={0}
         onPointerDown={startDrag}
       />

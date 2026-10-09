@@ -9,13 +9,16 @@ from sqlalchemy import func, select
 
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
+from linkresume.modules.agent.conversation_memory import conversation_memory
 from linkresume.modules.agent.models import (
     AgentMessage, AgentOperation, AgentRun, AgentSession, AgentStageEvent,
     ResumeChangeProposal,
 )
 from linkresume.modules.agent.schemas import AgentClarification, AgentContextMaterial
+from linkresume.modules.agent.message_scope import active_message, clarification_metadata, user_messages
 from linkresume.modules.agent.trace import event_key, operation_for_run, record_event
 from linkresume.modules.llm.models import LLMCallLog
+from linkresume.modules.identity.dependencies import lock_active_user
 
 
 RUN_PHASE_LABELS = {
@@ -25,6 +28,10 @@ RUN_PHASE_LABELS = {
 }
 _VISIBLE_EVENTS = {
     "run.started",
+    "user.message.accepted",
+    "user.message.applied",
+    "user.message.rejected",
+    "assistant.message.completed",
     "run.phase",
     "assistant.activity.delta",
     "assistant.activity.status",
@@ -155,10 +162,18 @@ async def stream_pi_run(
     headers = {"Authorization": f"Bearer {token.get_secret_value()}"}
     timeout = httpx.Timeout(settings.agent_run_timeout_seconds, connect=5.0)
     history = _conversation_history(app, run_public_id)
+    with app.state.session_factory() as memory_db:
+        memory_run = memory_db.scalar(select(AgentRun).where(AgentRun.public_id == run_public_id))
+        memory = conversation_memory(memory_db, memory_run) if memory_run else None
     revision_context = _revision_prompt(app, run_public_id, "")
     if revision_context:
         history.append({"role": "user", "content": revision_context})
     clarification_answers = _current_clarification_answers(app, run_public_id)
+    with app.state.session_factory() as db:
+        initial_run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_public_id))
+        initial_message = active_message(db, initial_run, validate_source=False)
+        initial_source = initial_message.sequence_no
+        initial_submission = (initial_message.metadata_json or {}).get("submission", {}).get("key")
     dispatch_started = time.monotonic()
     model_started: float | None = None
     _emit_agent_stage(
@@ -178,8 +193,11 @@ async def stream_pi_run(
                 headers=headers,
                 json={
                     "runId": run_public_id,
+                    "userSequenceNo": initial_source,
+                    "submissionKey": initial_submission,
                     "content": content,
                     "history": history,
+                    **({"conversationMemory": memory} if memory else {}),
                     **(
                         {"clarificationAnswers": clarification_answers}
                         if clarification_answers
@@ -261,6 +279,8 @@ async def stream_pi_run(
                             continue
                         if not isinstance(payload, dict):
                             continue
+                        if event_name in {"assistant.message.completed", "user.message.accepted"}:
+                            assistant_parts.clear()
                         if event_name == "assistant.delta" and isinstance(
                             payload.get("delta"), str
                         ):
@@ -306,6 +326,14 @@ async def stream_pi_run(
                             final_error = (
                                 value if isinstance(value, str) else final_error
                             )
+                        if event_name in {"run.completed", "run.cancelled", "run.failed"}:
+                            # Publish the terminal only after durable state is ready
+                            # for the browser to recover or send the next item.
+                            _finalize(app, run_public_id, final_status, error_code=final_error,
+                                      assistant_content="".join(assistant_parts).strip() or None,
+                                      clarification=clarification.model_dump(mode="json", exclude_none=True) if clarification else None,
+                                      input_tokens=final_input_tokens, output_tokens=final_output_tokens,
+                                      estimated_cost=final_estimated_cost)
                         if event_name not in _VISIBLE_EVENTS and not (
                             context_materials is None
                             and event_name in _LEGACY_TOOL_EVENTS
@@ -430,6 +458,7 @@ def _safe_phase_payload(
     )
     return {
         "runId": run_public_id,
+        **({"userSequenceNo": payload["userSequenceNo"]} if isinstance(payload.get("userSequenceNo"), int) else {}),
         "phase": phase_name,
         "label": RUN_PHASE_LABELS.get(phase_name, "AI 正在处理…"),
         "referencedContextCount": context_count,
@@ -452,7 +481,29 @@ async def cancel_pi_run(app, run_public_id: str) -> None:
         return
 
 
-async def check_pi_readiness(app) -> None:
+async def pi_steering_request(app, run_id: str, *, payload=None, key: str | None = None):
+    settings = app.state.settings
+    token = settings.pi_service_token
+    if not settings.agent_enabled or token is None:
+        raise ApiError(503, "AGENT_NOT_READY")
+    path = f"{settings.pi_service_base_url}/internal/agent/runs/{run_id}/steer"
+    if key is not None:
+        path += f"/{key}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.request("GET" if key is not None else "POST", path,
+                headers={"Authorization": f"Bearer {token.get_secret_value()}"}, json=payload)
+        body = response.json()
+        if response.status_code >= 400:
+            safe_codes = {"AGENT_STEER_BUSY", "AGENT_STEER_TARGET_FINISHED", "AGENT_SUBMISSION_CONFLICT", "AGENT_NOT_READY"}
+            raise ApiError(response.status_code if response.status_code in {404, 409, 503} else 502,
+                           body.get("error") if body.get("error") in safe_codes else "AGENT_STEER_UNAVAILABLE")
+        return body
+    except (httpx.HTTPError, ValueError) as error:
+        raise ApiError(502, "AGENT_STEER_OUTCOME_UNKNOWN") from error
+
+
+async def check_pi_readiness(app) -> dict:
     settings = app.state.settings
     token = settings.pi_service_token
     if not settings.agent_enabled or token is None:
@@ -466,6 +517,7 @@ async def check_pi_readiness(app) -> None:
         payload = response.json() if response.status_code == 200 else None
         if not isinstance(payload, dict) or payload.get("ready") is not True:
             raise ApiError(503, "AGENT_NOT_READY")
+        return payload
     except (httpx.HTTPError, ValueError, TypeError) as error:
         raise ApiError(503, "AGENT_NOT_READY") from error
 
@@ -499,7 +551,7 @@ def _conversation_history(app, run_public_id: str) -> list[dict[str, object]]:
             }
             if isinstance(message.metadata_json, dict):
                 if message.message_type == "clarification":
-                    item["clarification"] = message.metadata_json
+                    item["clarification"] = clarification_metadata(message)
                 else:
                     answers = message.metadata_json.get("clarification_answers")
                     if isinstance(answers, list):
@@ -513,7 +565,7 @@ def _conversation_history(app, run_public_id: str) -> list[dict[str, object]]:
                             {
                                 key: (task[key][:300] if key == "result" and isinstance(task[key], str)
                                       else task[key])
-                                for key in ("id", "workflow", "label", "status", "proposal_ids", "error_code", "result")
+                                for key in ("id", "workflow", "label", "status", "proposal_ids", "error_code", "result", "superseded_by_sequence_no")
                                 if key in task
                             }
                             for task in raw_tasks[:8] if isinstance(task, dict)
@@ -589,15 +641,23 @@ def _finalize(
     estimated_cost: Decimal | None = None,
 ) -> None:
     with app.state.session_factory() as db:
+        owner_id = db.scalar(select(AgentSession.user_id).join(AgentRun, AgentRun.session_id == AgentSession.id).where(AgentRun.public_id == run_public_id))
+        if owner_id is None:
+            return
+        try:
+            lock_active_user(db, owner_id)
+        except ApiError:
+            return
         row = db.execute(
             select(AgentRun, AgentSession)
             .join(AgentSession, AgentSession.id == AgentRun.session_id)
             .where(AgentRun.public_id == run_public_id)
-            .with_for_update()
         ).one_or_none()
         if row is None:
             return
         run, session = row
+        db.execute(select(AgentSession.id).where(AgentSession.id == session.id).with_for_update())
+        db.refresh(run, with_for_update=True)
         if run.status != "running":
             return
         run.status = status
@@ -648,7 +708,12 @@ def _finalize(
                 stage="run_finalize", result=status,
                 error_code=error_code if status == "failed" else None,
             )
-        if status == "succeeded" and (assistant_content or clarification):
+        messages = user_messages(db, run)
+        source = messages[-1].sequence_no if messages else None
+        existing_reply = any((item.metadata_json or {}).get("reply_to_sequence_no") == source
+                             for item in db.scalars(select(AgentMessage).where(
+                                 AgentMessage.run_id == run.id, AgentMessage.role == "assistant")))
+        if status == "succeeded" and not existing_reply and len(messages) <= 1 and (assistant_content or clarification):
             sequence_no = (
                 int(
                     db.scalar(
@@ -672,7 +737,8 @@ def _finalize(
                         if clarification
                         else assistant_content
                     ),
-                    metadata_json=clarification,
+                    metadata_json={"reply_to_sequence_no": source,
+                                   **({"clarification": clarification} if clarification else {})},
                 )
             )
             session.last_message_at = utc_now()
@@ -680,9 +746,13 @@ def _finalize(
 
 
 def _finalize_unclosed_tasks(db, run: AgentRun, status: str, error_code: str | None, clarified: bool) -> None:
-    message = db.scalar(select(AgentMessage).where(
-        AgentMessage.run_id == run.id, AgentMessage.role == "user",
-    ).with_for_update())
+    messages = user_messages(db, run, lock=True)
+    for message in messages:
+        _finalize_message_tasks(db, run, message, status, error_code,
+                                clarified and message is messages[-1], len(messages) == 1)
+
+
+def _finalize_message_tasks(db, run, message, status, error_code, clarified, legacy):
     if message is None or not isinstance(message.metadata_json, dict):
         return
     metadata = dict(message.metadata_json)
@@ -696,10 +766,13 @@ def _finalize_unclosed_tasks(db, run: AgentRun, status: str, error_code: str | N
     proposals = db.scalars(select(ResumeChangeProposal.public_id).where(
         ResumeChangeProposal.run_id == run.id,
     )).all()
-    orphan_ids = [proposal_id for proposal_id in proposals if proposal_id not in assigned]
+    owned = metadata.get("generated_proposal_ids", proposals if legacy else [])
+    orphan_ids = [proposal_id for proposal_id in owned if proposal_id not in assigned]
     changed = False
     for task in tasks:
         if task.get("status") not in {"running", "planned"}:
+            continue
+        if task.get("superseded_by_sequence_no") is not None:
             continue
         was_running = task["status"] == "running"
         proposal_ids = list(task.get("proposal_ids") or [])

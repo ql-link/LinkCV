@@ -193,6 +193,7 @@ function canonicalCellToEditor(
   const paragraph = cell.blocks[0];
   return {
     type: "paragraph",
+    attrs: { textAlign: paragraph.align ?? null },
     content: [
       ...(index === 0 ? [canonicalAnchor(rowId, { role: "row", sourceRefs: rowSourceRefs })] : []),
       canonicalAnchor(cell.node_id, { role: "row-cell", sourceRefs: cell.source_refs }),
@@ -252,6 +253,7 @@ function canonicalBlockToEditor(
       type: "listItem",
       content: [{
         type: "paragraph",
+        attrs: { textAlign: item.align ?? null },
         content: [
           ...(index === 0 ? [canonicalAnchor(block.node_id, { role: "list" })] : []),
           canonicalAnchor(item.node_id, { role: "list-item", sourceRefs: item.source_refs }),
@@ -552,6 +554,7 @@ function canonicalBlockFromEditor(node: JSONContent, index: number): CanonicalCo
         source_refs: [],
         block_type: "paragraph",
         runs,
+        ...(canonicalTextAlignFromEditor(cell) ? { align: canonicalTextAlignFromEditor(cell) } : {}),
       }];
       return { node_id: cellId, source_refs: [], blocks };
     });
@@ -598,6 +601,7 @@ function canonicalBlockFromEditor(node: JSONContent, index: number): CanonicalCo
           node_id: editorAnchorId(paragraph ?? item) ?? generatedCanonicalNodeId(`${nodeId}-item`, itemIndex),
           source_refs: [],
           runs: canonicalRunsFromEditor(paragraph?.content ?? item.content ?? []),
+          ...(paragraph && canonicalTextAlignFromEditor(paragraph) ? { align: canonicalTextAlignFromEditor(paragraph) } : {}),
         };
       }),
     };
@@ -1035,6 +1039,7 @@ function canonicalV1BlockFromEditor(
             context,
             seed + "-cell-" + cellIndex,
           ),
+          ...(canonicalTextAlignFromEditor(cell) ? { align: canonicalTextAlignFromEditor(cell) } : {}),
         }],
       };
     });
@@ -1117,6 +1122,7 @@ function canonicalV1BlockFromEditor(
           context,
           seed + "-list-item-" + itemIndex,
         ),
+        ...(canonicalTextAlignFromEditor(paragraph) ? { align: canonicalTextAlignFromEditor(paragraph) } : {}),
       };
     });
     let start: number | null = null;

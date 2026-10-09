@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 from copy import deepcopy
 import hashlib
 import json
@@ -13,10 +14,12 @@ from linkresume.core.errors import ApiError
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.models import Resume, ResumeTemplate
 from linkresume.modules.resumes.pdf_service import clone_resume_private_assets, validate_resume_pdf_asset_contract
+from linkresume.modules.product_events import service as product_events
 
 
 def copy_resume(db: Session, storage, *, user_id: int, resume_id: str, title: str,
                 client_request_id: str, base_lock_version: int | None = None) -> tuple[Resume, bool]:
+    lock_active_user(db, user_id)
     db.scalar(select(User.id).where(User.id == user_id).with_for_update())
     source = db.scalar(select(Resume).where(
         Resume.id == parse_decimal_id(resume_id), Resume.user_id == user_id,
@@ -67,6 +70,7 @@ def copy_resume(db: Session, storage, *, user_id: int, resume_id: str, title: st
             validate_resume_pdf_asset_contract(storage, result.data_json, user_id=user_id, resume_id=result.id)
         except Exception as error:
             raise ApiError(502, "RESUME_COPY_ASSET_FAILED") from error
+        product_events.resume_created(db, user_id, result.id, "copy")
         # Flush all database writes while rollback still guarantees that no
         # committed resume references the assets being compensated below.
         db.flush()

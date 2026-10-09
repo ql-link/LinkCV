@@ -1,0 +1,4181 @@
+[
+  {
+    "id": "4",
+    "key": "muse-badge-cn",
+    "name": "字体回退：source-han-serif",
+    "description": "主栏姓名与履历，左侧教育和能力栏。支持肖像，未上传时显示剪影占位。内容较多时按 A4 自然分页。",
+    "style_categories": [],
+    "use_cases": [],
+    "data": {
+      "schema_version": "canonical-resume.v1",
+      "document_id": "node_featured00000000000000000252",
+      "identity": {
+        "node_id": "node_featured00000000000000000253",
+        "name": {
+          "node_id": "node_featured00000000000000000254",
+          "source_refs": [],
+          "value": "张三"
+        },
+        "headline": {
+          "node_id": "node_featured00000000000000000301",
+          "source_refs": [],
+          "value": "产品经理 · 社招"
+        },
+        "contacts": [
+          {
+            "node_id": "node_featured00000000000000000256",
+            "source_refs": [],
+            "value": "13800000000",
+            "contact_kind": "phone",
+            "label": null
+          },
+          {
+            "node_id": "node_featured00000000000000000257",
+            "source_refs": [],
+            "value": "zhangsan@example.com",
+            "contact_kind": "email",
+            "label": null
+          },
+          {
+            "node_id": "node_featured00000000000000000258",
+            "source_refs": [],
+            "value": "上海",
+            "contact_kind": "location",
+            "label": null
+          }
+        ],
+        "avatar": null
+      },
+      "sections": [
+        {
+          "node_id": "node_featured00000000000000000338",
+          "source_refs": [],
+          "semantic_kind": "profile",
+          "title": {
+            "node_id": "node_featured00000000000000000339",
+            "source_refs": [],
+            "value": "个人简介"
+          },
+          "title_icon": null,
+          "entries": [],
+          "blocks": [
+            {
+              "node_id": "node_featured00000000000000000337",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "5 年企业服务产品经验，擅长把用户需求拆成可验证的场景，结合业务指标安排迭代，并推动研发、设计和运营共同交付。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "node_id": "node_featured00000000000000000308",
+          "source_refs": [],
+          "semantic_kind": "education",
+          "title": {
+            "node_id": "node_featured00000000000000000309",
+            "source_refs": [],
+            "value": "教育经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000302",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000303",
+                  "source_refs": [],
+                  "value": "示例大学"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000304",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2016.09 — 2020.06",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000305",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "本科 · 信息管理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000306",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000307",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "相关课程：管理学、统计学、组织行为学；完成企业流程调研课程项目。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000326",
+          "source_refs": [],
+          "semantic_kind": "work",
+          "title": {
+            "node_id": "node_featured00000000000000000327",
+            "source_refs": [],
+            "value": "工作经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000310",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000311",
+                  "source_refs": [],
+                  "value": "云杉协作科技有限公司"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000312",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2022.07 — 至今",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000313",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "高级产品经理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000314",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000315",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "负责企业协作平台季度路线图，围绕审批、权限和数据看板梳理需求。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000316",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "访谈 24 位一线用户，将重复反馈归并为 8 类高频场景。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000317",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "组织研发与测试评审，补齐异常分支及验收口径，跟进灰度数据。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000318",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000319",
+                  "source_refs": [],
+                  "value": "青舟信息服务有限公司"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000320",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2020.07 — 2022.06",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000321",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "产品经理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000322",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000323",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "负责客户后台原型与交互说明，维护版本计划和需求优先级。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000324",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "结合行为数据与客服记录优化新手引导，减少重复配置步骤。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000325",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "建立上线后一周回访机制，将问题纳入下轮迭代。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000335",
+          "source_refs": [],
+          "semantic_kind": "project",
+          "title": {
+            "node_id": "node_featured00000000000000000336",
+            "source_refs": [],
+            "value": "项目经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000328",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000329",
+                  "source_refs": [],
+                  "value": "审批流程配置改版"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000330",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2024.03 — 2024.09",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000331",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "项目协作负责人",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000332",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000333",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "拆解五类使用角色及权限边界，统一流程状态和异常处理。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000334",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "通过两轮原型测试优化配置路径，灰度期任务完成率从 71% 提升至 86%。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000349",
+          "source_refs": [],
+          "semantic_kind": "skills",
+          "title": {
+            "node_id": "node_featured00000000000000000350",
+            "source_refs": [],
+            "value": "专业技能"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000340",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000341",
+                  "source_refs": [],
+                  "value": "产品规划"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000342",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "需求分析、优先级管理、路线图",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000343",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000344",
+                  "source_refs": [],
+                  "value": "数据分析"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000345",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "SQL、漏斗分析、指标口径",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000346",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000347",
+                  "source_refs": [],
+                  "value": "设计协作"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000348",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "Figma、流程图、验收与复盘",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000353",
+          "source_refs": [],
+          "semantic_kind": "certificates",
+          "title": {
+            "node_id": "node_featured00000000000000000354",
+            "source_refs": [],
+            "value": "证书与语言"
+          },
+          "title_icon": null,
+          "entries": [],
+          "blocks": [
+            {
+              "node_id": "node_featured00000000000000000351",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "大学英语六级；能够阅读英文业务材料。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000352",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "持续学习业务分析与沟通方法，定期整理项目复盘。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "source_dispositions": []
+    },
+    "style": {
+      "schema_version": "template-definition.v1",
+      "template_key": "muse-badge-cn",
+      "semantic_labels": {
+        "profile": "个人简介",
+        "work": "工作经历",
+        "education": "教育经历",
+        "project": "项目经历",
+        "skills": "专业技能",
+        "activity": "实践经历",
+        "interests": "兴趣爱好",
+        "certificates": "证书与语言",
+        "awards": "荣誉奖项",
+        "languages": "语言能力"
+      },
+      "regions": [
+        {
+          "region_id": "main",
+          "region_kind": "main",
+          "order": 1
+        },
+        {
+          "region_id": "sidebar",
+          "region_kind": "sidebar",
+          "order": 2
+        }
+      ],
+      "slots": [
+        {
+          "slot_id": "identity",
+          "region_id": "main",
+          "accepts": [
+            "identity"
+          ],
+          "universal_fallback": false,
+          "order": 0
+        },
+        {
+          "slot_id": "support",
+          "region_id": "sidebar",
+          "accepts": [
+            "skills",
+            "certificates",
+            "languages",
+            "interests",
+            "education"
+          ],
+          "universal_fallback": false,
+          "order": 1
+        },
+        {
+          "slot_id": "content",
+          "region_id": "main",
+          "accepts": [
+            "identity",
+            "profile",
+            "work",
+            "education",
+            "project",
+            "skills",
+            "activity",
+            "interests",
+            "certificates",
+            "awards",
+            "languages",
+            "custom"
+          ],
+          "universal_fallback": true,
+          "order": 10
+        }
+      ],
+      "tokens": {
+        "font_family": "source-han-serif",
+        "font_size_pt": 10.0,
+        "line_height": 1.5,
+        "accent_color": "#204f99",
+        "page_margin_mm": 12.0,
+        "vertical_page_margin_mm": null,
+        "page_margin_top_mm": null,
+        "page_margin_right_mm": null,
+        "page_margin_bottom_mm": null,
+        "page_margin_left_mm": null
+      },
+      "avatar": {
+        "visibility": "show",
+        "fallback_asset": "system-default",
+        "size_px": 94,
+        "region_id": "sidebar"
+      }
+    },
+    "layout_plan": {
+      "schema_version": "layout-plan.v1",
+      "content_sha256": "8d2578d2c7801ddcc07436f57a2b7d0199c6f594349df9f6934abb6c4fedb400",
+      "template_key": "muse-badge-cn",
+      "regions": [
+        {
+          "region_id": "main",
+          "order": 1,
+          "nodes": [
+            {
+              "node_id": "node_featured00000000000000000253",
+              "semantic_kind": "identity",
+              "slot_id": "identity"
+            },
+            {
+              "node_id": "node_featured00000000000000000338",
+              "semantic_kind": "profile",
+              "slot_id": "content"
+            },
+            {
+              "node_id": "node_featured00000000000000000326",
+              "semantic_kind": "work",
+              "slot_id": "content"
+            },
+            {
+              "node_id": "node_featured00000000000000000335",
+              "semantic_kind": "project",
+              "slot_id": "content"
+            }
+          ]
+        },
+        {
+          "region_id": "sidebar",
+          "order": 2,
+          "nodes": [
+            {
+              "node_id": "node_featured00000000000000000308",
+              "semantic_kind": "education",
+              "slot_id": "support"
+            },
+            {
+              "node_id": "node_featured00000000000000000349",
+              "semantic_kind": "skills",
+              "slot_id": "support"
+            },
+            {
+              "node_id": "node_featured00000000000000000353",
+              "semantic_kind": "certificates",
+              "slot_id": "support"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "4",
+    "key": "muse-badge-cn",
+    "name": "字体回退：lxgw-wenkai",
+    "description": "主栏姓名与履历，左侧教育和能力栏。支持肖像，未上传时显示剪影占位。内容较多时按 A4 自然分页。",
+    "style_categories": [],
+    "use_cases": [],
+    "data": {
+      "schema_version": "canonical-resume.v1",
+      "document_id": "node_featured00000000000000000252",
+      "identity": {
+        "node_id": "node_featured00000000000000000253",
+        "name": {
+          "node_id": "node_featured00000000000000000254",
+          "source_refs": [],
+          "value": "张三"
+        },
+        "headline": {
+          "node_id": "node_featured00000000000000000301",
+          "source_refs": [],
+          "value": "产品经理 · 社招"
+        },
+        "contacts": [
+          {
+            "node_id": "node_featured00000000000000000256",
+            "source_refs": [],
+            "value": "13800000000",
+            "contact_kind": "phone",
+            "label": null
+          },
+          {
+            "node_id": "node_featured00000000000000000257",
+            "source_refs": [],
+            "value": "zhangsan@example.com",
+            "contact_kind": "email",
+            "label": null
+          },
+          {
+            "node_id": "node_featured00000000000000000258",
+            "source_refs": [],
+            "value": "上海",
+            "contact_kind": "location",
+            "label": null
+          }
+        ],
+        "avatar": null
+      },
+      "sections": [
+        {
+          "node_id": "node_featured00000000000000000338",
+          "source_refs": [],
+          "semantic_kind": "profile",
+          "title": {
+            "node_id": "node_featured00000000000000000339",
+            "source_refs": [],
+            "value": "个人简介"
+          },
+          "title_icon": null,
+          "entries": [],
+          "blocks": [
+            {
+              "node_id": "node_featured00000000000000000337",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "5 年企业服务产品经验，擅长把用户需求拆成可验证的场景，结合业务指标安排迭代，并推动研发、设计和运营共同交付。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "node_id": "node_featured00000000000000000308",
+          "source_refs": [],
+          "semantic_kind": "education",
+          "title": {
+            "node_id": "node_featured00000000000000000309",
+            "source_refs": [],
+            "value": "教育经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000302",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000303",
+                  "source_refs": [],
+                  "value": "示例大学"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000304",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2016.09 — 2020.06",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000305",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "本科 · 信息管理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000306",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000307",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "相关课程：管理学、统计学、组织行为学；完成企业流程调研课程项目。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000326",
+          "source_refs": [],
+          "semantic_kind": "work",
+          "title": {
+            "node_id": "node_featured00000000000000000327",
+            "source_refs": [],
+            "value": "工作经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000310",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000311",
+                  "source_refs": [],
+                  "value": "云杉协作科技有限公司"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000312",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2022.07 — 至今",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000313",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "高级产品经理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000314",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000315",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "负责企业协作平台季度路线图，围绕审批、权限和数据看板梳理需求。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000316",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "访谈 24 位一线用户，将重复反馈归并为 8 类高频场景。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000317",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "组织研发与测试评审，补齐异常分支及验收口径，跟进灰度数据。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000318",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000319",
+                  "source_refs": [],
+                  "value": "青舟信息服务有限公司"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000320",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2020.07 — 2022.06",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000321",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "产品经理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000322",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000323",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "负责客户后台原型与交互说明，维护版本计划和需求优先级。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000324",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "结合行为数据与客服记录优化新手引导，减少重复配置步骤。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000325",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "建立上线后一周回访机制，将问题纳入下轮迭代。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000335",
+          "source_refs": [],
+          "semantic_kind": "project",
+          "title": {
+            "node_id": "node_featured00000000000000000336",
+            "source_refs": [],
+            "value": "项目经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000328",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000329",
+                  "source_refs": [],
+                  "value": "审批流程配置改版"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000330",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2024.03 — 2024.09",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000331",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "项目协作负责人",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000332",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000333",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "拆解五类使用角色及权限边界，统一流程状态和异常处理。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000334",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "通过两轮原型测试优化配置路径，灰度期任务完成率从 71% 提升至 86%。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000349",
+          "source_refs": [],
+          "semantic_kind": "skills",
+          "title": {
+            "node_id": "node_featured00000000000000000350",
+            "source_refs": [],
+            "value": "专业技能"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000340",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000341",
+                  "source_refs": [],
+                  "value": "产品规划"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000342",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "需求分析、优先级管理、路线图",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000343",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000344",
+                  "source_refs": [],
+                  "value": "数据分析"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000345",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "SQL、漏斗分析、指标口径",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000346",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000347",
+                  "source_refs": [],
+                  "value": "设计协作"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000348",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "Figma、流程图、验收与复盘",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000353",
+          "source_refs": [],
+          "semantic_kind": "certificates",
+          "title": {
+            "node_id": "node_featured00000000000000000354",
+            "source_refs": [],
+            "value": "证书与语言"
+          },
+          "title_icon": null,
+          "entries": [],
+          "blocks": [
+            {
+              "node_id": "node_featured00000000000000000351",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "大学英语六级；能够阅读英文业务材料。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000352",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "持续学习业务分析与沟通方法，定期整理项目复盘。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "source_dispositions": []
+    },
+    "style": {
+      "schema_version": "template-definition.v1",
+      "template_key": "muse-badge-cn",
+      "semantic_labels": {
+        "profile": "个人简介",
+        "work": "工作经历",
+        "education": "教育经历",
+        "project": "项目经历",
+        "skills": "专业技能",
+        "activity": "实践经历",
+        "interests": "兴趣爱好",
+        "certificates": "证书与语言",
+        "awards": "荣誉奖项",
+        "languages": "语言能力"
+      },
+      "regions": [
+        {
+          "region_id": "main",
+          "region_kind": "main",
+          "order": 1
+        },
+        {
+          "region_id": "sidebar",
+          "region_kind": "sidebar",
+          "order": 2
+        }
+      ],
+      "slots": [
+        {
+          "slot_id": "identity",
+          "region_id": "main",
+          "accepts": [
+            "identity"
+          ],
+          "universal_fallback": false,
+          "order": 0
+        },
+        {
+          "slot_id": "support",
+          "region_id": "sidebar",
+          "accepts": [
+            "skills",
+            "certificates",
+            "languages",
+            "interests",
+            "education"
+          ],
+          "universal_fallback": false,
+          "order": 1
+        },
+        {
+          "slot_id": "content",
+          "region_id": "main",
+          "accepts": [
+            "identity",
+            "profile",
+            "work",
+            "education",
+            "project",
+            "skills",
+            "activity",
+            "interests",
+            "certificates",
+            "awards",
+            "languages",
+            "custom"
+          ],
+          "universal_fallback": true,
+          "order": 10
+        }
+      ],
+      "tokens": {
+        "font_family": "lxgw-wenkai",
+        "font_size_pt": 10.0,
+        "line_height": 1.5,
+        "accent_color": "#204f99",
+        "page_margin_mm": 12.0,
+        "vertical_page_margin_mm": null,
+        "page_margin_top_mm": null,
+        "page_margin_right_mm": null,
+        "page_margin_bottom_mm": null,
+        "page_margin_left_mm": null
+      },
+      "avatar": {
+        "visibility": "show",
+        "fallback_asset": "system-default",
+        "size_px": 94,
+        "region_id": "sidebar"
+      }
+    },
+    "layout_plan": {
+      "schema_version": "layout-plan.v1",
+      "content_sha256": "8d2578d2c7801ddcc07436f57a2b7d0199c6f594349df9f6934abb6c4fedb400",
+      "template_key": "muse-badge-cn",
+      "regions": [
+        {
+          "region_id": "main",
+          "order": 1,
+          "nodes": [
+            {
+              "node_id": "node_featured00000000000000000253",
+              "semantic_kind": "identity",
+              "slot_id": "identity"
+            },
+            {
+              "node_id": "node_featured00000000000000000338",
+              "semantic_kind": "profile",
+              "slot_id": "content"
+            },
+            {
+              "node_id": "node_featured00000000000000000326",
+              "semantic_kind": "work",
+              "slot_id": "content"
+            },
+            {
+              "node_id": "node_featured00000000000000000335",
+              "semantic_kind": "project",
+              "slot_id": "content"
+            }
+          ]
+        },
+        {
+          "region_id": "sidebar",
+          "order": 2,
+          "nodes": [
+            {
+              "node_id": "node_featured00000000000000000308",
+              "semantic_kind": "education",
+              "slot_id": "support"
+            },
+            {
+              "node_id": "node_featured00000000000000000349",
+              "semantic_kind": "skills",
+              "slot_id": "support"
+            },
+            {
+              "node_id": "node_featured00000000000000000353",
+              "semantic_kind": "certificates",
+              "slot_id": "support"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "4",
+    "key": "muse-badge-cn",
+    "name": "字体回退：Native Missing Fixture Font",
+    "description": "主栏姓名与履历，左侧教育和能力栏。支持肖像，未上传时显示剪影占位。内容较多时按 A4 自然分页。",
+    "style_categories": [],
+    "use_cases": [],
+    "data": {
+      "schema_version": "canonical-resume.v1",
+      "document_id": "node_featured00000000000000000252",
+      "identity": {
+        "node_id": "node_featured00000000000000000253",
+        "name": {
+          "node_id": "node_featured00000000000000000254",
+          "source_refs": [],
+          "value": "张三"
+        },
+        "headline": {
+          "node_id": "node_featured00000000000000000301",
+          "source_refs": [],
+          "value": "产品经理 · 社招"
+        },
+        "contacts": [
+          {
+            "node_id": "node_featured00000000000000000256",
+            "source_refs": [],
+            "value": "13800000000",
+            "contact_kind": "phone",
+            "label": null
+          },
+          {
+            "node_id": "node_featured00000000000000000257",
+            "source_refs": [],
+            "value": "zhangsan@example.com",
+            "contact_kind": "email",
+            "label": null
+          },
+          {
+            "node_id": "node_featured00000000000000000258",
+            "source_refs": [],
+            "value": "上海",
+            "contact_kind": "location",
+            "label": null
+          }
+        ],
+        "avatar": null
+      },
+      "sections": [
+        {
+          "node_id": "node_featured00000000000000000338",
+          "source_refs": [],
+          "semantic_kind": "profile",
+          "title": {
+            "node_id": "node_featured00000000000000000339",
+            "source_refs": [],
+            "value": "个人简介"
+          },
+          "title_icon": null,
+          "entries": [],
+          "blocks": [
+            {
+              "node_id": "node_featured00000000000000000337",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "5 年企业服务产品经验，擅长把用户需求拆成可验证的场景，结合业务指标安排迭代，并推动研发、设计和运营共同交付。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "node_id": "node_featured00000000000000000308",
+          "source_refs": [],
+          "semantic_kind": "education",
+          "title": {
+            "node_id": "node_featured00000000000000000309",
+            "source_refs": [],
+            "value": "教育经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000302",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000303",
+                  "source_refs": [],
+                  "value": "示例大学"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000304",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2016.09 — 2020.06",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000305",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "本科 · 信息管理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000306",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000307",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "相关课程：管理学、统计学、组织行为学；完成企业流程调研课程项目。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000326",
+          "source_refs": [],
+          "semantic_kind": "work",
+          "title": {
+            "node_id": "node_featured00000000000000000327",
+            "source_refs": [],
+            "value": "工作经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000310",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000311",
+                  "source_refs": [],
+                  "value": "云杉协作科技有限公司"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000312",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2022.07 — 至今",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000313",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "高级产品经理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000314",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000315",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "负责企业协作平台季度路线图，围绕审批、权限和数据看板梳理需求。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000316",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "访谈 24 位一线用户，将重复反馈归并为 8 类高频场景。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000317",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "组织研发与测试评审，补齐异常分支及验收口径，跟进灰度数据。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000318",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000319",
+                  "source_refs": [],
+                  "value": "青舟信息服务有限公司"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000320",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2020.07 — 2022.06",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000321",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "产品经理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000322",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000323",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "负责客户后台原型与交互说明，维护版本计划和需求优先级。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000324",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "结合行为数据与客服记录优化新手引导，减少重复配置步骤。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000325",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "建立上线后一周回访机制，将问题纳入下轮迭代。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000335",
+          "source_refs": [],
+          "semantic_kind": "project",
+          "title": {
+            "node_id": "node_featured00000000000000000336",
+            "source_refs": [],
+            "value": "项目经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000328",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000329",
+                  "source_refs": [],
+                  "value": "审批流程配置改版"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000330",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2024.03 — 2024.09",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000331",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "项目协作负责人",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000332",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000333",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "拆解五类使用角色及权限边界，统一流程状态和异常处理。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000334",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "通过两轮原型测试优化配置路径，灰度期任务完成率从 71% 提升至 86%。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000349",
+          "source_refs": [],
+          "semantic_kind": "skills",
+          "title": {
+            "node_id": "node_featured00000000000000000350",
+            "source_refs": [],
+            "value": "专业技能"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000340",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000341",
+                  "source_refs": [],
+                  "value": "产品规划"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000342",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "需求分析、优先级管理、路线图",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000343",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000344",
+                  "source_refs": [],
+                  "value": "数据分析"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000345",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "SQL、漏斗分析、指标口径",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000346",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000347",
+                  "source_refs": [],
+                  "value": "设计协作"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000348",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "Figma、流程图、验收与复盘",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000353",
+          "source_refs": [],
+          "semantic_kind": "certificates",
+          "title": {
+            "node_id": "node_featured00000000000000000354",
+            "source_refs": [],
+            "value": "证书与语言"
+          },
+          "title_icon": null,
+          "entries": [],
+          "blocks": [
+            {
+              "node_id": "node_featured00000000000000000351",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "大学英语六级；能够阅读英文业务材料。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000352",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "持续学习业务分析与沟通方法，定期整理项目复盘。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "source_dispositions": []
+    },
+    "style": {
+      "schema_version": "template-definition.v1",
+      "template_key": "muse-badge-cn",
+      "semantic_labels": {
+        "profile": "个人简介",
+        "work": "工作经历",
+        "education": "教育经历",
+        "project": "项目经历",
+        "skills": "专业技能",
+        "activity": "实践经历",
+        "interests": "兴趣爱好",
+        "certificates": "证书与语言",
+        "awards": "荣誉奖项",
+        "languages": "语言能力"
+      },
+      "regions": [
+        {
+          "region_id": "main",
+          "region_kind": "main",
+          "order": 1
+        },
+        {
+          "region_id": "sidebar",
+          "region_kind": "sidebar",
+          "order": 2
+        }
+      ],
+      "slots": [
+        {
+          "slot_id": "identity",
+          "region_id": "main",
+          "accepts": [
+            "identity"
+          ],
+          "universal_fallback": false,
+          "order": 0
+        },
+        {
+          "slot_id": "support",
+          "region_id": "sidebar",
+          "accepts": [
+            "skills",
+            "certificates",
+            "languages",
+            "interests",
+            "education"
+          ],
+          "universal_fallback": false,
+          "order": 1
+        },
+        {
+          "slot_id": "content",
+          "region_id": "main",
+          "accepts": [
+            "identity",
+            "profile",
+            "work",
+            "education",
+            "project",
+            "skills",
+            "activity",
+            "interests",
+            "certificates",
+            "awards",
+            "languages",
+            "custom"
+          ],
+          "universal_fallback": true,
+          "order": 10
+        }
+      ],
+      "tokens": {
+        "font_family": "Native Missing Fixture Font",
+        "font_size_pt": 10.0,
+        "line_height": 1.5,
+        "accent_color": "#204f99",
+        "page_margin_mm": 12.0,
+        "vertical_page_margin_mm": null,
+        "page_margin_top_mm": null,
+        "page_margin_right_mm": null,
+        "page_margin_bottom_mm": null,
+        "page_margin_left_mm": null
+      },
+      "avatar": {
+        "visibility": "show",
+        "fallback_asset": "system-default",
+        "size_px": 94,
+        "region_id": "sidebar"
+      }
+    },
+    "layout_plan": {
+      "schema_version": "layout-plan.v1",
+      "content_sha256": "8d2578d2c7801ddcc07436f57a2b7d0199c6f594349df9f6934abb6c4fedb400",
+      "template_key": "muse-badge-cn",
+      "regions": [
+        {
+          "region_id": "main",
+          "order": 1,
+          "nodes": [
+            {
+              "node_id": "node_featured00000000000000000253",
+              "semantic_kind": "identity",
+              "slot_id": "identity"
+            },
+            {
+              "node_id": "node_featured00000000000000000338",
+              "semantic_kind": "profile",
+              "slot_id": "content"
+            },
+            {
+              "node_id": "node_featured00000000000000000326",
+              "semantic_kind": "work",
+              "slot_id": "content"
+            },
+            {
+              "node_id": "node_featured00000000000000000335",
+              "semantic_kind": "project",
+              "slot_id": "content"
+            }
+          ]
+        },
+        {
+          "region_id": "sidebar",
+          "order": 2,
+          "nodes": [
+            {
+              "node_id": "node_featured00000000000000000308",
+              "semantic_kind": "education",
+              "slot_id": "support"
+            },
+            {
+              "node_id": "node_featured00000000000000000349",
+              "semantic_kind": "skills",
+              "slot_id": "support"
+            },
+            {
+              "node_id": "node_featured00000000000000000353",
+              "semantic_kind": "certificates",
+              "slot_id": "support"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "4",
+    "key": "muse-badge-cn",
+    "name": "长正文滚动边界",
+    "description": "主栏姓名与履历，左侧教育和能力栏。支持肖像，未上传时显示剪影占位。内容较多时按 A4 自然分页。",
+    "style_categories": [],
+    "use_cases": [],
+    "data": {
+      "schema_version": "canonical-resume.v1",
+      "document_id": "node_featured00000000000000000252",
+      "identity": {
+        "node_id": "node_featured00000000000000000253",
+        "name": {
+          "node_id": "node_featured00000000000000000254",
+          "source_refs": [],
+          "value": "张三"
+        },
+        "headline": {
+          "node_id": "node_featured00000000000000000301",
+          "source_refs": [],
+          "value": "产品经理 · 社招"
+        },
+        "contacts": [
+          {
+            "node_id": "node_featured00000000000000000256",
+            "source_refs": [],
+            "value": "13800000000",
+            "contact_kind": "phone",
+            "label": null
+          },
+          {
+            "node_id": "node_featured00000000000000000257",
+            "source_refs": [],
+            "value": "zhangsan@example.com",
+            "contact_kind": "email",
+            "label": null
+          },
+          {
+            "node_id": "node_featured00000000000000000258",
+            "source_refs": [],
+            "value": "上海",
+            "contact_kind": "location",
+            "label": null
+          }
+        ],
+        "avatar": null
+      },
+      "sections": [
+        {
+          "node_id": "node_featured00000000000000000338",
+          "source_refs": [],
+          "semantic_kind": "profile",
+          "title": {
+            "node_id": "node_featured00000000000000000339",
+            "source_refs": [],
+            "value": "个人简介"
+          },
+          "title_icon": null,
+          "entries": [],
+          "blocks": [
+            {
+              "node_id": "node_featured00000000000000000337",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文校验：内容应完整保留，能够滚动至末尾。长正文结束标记",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "node_id": "node_featured00000000000000000308",
+          "source_refs": [],
+          "semantic_kind": "education",
+          "title": {
+            "node_id": "node_featured00000000000000000309",
+            "source_refs": [],
+            "value": "教育经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000302",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000303",
+                  "source_refs": [],
+                  "value": "示例大学"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000304",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2016.09 — 2020.06",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000305",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "本科 · 信息管理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000306",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000307",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "相关课程：管理学、统计学、组织行为学；完成企业流程调研课程项目。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000326",
+          "source_refs": [],
+          "semantic_kind": "work",
+          "title": {
+            "node_id": "node_featured00000000000000000327",
+            "source_refs": [],
+            "value": "工作经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000310",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000311",
+                  "source_refs": [],
+                  "value": "云杉协作科技有限公司"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000312",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2022.07 — 至今",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000313",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "高级产品经理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000314",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000315",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "负责企业协作平台季度路线图，围绕审批、权限和数据看板梳理需求。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000316",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "访谈 24 位一线用户，将重复反馈归并为 8 类高频场景。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000317",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "组织研发与测试评审，补齐异常分支及验收口径，跟进灰度数据。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000318",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000319",
+                  "source_refs": [],
+                  "value": "青舟信息服务有限公司"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000320",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2020.07 — 2022.06",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000321",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "产品经理",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000322",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000323",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "负责客户后台原型与交互说明，维护版本计划和需求优先级。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000324",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "结合行为数据与客服记录优化新手引导，减少重复配置步骤。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000325",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "建立上线后一周回访机制，将问题纳入下轮迭代。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000335",
+          "source_refs": [],
+          "semantic_kind": "project",
+          "title": {
+            "node_id": "node_featured00000000000000000336",
+            "source_refs": [],
+            "value": "项目经历"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000328",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000329",
+                  "source_refs": [],
+                  "value": "审批流程配置改版"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000330",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "2024.03 — 2024.09",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000331",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "项目协作负责人",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000332",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000333",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "拆解五类使用角色及权限边界，统一流程状态和异常处理。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000334",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "通过两轮原型测试优化配置路径，灰度期任务完成率从 71% 提升至 86%。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000349",
+          "source_refs": [],
+          "semantic_kind": "skills",
+          "title": {
+            "node_id": "node_featured00000000000000000350",
+            "source_refs": [],
+            "value": "专业技能"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000340",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000341",
+                  "source_refs": [],
+                  "value": "产品规划"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000342",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "需求分析、优先级管理、路线图",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000343",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000344",
+                  "source_refs": [],
+                  "value": "数据分析"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000345",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "SQL、漏斗分析、指标口径",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000346",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000347",
+                  "source_refs": [],
+                  "value": "设计协作"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000348",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "Figma、流程图、验收与复盘",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000353",
+          "source_refs": [],
+          "semantic_kind": "certificates",
+          "title": {
+            "node_id": "node_featured00000000000000000354",
+            "source_refs": [],
+            "value": "证书与语言"
+          },
+          "title_icon": null,
+          "entries": [],
+          "blocks": [
+            {
+              "node_id": "node_featured00000000000000000351",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "大学英语六级；能够阅读英文业务材料。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000352",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "持续学习业务分析与沟通方法，定期整理项目复盘。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "source_dispositions": []
+    },
+    "style": {
+      "schema_version": "template-definition.v1",
+      "template_key": "muse-badge-cn",
+      "semantic_labels": {
+        "profile": "个人简介",
+        "work": "工作经历",
+        "education": "教育经历",
+        "project": "项目经历",
+        "skills": "专业技能",
+        "activity": "实践经历",
+        "interests": "兴趣爱好",
+        "certificates": "证书与语言",
+        "awards": "荣誉奖项",
+        "languages": "语言能力"
+      },
+      "regions": [
+        {
+          "region_id": "main",
+          "region_kind": "main",
+          "order": 1
+        },
+        {
+          "region_id": "sidebar",
+          "region_kind": "sidebar",
+          "order": 2
+        }
+      ],
+      "slots": [
+        {
+          "slot_id": "identity",
+          "region_id": "main",
+          "accepts": [
+            "identity"
+          ],
+          "universal_fallback": false,
+          "order": 0
+        },
+        {
+          "slot_id": "support",
+          "region_id": "sidebar",
+          "accepts": [
+            "skills",
+            "certificates",
+            "languages",
+            "interests",
+            "education"
+          ],
+          "universal_fallback": false,
+          "order": 1
+        },
+        {
+          "slot_id": "content",
+          "region_id": "main",
+          "accepts": [
+            "identity",
+            "profile",
+            "work",
+            "education",
+            "project",
+            "skills",
+            "activity",
+            "interests",
+            "certificates",
+            "awards",
+            "languages",
+            "custom"
+          ],
+          "universal_fallback": true,
+          "order": 10
+        }
+      ],
+      "tokens": {
+        "font_family": "system-ui",
+        "font_size_pt": 10.0,
+        "line_height": 1.5,
+        "accent_color": "#204f99",
+        "page_margin_mm": 12.0,
+        "vertical_page_margin_mm": null,
+        "page_margin_top_mm": null,
+        "page_margin_right_mm": null,
+        "page_margin_bottom_mm": null,
+        "page_margin_left_mm": null
+      },
+      "avatar": {
+        "visibility": "show",
+        "fallback_asset": "system-default",
+        "size_px": 94,
+        "region_id": "sidebar"
+      }
+    },
+    "layout_plan": {
+      "schema_version": "layout-plan.v1",
+      "content_sha256": "b8a4b62e13b803be3e7c26b2b376f9588ac32739619f18ee24ef81d7dfb94d2b",
+      "template_key": "muse-badge-cn",
+      "regions": [
+        {
+          "region_id": "main",
+          "order": 1,
+          "nodes": [
+            {
+              "node_id": "node_featured00000000000000000253",
+              "semantic_kind": "identity",
+              "slot_id": "identity"
+            },
+            {
+              "node_id": "node_featured00000000000000000338",
+              "semantic_kind": "profile",
+              "slot_id": "content"
+            },
+            {
+              "node_id": "node_featured00000000000000000326",
+              "semantic_kind": "work",
+              "slot_id": "content"
+            },
+            {
+              "node_id": "node_featured00000000000000000335",
+              "semantic_kind": "project",
+              "slot_id": "content"
+            }
+          ]
+        },
+        {
+          "region_id": "sidebar",
+          "order": 2,
+          "nodes": [
+            {
+              "node_id": "node_featured00000000000000000308",
+              "semantic_kind": "education",
+              "slot_id": "support"
+            },
+            {
+              "node_id": "node_featured00000000000000000349",
+              "semantic_kind": "skills",
+              "slot_id": "support"
+            },
+            {
+              "node_id": "node_featured00000000000000000353",
+              "semantic_kind": "certificates",
+              "slot_id": "support"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "1",
+    "key": "featured-campus-cn",
+    "name": "私有图片 assets 注入",
+    "description": "通栏蓝色介绍与右侧浅底能力栏，以教育、实习和校园实践组织校招履历。",
+    "style_categories": [],
+    "use_cases": [],
+    "data": {
+      "schema_version": "canonical-resume.v1",
+      "document_id": "node_featured00000000000000000001",
+      "identity": {
+        "node_id": "node_featured00000000000000000002",
+        "name": {
+          "node_id": "node_featured00000000000000000003",
+          "source_refs": [],
+          "value": "张三"
+        },
+        "headline": {
+          "node_id": "node_featured00000000000000000004",
+          "source_refs": [],
+          "value": "小学语文教师 · 2027 届校招"
+        },
+        "contacts": [
+          {
+            "node_id": "node_featured00000000000000000005",
+            "source_refs": [],
+            "value": "13800000000",
+            "contact_kind": "phone",
+            "label": null
+          },
+          {
+            "node_id": "node_featured00000000000000000006",
+            "source_refs": [],
+            "value": "zhangsan@example.com",
+            "contact_kind": "email",
+            "label": null
+          },
+          {
+            "node_id": "node_featured00000000000000000007",
+            "source_refs": [],
+            "value": "上海",
+            "contact_kind": "location",
+            "label": null
+          }
+        ],
+        "avatar": {
+          "node_id": "node_private000000000000000001",
+          "source_refs": [],
+          "media_kind": "avatar",
+          "src": "/api/resumes/42/assets/fixture.png",
+          "alt": "虚构私有头像",
+          "width": 108,
+          "width_unit": "px",
+          "height_px": null,
+          "align": null,
+          "system_fallback": false
+        }
+      },
+      "sections": [
+        {
+          "node_id": "node_featured00000000000000000008",
+          "source_refs": [],
+          "semantic_kind": "profile",
+          "title": {
+            "node_id": "node_featured00000000000000000009",
+            "source_refs": [],
+            "value": "求职概述"
+          },
+          "title_icon": null,
+          "entries": [],
+          "blocks": [
+            {
+              "node_id": "node_featured00000000000000000010",
+              "source_refs": [],
+              "block_type": "paragraph",
+              "runs": [
+                {
+                  "inline_type": "text",
+                  "text": "汉语言文学师范专业应届生，预计 2027 年 6 月毕业。已有小学教学见习与课程设计实践，重视学情观察、课堂反馈及与指导教师的沟通。",
+                  "marks": [],
+                  "href": null,
+                  "style": {
+                    "color": null,
+                    "font_size_pt": null,
+                    "highlight_color": null
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "node_id": "node_featured00000000000000000011",
+          "source_refs": [],
+          "semantic_kind": "education",
+          "title": {
+            "node_id": "node_featured00000000000000000012",
+            "source_refs": [],
+            "value": "教育背景"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000013",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000014",
+                  "source_refs": [],
+                  "value": "示例师范大学"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000015",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "汉语言文学（师范）· 本科 · 2023.09—2027.06（预计）",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000016",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000017",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "GPA 3.62/4.0；主修现代汉语、儿童文学、课程与教学论、教育心理学。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000018",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "完成微格教学与说课训练，能依据学习目标设计提问、练习和课堂评价。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000019",
+          "source_refs": [],
+          "semantic_kind": "work",
+          "title": {
+            "node_id": "node_featured00000000000000000020",
+            "source_refs": [],
+            "value": "教学实习"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000021",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000022",
+                  "source_refs": [],
+                  "value": "示例实验小学"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000023",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "语文见习教师 · 2026.03—2026.06",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000024",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000025",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "在指导教师带领下观察 24 节课堂，按提问方式、参与度和练习反馈整理听课记录。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000026",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "协助批改四年级语文练习，按字词、阅读理解与表达分类问题，供指导教师调整复习重点。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000027",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "试讲两次阅读课，依据教师反馈缩短讲授时间，增加学生复述与同伴讨论环节。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000036",
+          "source_refs": [],
+          "semantic_kind": "activity",
+          "title": {
+            "node_id": "node_featured00000000000000000037",
+            "source_refs": [],
+            "value": "校园实践"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000038",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000039",
+                  "source_refs": [],
+                  "value": "校读书协会"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000040",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "活动组织者 · 2024.09—2026.06",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000041",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000042",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "策划 6 场共读活动，负责书目讨论、流程安排与主持，整理参与者反馈供下一期调整。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000043",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "参与社区阅读志愿活动，协助儿童选书与故事复述，依据儿童反馈调整活动节奏，并整理活动记录。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000028",
+          "source_refs": [],
+          "semantic_kind": "project",
+          "title": {
+            "node_id": "node_featured00000000000000000029",
+            "source_refs": [],
+            "value": "课程设计"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000030",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000031",
+                  "source_refs": [],
+                  "value": "校园植物观察写作单元"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000032",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "课程小组负责人 · 2025.10—2025.12",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                },
+                {
+                  "node_id": "node_featured00000000000000000033",
+                  "block_type": "bullet_list",
+                  "start": null,
+                  "items": [
+                    {
+                      "node_id": "node_featured00000000000000000034",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "将观察记录、词语积累与习作修改安排为三课时，明确每节课的学习任务及评价要点。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "node_id": "node_featured00000000000000000035",
+                      "source_refs": [],
+                      "runs": [
+                        {
+                          "inline_type": "text",
+                          "text": "组织 5 人小组完成教案与学习单，用同伴模拟课堂检查任务时长，修改两轮材料。",
+                          "marks": [],
+                          "href": null,
+                          "style": {
+                            "color": null,
+                            "font_size_pt": null,
+                            "highlight_color": null
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        },
+        {
+          "node_id": "node_featured00000000000000000044",
+          "source_refs": [],
+          "semantic_kind": "skills",
+          "title": {
+            "node_id": "node_featured00000000000000000045",
+            "source_refs": [],
+            "value": "技能与资格"
+          },
+          "title_icon": null,
+          "entries": [
+            {
+              "node_id": "node_featured00000000000000000046",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000047",
+                  "source_refs": [],
+                  "value": "教学基础"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000048",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "普通话二级甲等 · 2025；CET-4 · 2024；熟悉课件制作与板书设计。",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "node_id": "node_featured00000000000000000049",
+              "source_refs": [],
+              "fields": {
+                "name": {
+                  "node_id": "node_featured00000000000000000050",
+                  "source_refs": [],
+                  "value": "资格计划"
+                },
+                "organization": null,
+                "role": null,
+                "location": null,
+                "start_date": null,
+                "end_date": null,
+                "url": null,
+                "degree": null,
+                "major": null
+              },
+              "blocks": [
+                {
+                  "node_id": "node_featured00000000000000000051",
+                  "source_refs": [],
+                  "block_type": "paragraph",
+                  "runs": [
+                    {
+                      "inline_type": "text",
+                      "text": "教师资格认定尚未完成；正在整理教育实习材料，计划毕业后按要求办理。",
+                      "marks": [],
+                      "href": null,
+                      "style": {
+                        "color": null,
+                        "font_size_pt": null,
+                        "highlight_color": null
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "blocks": []
+        }
+      ],
+      "source_dispositions": []
+    },
+    "style": {
+      "schema_version": "template-definition.v1",
+      "template_key": "featured-campus-cn",
+      "semantic_labels": {
+        "profile": "个人简介",
+        "work": "工作经历",
+        "education": "教育经历",
+        "project": "项目经历",
+        "skills": "专业技能",
+        "activity": "实践经历",
+        "interests": "兴趣爱好",
+        "certificates": "证书与语言",
+        "awards": "荣誉奖项",
+        "languages": "语言能力"
+      },
+      "regions": [
+        {
+          "region_id": "header",
+          "region_kind": "header",
+          "order": 0
+        },
+        {
+          "region_id": "main",
+          "region_kind": "main",
+          "order": 1
+        },
+        {
+          "region_id": "sidebar",
+          "region_kind": "sidebar",
+          "order": 2
+        }
+      ],
+      "slots": [
+        {
+          "slot_id": "identity",
+          "region_id": "header",
+          "accepts": [
+            "identity",
+            "profile"
+          ],
+          "universal_fallback": false,
+          "order": 0
+        },
+        {
+          "slot_id": "support",
+          "region_id": "sidebar",
+          "accepts": [
+            "skills",
+            "certificates",
+            "awards",
+            "languages",
+            "interests"
+          ],
+          "universal_fallback": false,
+          "order": 1
+        },
+        {
+          "slot_id": "content",
+          "region_id": "main",
+          "accepts": [
+            "identity",
+            "profile",
+            "work",
+            "education",
+            "project",
+            "skills",
+            "activity",
+            "interests",
+            "certificates",
+            "awards",
+            "languages",
+            "custom"
+          ],
+          "universal_fallback": true,
+          "order": 10
+        }
+      ],
+      "tokens": {
+        "font_family": "system-ui",
+        "font_size_pt": 10.0,
+        "line_height": 1.4,
+        "accent_color": "#245bdc",
+        "page_margin_mm": 14.0,
+        "vertical_page_margin_mm": null,
+        "page_margin_top_mm": null,
+        "page_margin_right_mm": null,
+        "page_margin_bottom_mm": null,
+        "page_margin_left_mm": null
+      },
+      "avatar": {
+        "visibility": "show",
+        "fallback_asset": "system-default",
+        "size_px": 64,
+        "region_id": "header"
+      }
+    },
+    "layout_plan": {
+      "schema_version": "layout-plan.v1",
+      "content_sha256": "0d164025ea84c94518ef6cb91ddb7a5a23b1fd5d93bf247dbfd5b4ed59ceb123",
+      "template_key": "featured-campus-cn",
+      "regions": [
+        {
+          "region_id": "header",
+          "order": 0,
+          "nodes": [
+            {
+              "node_id": "node_featured00000000000000000002",
+              "semantic_kind": "identity",
+              "slot_id": "identity"
+            },
+            {
+              "node_id": "node_featured00000000000000000008",
+              "semantic_kind": "profile",
+              "slot_id": "identity"
+            }
+          ]
+        },
+        {
+          "region_id": "main",
+          "order": 1,
+          "nodes": [
+            {
+              "node_id": "node_featured00000000000000000011",
+              "semantic_kind": "education",
+              "slot_id": "content"
+            },
+            {
+              "node_id": "node_featured00000000000000000019",
+              "semantic_kind": "work",
+              "slot_id": "content"
+            },
+            {
+              "node_id": "node_featured00000000000000000036",
+              "semantic_kind": "activity",
+              "slot_id": "content"
+            },
+            {
+              "node_id": "node_featured00000000000000000028",
+              "semantic_kind": "project",
+              "slot_id": "content"
+            }
+          ]
+        },
+        {
+          "region_id": "sidebar",
+          "order": 2,
+          "nodes": [
+            {
+              "node_id": "node_featured00000000000000000044",
+              "semantic_kind": "skills",
+              "slot_id": "support"
+            }
+          ]
+        }
+      ]
+    },
+    "assets": {
+      "/api/resumes/42/assets/fixture.png": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgmJn2HwADmwH/sEIMpQAAAABJRU5ErkJggg=="
+    }
+  }
+]

@@ -47,7 +47,7 @@ def check_name(db, user_id, folder_id, name, exclude_id=None):
                 {
                     "id": str(r.id),
                     "file_name": r.file_name,
-                    "created_at": r.created_at.isoformat(),
+                    "created_at": r.create_time.isoformat(),
                     "content_revision": str(r.content_revision),
                     "replaceable": db.get(DocumentParseTask, r.parse_task_id).upload_status != "uploading"
                     and db.get(DocumentParseTask, r.parse_task_id).parse_status not in ("queued", "processing"),

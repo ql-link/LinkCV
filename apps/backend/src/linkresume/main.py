@@ -23,6 +23,7 @@ from linkresume.core.redis import build_redis_client
 from linkresume.core.storage import AssetStorage
 from linkresume.integrations.document_converter import DocumentConverter
 from linkresume.integrations.linkparse_client import LinkParseClient
+from linkresume.integrations.linkrag_client import build_linkrag_client
 from linkresume.integrations.resume_structuring import LLMResumeStructuringClient
 from linkresume.integrations.wechat_client import WechatClient
 from linkresume.modules.llm.crypto import CredentialCipher
@@ -102,6 +103,7 @@ def create_app(
     plugin_release_service: Any | None = None,
     pi_probe_coordinator: PiProbeCoordinator | None = None,
     speech_gateway: Any | None = None,
+    linkrag_client: Any | None = None,
     create_schema: bool = False,
 ) -> FastAPI:
     runtime_settings = settings or load_settings()
@@ -191,6 +193,17 @@ def create_app(
         ttl_seconds=runtime_settings.resume_import_idempotency_ttl_seconds,
     )
 
+    # Recall client shared by the assistant and mock interview fact checks.
+    # None keeps both on local matching.
+    runtime_linkrag = (
+        linkrag_client
+        if linkrag_client is not None
+        else build_linkrag_client(
+            runtime_settings,
+            timeout_seconds=runtime_settings.linkrag_recall_timeout_seconds,
+        )
+    )
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         try:
@@ -226,6 +239,8 @@ def create_app(
                     exc_info=True,
                     extra={"dependency": "redis", "error_code": "REDIS_CLOSE_FAILED"},
                 )
+            if runtime_linkrag is not None and linkrag_client is None:
+                await asyncio.to_thread(runtime_linkrag.close)
             if runtime_loki_client is not None:
                 try:
                     await asyncio.to_thread(runtime_loki_client.close)
@@ -258,6 +273,7 @@ def create_app(
     app.state.wechat_client = runtime_wechat_client
     app.state.import_idempotency = import_idempotency
     app.state.mq_publisher = runtime_mq_publisher
+    app.state.linkrag_recall = runtime_linkrag
     app.state.import_admission = ImportAdmissionController(
         requests_per_minute=runtime_settings.resume_import_requests_per_minute,
         global_concurrency=runtime_settings.resume_import_global_concurrency,

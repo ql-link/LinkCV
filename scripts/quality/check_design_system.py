@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the machine-readable LinkResume design contract and Settings Pattern."""
+"""Validate the LinkResume Settings Pattern token contract and shared layout CSS."""
 
 from __future__ import annotations
 
@@ -8,58 +8,22 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
 
 
 REPO_ROOT = Path(
     os.environ.get("LINKRESUME_REPO_ROOT", Path(__file__).resolve().parents[2])
 ).resolve()
-DESIGN_FILE = REPO_ROOT / "DESIGN.md"
 TOKENS_FILE = REPO_ROOT / "apps" / "web" / "src" / "design-system" / "tokens.css"
 LAYOUT_PATTERNS_CSS_FILE = REPO_ROOT / "apps" / "web" / "src" / "components" / "ui" / "layout-patterns.css"
 
-REQUIRED_SETTINGS_TOKENS = (
-    "--ui-settings-content-max",
-    "--ui-settings-section-inset",
-    "--ui-settings-row-min-size",
-    "--ui-settings-action-track",
-    "--ui-settings-label-track",
-)
-
-
-def read_design_frontmatter(path: Path) -> dict[str, object]:
-    if not path.is_file():
-        raise ValueError(f"缺少设计事实源：{path.relative_to(REPO_ROOT)}")
-    text = path.read_text(encoding="utf-8")
-    if not text.startswith("---\n"):
-        raise ValueError("DESIGN.md 必须以 YAML frontmatter 开始")
-    _, frontmatter, _ = text.split("---\n", 2)
-    data = yaml.safe_load(frontmatter) or {}
-    if not isinstance(data, dict):
-        raise ValueError("DESIGN.md frontmatter 必须是对象")
-    return data
-
-
-def load_settings_contract(path: Path) -> dict[str, str]:
-    data = read_design_frontmatter(path)
-    pattern = data.get("settingsPattern")
-    if not isinstance(pattern, dict):
-        raise ValueError("DESIGN.md 缺少 machine-readable settingsPattern")
-    contract = pattern.get("tokenContract")
-    if not isinstance(contract, dict):
-        raise ValueError("settingsPattern 缺少 tokenContract")
-
-    errors: list[str] = []
-    values: dict[str, str] = {}
-    for token in REQUIRED_SETTINGS_TOKENS:
-        value = contract.get(token)
-        if not isinstance(value, str) or not value.strip():
-            errors.append(f"settingsPattern.tokenContract 缺少 {token}")
-        else:
-            values[token] = value.strip()
-    if errors:
-        raise ValueError("；".join(errors))
-    return values
+# Settings Pattern 的运行时 Token 契约；tokens.css 必须逐项实现这些值。
+SETTINGS_TOKEN_CONTRACT = {
+    "--ui-settings-content-max": "60rem",
+    "--ui-settings-section-inset": "var(--ui-space-5)",
+    "--ui-settings-row-min-size": "3.5rem",
+    "--ui-settings-action-track": "5rem",
+    "--ui-settings-label-track": "10rem",
+}
 
 
 def parse_token_declarations(path: Path) -> dict[str, str]:
@@ -260,7 +224,7 @@ def check_settings_css(paths: tuple[Path, ...]) -> list[str]:
 
 def main() -> int:
     try:
-        contract = load_settings_contract(DESIGN_FILE)
+        contract = SETTINGS_TOKEN_CONTRACT
         runtime_tokens = parse_token_declarations(TOKENS_FILE)
         errors = [
             f"运行时 Token {token} 应为 {expected}，实际为 {runtime_tokens.get(token, '未定义')}"
@@ -268,7 +232,7 @@ def main() -> int:
             if runtime_tokens.get(token) != expected
         ]
         errors.extend(check_settings_css((LAYOUT_PATTERNS_CSS_FILE,)))
-    except (OSError, ValueError, yaml.YAMLError) as exc:
+    except (OSError, ValueError) as exc:
         print(f"ERROR {exc}", file=sys.stderr)
         return 2
 
@@ -278,7 +242,7 @@ def main() -> int:
         return 1
 
     print(
-        "OK  已校验 DESIGN.md Settings Pattern、5 个运行时 Token 和共享布局 Pattern"
+        "OK  已校验 Settings Pattern 的 5 个运行时 Token 和共享布局 Pattern"
     )
     return 0
 

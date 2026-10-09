@@ -172,6 +172,7 @@
       "required": ["node_id", "runs", "source_refs"],
       "properties": {
         "node_id": {"$ref": "#/$defs/nodeId"},
+        "align": {"enum": ["left", "center", "right", null]},
         "runs": {"type": "array", "maxItems": 2000, "items": {"$ref": "#/$defs/inlineContent"}},
         "source_refs": {"$ref": "#/$defs/sourceRefs"}
       }

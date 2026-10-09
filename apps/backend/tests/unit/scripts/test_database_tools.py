@@ -913,3 +913,45 @@ def test_release_runner_accepts_retired_tables_only_after_0090(monkeypatch):
         with pytest.raises(RuntimeError, match="0090 retired tables still exist"):
             module.validate_schema_revision_alignment(connection, None)
     engine.dispose()
+
+
+def _renamed_marker_runner(monkeypatch, name, applied):
+    module = load_module(name, REPO_ROOT / "scripts/release/run_alembic.py")
+    monkeypatch.setattr(module, "REVISION_TABLE_MARKERS", {"0030": frozenset({"agent_sessions"})})
+    monkeypatch.setattr(module, "REVISION_COLUMN_MARKERS", {"0052": {"agent_sessions": frozenset({"pinned"})}})
+    monkeypatch.setattr(module, "REVISION_REMOVED_COLUMN_MARKERS", {})
+    monkeypatch.setattr(module, "REVISION_REMOVED_INDEX_MARKERS", {})
+    monkeypatch.setattr(module, "_applied_revisions", lambda script, heads: applied)
+    return module
+
+
+def test_release_runner_translates_markers_after_0112_and_0115_renames(monkeypatch):
+    module = _renamed_marker_runner(
+        monkeypatch, "renamed_marker_runner", {"0030", "0052", "0112", "0115"}
+    )
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE agent_session (id INTEGER PRIMARY KEY, is_pinned INTEGER)"))
+        assert module.validate_schema_revision_alignment(connection, None) == ()
+    engine.dispose()
+
+
+def test_release_runner_keeps_original_marker_names_before_0112(monkeypatch):
+    module = _renamed_marker_runner(monkeypatch, "original_marker_runner", {"0030", "0052"})
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, pinned INTEGER)"))
+        assert module.validate_schema_revision_alignment(connection, None) == ()
+    engine.dispose()
+
+
+def test_release_runner_reports_stale_names_after_0115(monkeypatch):
+    module = _renamed_marker_runner(
+        monkeypatch, "stale_marker_runner", {"0030", "0052", "0112", "0115"}
+    )
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, pinned INTEGER)"))
+        with pytest.raises(RuntimeError, match="0030 missing tables: agent_session"):
+            module.validate_schema_revision_alignment(connection, None)
+    engine.dispose()

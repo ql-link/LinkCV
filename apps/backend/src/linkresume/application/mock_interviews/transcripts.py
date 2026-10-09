@@ -1,13 +1,14 @@
 """Voice transcript correction, manual edits and single-question re-evaluation.
 
 All three run only on completed voice interviews and are triggered by the user.
-Correction is limited to recognition errors; any result that changes more than
-``MAX_CHANGE_RATIO`` of the transcript is rejected instead of trusted.
+AI corrections validate edit traces and preserve numbers, negations and roles;
+equivalent grounded terms and number spellings do not consume the edit budget.
+Manual edits remain measured against the original characters.
 """
 
 from __future__ import annotations
 
-import difflib
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from linkresume.application.mock_interviews import prompts, rubric
 from linkresume.application.mock_interviews.outputs import QuestionEvaluation, TranscriptCorrection
+from linkresume.application.mock_interviews.transcript_correction_policy import change_ratio, rejection_reason
 from linkresume.application.mock_interviews.service import (
     LLM_SOURCE,
     MockInterviewError,
@@ -23,8 +25,10 @@ from linkresume.application.mock_interviews.service import (
     _root_id,
     _state_invalid,
     _transcript,
+    legacy_report_fields,
     list_questions,
     require_owned,
+    report_metrics,
     score_root,
 )
 from linkresume.core.database import utc_now
@@ -35,18 +39,6 @@ from linkresume.modules.mock_interviews.models import MockInterview, MockIntervi
 MAX_CHANGE_RATIO = 0.15
 MAX_RE_EVALUATIONS = 3
 CONTEXT_CHARS = 3_000
-
-
-def change_ratio(original: str, corrected: str) -> float:
-    """Share of the original transcript that was replaced, inserted or deleted."""
-    if not original:
-        return 1.0 if corrected else 0.0
-    changed = 0
-    matcher = difflib.SequenceMatcher(a=original, b=corrected, autojunk=False)
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag != "equal":
-            changed += max(i2 - i1, j2 - j1)
-    return changed / len(original)
 
 
 def _completed_voice(db: Session, user_id: int, public_id: str, *, lock: bool = True) -> MockInterview:
@@ -83,6 +75,7 @@ def release_correction(db: Session, interview_id: int) -> None:
     """Undo the claim when correction could not run at all (e.g. model unconfigured)."""
     interview = db.get(MockInterview, interview_id)
     if interview is not None:
+        interview = require_owned(db, interview.user_id, interview.public_id, lock=True)
         interview.transcript_corrected_at = None
         interview.lock_version += 1
         db.commit()
@@ -131,11 +124,15 @@ async def correct_answers(
                             "reason": "model_failed", "changes": []})
             continue
         corrected = value.corrected.strip()
+        reason = None if corrected == original else rejection_reason(
+            original, corrected, value.changes, glossary=glossary, context=context,
+            max_change_ratio=MAX_CHANGE_RATIO,
+        )
         if corrected == original:
             results.append({"question_id": item["question_id"], "state": "original", "changes": []})
-        elif change_ratio(original, corrected) > MAX_CHANGE_RATIO:
+        elif reason:
             results.append({"question_id": item["question_id"], "state": "correction_rejected",
-                            "reason": "change_ratio_exceeded", "changes": []})
+                            "reason": reason, "changes": []})
         else:
             results.append({
                 "question_id": item["question_id"],
@@ -146,11 +143,15 @@ async def correct_answers(
     return results
 
 
+def _locked_current_interview(db: Session, interview_id: int) -> MockInterview:
+    identity = db.execute(select(MockInterview.user_id, MockInterview.public_id).where(MockInterview.id == interview_id)).first()
+    if identity is None:
+        raise MockInterviewError(404, "MOCK_INTERVIEW_NOT_FOUND")
+    return require_owned(db, identity.user_id, identity.public_id, lock=True)
+
+
 def store_corrections(db: Session, interview_id: int, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    interview = db.scalar(
-        select(MockInterview).where(MockInterview.id == interview_id).with_for_update()
-        .execution_options(populate_existing=True)
-    )
+    interview = _locked_current_interview(db, interview_id)
     questions = {item.id: item for item in list_questions(db, interview_id)}
     applied_at = utc_now().isoformat()
     public = []
@@ -226,6 +227,9 @@ def reevaluation_context(db: Session, user_id: int, public_id: str, question_id:
         raise _state_invalid()
     if root.re_evaluate_count >= MAX_RE_EVALUATIONS:
         raise MockInterviewError(409, "MOCK_INTERVIEW_RE_EVALUATE_LIMIT")
+    # 旧版评分的报告只读：没有可复算的逐题结构，重评会把两套口径混在一份报告里。
+    if (interview.report_json or {}).get("rubric_version") != rubric.RUBRIC_VERSION:
+        raise MockInterviewError(409, "MOCK_INTERVIEW_REPORT_OUTDATED")
     db.commit()
     db.expunge(interview)
     for item in questions:
@@ -250,14 +254,14 @@ async def judge_question(llm: LLMService, interview: MockInterview, root, questi
 def store_reevaluation(
     db: Session, interview_id: int, root_id: int, questions, value: QuestionEvaluation | None
 ) -> dict[str, Any]:
-    interview = db.scalar(
-        select(MockInterview).where(MockInterview.id == interview_id).with_for_update()
-        .execution_options(populate_existing=True)
-    )
+    interview = _locked_current_interview(db, interview_id)
     root = db.get(MockInterviewQuestion, root_id)
     if root.re_evaluate_count >= MAX_RE_EVALUATIONS:
         db.rollback()
         raise MockInterviewError(409, "MOCK_INTERVIEW_RE_EVALUATE_LIMIT")
+    if (interview.report_json or {}).get("rubric_version") != rubric.RUBRIC_VERSION:
+        db.rollback()
+        raise MockInterviewError(409, "MOCK_INTERVIEW_REPORT_OUTDATED")
     plan = _plan_items(interview)
     evaluation = score_root(interview, plan[root.plan_index], root, questions, value)
     previous = root.evaluation_json or {}
@@ -276,13 +280,41 @@ def store_reevaluation(
     results = [dict(item) for item in report.get("questions") or []]
     for index, item in enumerate(results):
         if item.get("sequence_no") == root.sequence_no:
-            results[index] = {"topic": item.get("topic"), "sequence_no": root.sequence_no, **evaluation}
-    scores = [float(item["score"]) for item in results]
+            results[index] = {
+                "topic": item.get("topic"),
+                "sequence_no": root.sequence_no,
+                "number": item.get("number"),
+                "is_intro": bool(item.get("is_intro")),
+                "anchor_kind": item.get("anchor_kind") or "resume",
+                **evaluation,
+            }
     previous_total = report.get("total_score")
-    total = rubric.total_score(scores, float(report.get("dimension_score") or 0))
+    previous_verdict = (report.get("verdict") or {}).get("level")
+    voice = report.get("voice_metrics")
+    fact_check = report.get("fact_check") or {}
+    metrics = report_metrics(
+        difficulty=interview.difficulty,
+        language=interview.language,
+        has_job=bool((interview.job_snapshot_json or {}).get("description")),
+        question_results=results,
+        fact_items=list(fact_check.get("items") or []),
+        voice_metrics=voice,
+    )
+    # 评语与行动清单是整场的文字结论，单题重评只复算数字，沿用已有评语。
+    notes = {str(item.get("key")): item.get("comment") or "" for item in report.get("competencies") or []}
+    dimensions = metrics["dimensions"]
+    for dimension in dimensions:
+        dimension["comment"] = notes.get(str(dimension["key"]), "")
+    total = float(metrics["total_score"])
+    verdict = metrics["verdict"]
     report["questions"] = results
-    report["question_average"] = round(sum(scores) / len(scores), 2) if scores else 0.0
     report["total_score"] = total
+    report["verdict"] = verdict
+    report["competencies"] = dimensions
+    report.update(legacy_report_fields(total_score=total, competencies=dimensions, actions=list(report.get("actions") or [])))
+    report["low_confidence"] = metrics["low_confidence"]
+    if voice:
+        report["voice_metrics"] = {**voice, "delivery_score": metrics["voice_delivery"]}
     re_evaluations = list(report.get("re_evaluations") or [])
     re_evaluations.append({
         "sequence_no": root.sequence_no,
@@ -291,10 +323,13 @@ def store_reevaluation(
         "score": evaluation["score"],
         "previous_total": previous_total,
         "total": total,
+        "previous_verdict": previous_verdict,
+        "verdict": verdict["level"],
     })
     report["re_evaluations"] = re_evaluations
     interview.report_json = report
     interview.total_score = Decimal(str(total))
+    interview.is_low_confidence = bool(report["low_confidence"])
     interview.lock_version += 1
     db.commit()
     return {
@@ -325,17 +360,17 @@ def recording_for(db: Session, user_id: int, public_id: str, question_id: int) -
     return question.recording_object_name
 
 
-def delete_recordings(db: Session, user_id: int, public_id: str) -> list[str]:
-    """Detach recordings; returns object names the caller deletes after commit."""
+def delete_recordings(db: Session, user_id: int, public_id: str, *, purge: Callable[[list[str]], None]) -> None:
+    """A failed purge retains references so the caller can retry deletion."""
     interview = require_owned(db, user_id, public_id, lock=True)
     if interview.answer_mode != "voice" or interview.status in ("preparing", "in_progress", "evaluating"):
         raise _state_invalid()
-    names = []
-    for question in list_questions(db, interview.id):
+    questions = list_questions(db, interview.id)
+    names = [question.recording_object_name for question in questions if question.recording_object_name]
+    purge(names)
+    for question in questions:
         if question.recording_object_name:
-            names.append(question.recording_object_name)
             question.recording_object_name = None
     interview.recordings_deleted_at = interview.recordings_deleted_at or utc_now()
     interview.lock_version += 1
     db.commit()
-    return names

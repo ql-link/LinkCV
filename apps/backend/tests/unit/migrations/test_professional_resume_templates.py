@@ -83,5 +83,5 @@ def test_0027_uses_the_supplied_shared_avatar_asset() -> None:
 
     assert avatar_path.is_file()
     assert hashlib.sha256(avatar_path.read_bytes()).hexdigest() == (
-        "b83bf8d17c45370e6c5a19d40e10e9130245d68fb8180508243679c45213cda5"
+        "6aaf8f0b7058cb36006aee353f87f6670e7015054b6e4e2593d3c976bebc48b0"
     )

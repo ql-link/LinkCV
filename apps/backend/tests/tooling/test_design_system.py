@@ -10,7 +10,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 DESIGN_CHECK = REPO_ROOT / "scripts" / "quality" / "check_design_system.py"
 DESIGN_INPUTS = (
-    Path("DESIGN.md"),
     Path("apps/web/src/design-system/tokens.css"),
     Path("apps/web/src/components/ui/layout-patterns.css"),
 )

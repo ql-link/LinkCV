@@ -30,6 +30,23 @@ export const SYSTEM_DEFAULT_AVATAR = "/templates/avatar-cat.jpg";
 // CSS pixels at 96 dpi: a standard 25 × 35 mm one-inch portrait is about 94 × 132 px.
 export const DEFAULT_AVATAR_WIDTH_PX = 94;
 
+/** Use the projected photo width so header spacing follows live resizing. */
+export function resumeEditorAvatarWidth(document: JSONContent | string): number {
+  if (typeof document === "string") return DEFAULT_AVATAR_WIDTH_PX;
+  const findWidth = (node: JSONContent): number | null => {
+    if (node.type === "avatarImage") {
+      const size = Number(node.attrs?.size);
+      return Number.isFinite(size) && size > 0 ? size : DEFAULT_AVATAR_WIDTH_PX;
+    }
+    for (const child of node.content ?? []) {
+      const width = findWidth(child);
+      if (width !== null) return width;
+    }
+    return null;
+  };
+  return findWidth(document) ?? DEFAULT_AVATAR_WIDTH_PX;
+}
+
 function avatarDisplayWidth(size: unknown, templateSize: number) {
   const width = Number(size);
   // Older templates supplied different unadjusted defaults. Keep genuinely resized photos.

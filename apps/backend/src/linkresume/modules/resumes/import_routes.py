@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 import asyncio
 from copy import deepcopy
 import logging
@@ -29,7 +30,7 @@ from linkresume.core.errors import ApiError
 from linkresume.core.mq import MQPublisher, ResumeImportMessage
 from linkresume.core.mq.factory import build_mq_publisher
 from linkresume.core.storage import AssetStorage, build_import_object_name, get_storage
-from linkresume.modules.identity.dependencies import get_current_user, get_settings
+from linkresume.modules.identity.dependencies import get_current_resume_user, get_settings
 from linkresume.modules.identity.models import User
 from linkresume.modules.observability.audit import bind_audit_target
 from linkresume.modules.resumes.models import (
@@ -112,8 +113,8 @@ def import_summary(db: Session, record: DocumentParseTask) -> ResumeImportSummar
         result_resume_id=(
             str(result_resume_id) if result_resume_id is not None else None
         ),
-        created_at=record.created_at,
-        updated_at=record.updated_at,
+        created_at=record.create_time,
+        updated_at=record.update_time,
     )
 
 
@@ -299,7 +300,7 @@ async def import_resume(
         alias="Idempotency-Key",
     ),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
     idempotency: ResumeImportIdempotency = Depends(get_import_idempotency),
