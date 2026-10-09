@@ -22,6 +22,9 @@ const LENS_MAX_WIDTH = 300;
 const LENS_MIN_WIDTH = 220;
 /** Room kept free for the tool rail on the right edge of the canvas. */
 const RAIL_ROOM = 84;
+// While there are analyses the canvas sets aside RAIL_ROOM + LENS_GAP +
+// LENS_MAX_WIDTH on its right (`.workbench-canvas.has-lens`, 412px), so the
+// column stays on screen at any zoom.
 const HEAD_HEIGHT = 30;
 const CARD_HEIGHT = 58;
 const CARD_GAP = 6;
@@ -148,8 +151,12 @@ export function PageLens({
   const paper = relative(paperElement.getBoundingClientRect(), origin);
   const content = relative(editor.view.dom.getBoundingClientRect(), origin);
   const bounds = relative((scroller ?? editor.view.dom).getBoundingClientRect(), origin);
-  const lensLeft = paper.right + LENS_GAP;
-  const lensWidth = Math.min(LENS_MAX_WIDTH, bounds.right - RAIL_ROOM - lensLeft);
+  // Next to the paper, or next to the scroll area once a zoomed paper overflows it.
+  const lensLeft = Math.min(paper.right, bounds.right) + LENS_GAP;
+  const lensWidth = Math.min(LENS_MAX_WIDTH, origin.width - RAIL_ROOM - lensLeft);
+  const linkStart = Math.min(content.right + 6, bounds.right);
+  const markerLeft = content.left - 14;
+  const showMarkers = markerLeft >= bounds.left && markerLeft <= bounds.right;
   const hasColumn = lensWidth >= LENS_MIN_WIDTH;
   // Markers in the page margin and the card column, laid out top to bottom.
   const markers: Array<{ key: string; kind: SectionReviewNoteKind | "done"; top: number; height: number }> = [];
@@ -182,9 +189,9 @@ export function PageLens({
       y = cardTop + CARD_HEIGHT + CARD_GAP;
       if (!line || note.status === "skipped" || note.status === "changed") continue;
       const kind = note.status === "done" ? "done" : note.kind;
-      markers.push({ key: note.id, kind, top: line.top + 2, height: line.bottom - line.top - 4 });
+      if (showMarkers) markers.push({ key: note.id, kind, top: line.top + 2, height: line.bottom - line.top - 4 });
       if (hasColumn) {
-        links.push({ key: note.id, kind, x1: content.right + 6, y1: line.top + 11, x2: lensLeft, y2: cardTop + 20 });
+        links.push({ key: note.id, kind, x1: linkStart, y1: line.top + 11, x2: lensLeft, y2: cardTop + 20 });
       }
     }
     placed.push({ group, top, folded, cards });
@@ -194,7 +201,7 @@ export function PageLens({
   return (
     <div className="sf-lens" aria-label={t("段落分析结果")}>
       {markers.map((marker) => (
-        <i key={marker.key} className={`sf-lens-marker is-${marker.kind}`} style={{ top: marker.top, left: content.left - 14, height: marker.height }} aria-hidden="true" />
+        <i key={marker.key} className={`sf-lens-marker is-${marker.kind}`} style={{ top: marker.top, left: markerLeft, height: marker.height }} aria-hidden="true" />
       ))}
       {hasColumn && (
         <>

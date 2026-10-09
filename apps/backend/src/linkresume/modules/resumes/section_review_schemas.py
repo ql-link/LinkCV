@@ -57,12 +57,24 @@ class GeneralReference(_Request):
 
 
 class JobReference(_Request):
+    """Legacy: the job as the whole reference, judged with the general standard."""
+
     kind: Literal["job"]
     job_id: str = Field(min_length=1, max_length=20)
 
 
+WritingMethod = Literal["star", "xyz", "car"]
+
+
+class MethodReference(_Request):
+    """A named resume-writing method, e.g. STAR, used as the analysis style."""
+
+    kind: Literal["method"]
+    method: WritingMethod
+
+
 SectionReviewReference = Annotated[
-    GeneralReference | JobReference, Field(discriminator="kind")
+    GeneralReference | JobReference | MethodReference, Field(discriminator="kind")
 ]
 
 
@@ -74,15 +86,23 @@ def _check_context(context: list[SectionReviewContext]) -> None:
         raise ValueError("context text is too long")
 
 
+def _check_job(reference: object, job_id: str | None) -> None:
+    if job_id is not None and isinstance(reference, JobReference):
+        raise ValueError("job_id cannot be combined with a job reference")
+
+
 class SectionReviewAnalyzeRequest(_Request):
     section: SectionReviewSection
     context: list[SectionReviewContext] = Field(default_factory=list, max_length=MAX_CONTEXT)
     intent: str | None = Field(default=None, max_length=300)
     reference: SectionReviewReference = Field(default_factory=GeneralReference)
+    # Optional job the resume is aimed at, applied on top of the style.
+    job_id: str | None = Field(default=None, min_length=1, max_length=20)
 
     @model_validator(mode="after")
     def _bounded(self) -> "SectionReviewAnalyzeRequest":
         _check_context(self.context)
+        _check_job(self.reference, self.job_id)
         return self
 
 
@@ -95,6 +115,7 @@ class SectionReviewRewriteRequest(_Request):
     section: SectionReviewSection
     context: list[SectionReviewContext] = Field(default_factory=list, max_length=MAX_CONTEXT)
     reference: SectionReviewReference = Field(default_factory=GeneralReference)
+    job_id: str | None = Field(default=None, min_length=1, max_length=20)
     line_id: str | None = Field(default=None, max_length=64)
     instruction: str | None = Field(default=None, max_length=300)
     answers: list[SectionReviewAnswer] = Field(default_factory=list, max_length=MAX_QUESTIONS)
@@ -102,6 +123,7 @@ class SectionReviewRewriteRequest(_Request):
     @model_validator(mode="after")
     def _bounded(self) -> "SectionReviewRewriteRequest":
         _check_context(self.context)
+        _check_job(self.reference, self.job_id)
         if self.line_id is not None and self.section.line(self.line_id) is None:
             raise ValueError("line_id is not part of the section")
         if not (self.instruction or "").strip() and not self.answers:

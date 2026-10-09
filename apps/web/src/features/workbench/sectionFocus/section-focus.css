@@ -128,6 +128,8 @@
 /* 参照、突出方向、参考段落：一行排下，控件宽度固定，选中后不跳动 */
 .sf-setup { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; margin-top: 10px; min-height: 28px; color: var(--sf-ink3); font-size: 12.5px; }
 .sf-sentence { display: inline-flex; min-width: 0; align-items: center; gap: 6px; }
+/* 紧跟在下拉后面的标点，不留间距 */
+.sf-tight { margin-left: -6px; }
 .sf-context { display: inline-flex; min-width: 0; flex: none; align-items: center; gap: 6px; margin-left: auto; }
 .sf-pick { display: inline-flex; box-sizing: border-box; height: 26px; max-width: 220px; flex: none; align-items: center; gap: 4px; border: 0; border-bottom: 1.5px solid var(--sf-blue); border-radius: 0; background: transparent; padding: 0 2px; color: var(--sf-blue); font: 500 12.5px var(--v3-sans, system-ui); }
 .sf-pick > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -160,6 +162,8 @@
 .sf-menu [role="menuitem"][data-highlighted] { background: #f4f4f2; }
 .sf-menu [role="menuitem"][data-disabled] { opacity: .4; cursor: default; }
 .sf-menu-label { padding: 8px 8px 4px; color: #96968f; font-size: 11px; }
+.sf-menu [role="menuitem"] > .sf-menu-method { display: grid; gap: 1px; white-space: normal; }
+.sf-menu-method small { overflow: hidden; color: #96968f; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .sf-menu-empty { padding: 6px 8px 8px; color: #96968f; font-size: 12px; }
 .sf-menu-box { display: inline-grid; width: 14px; height: 14px; flex: none; place-items: center; border: 1.5px solid #c4c4be; border-radius: 4px; }
 .sf-menu-box svg { width: 10px; height: 10px; color: #fff; stroke-width: 3; }
@@ -265,25 +269,9 @@
 .sf-enter:disabled { background: var(--sf-ink4); }
 .sf-ask > .sf-muted { font-size: 11.5px; white-space: nowrap; }
 .sf-foot { display: flex; align-items: center; gap: 16px; margin-top: 12px; border-top: 1px solid var(--sf-line); border-radius: 0 0 16px 16px; background: #fafaf8; padding: 12px 40px; }
-.sf-ledger { display: flex; min-width: 0; flex: 1; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
-.sf-ledger strong { margin-right: 4px; font-weight: 600; }
-.sf-chip { display: inline-flex; height: 26px; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 13px; background: var(--sf-bg); padding: 0 10px 0 8px; color: var(--sf-ink2); font-size: 12px; }
-.sf-chip .sf-num { font-size: 15px; }
-.sf-chip b { color: var(--sf-ink3); font-size: 11px; font-weight: 500; }
-.sf-chip-missing .sf-num { color: var(--sf-orange); }
-.sf-chip-wording .sf-num,
-.sf-chip-ask .sf-num { color: var(--sf-blue); }
-.sf-chip-structure .sf-num { color: var(--sf-violet); }
-.sf-chip.is-done { background: color-mix(in srgb, var(--sf-green) 8%, #fff); }
-.sf-chip.is-done b { color: var(--sf-green); }
-.sf-chip.is-pending { border: 1px dashed color-mix(in srgb, var(--sf-blue) 50%, transparent); background: #fff; }
-.sf-chip.is-pending b { color: var(--sf-blue); }
-.sf-chip.is-asking,
-.sf-chip.is-loading { background: color-mix(in srgb, var(--sf-orange) 8%, #fff); }
-.sf-chip.is-asking b,
-.sf-chip.is-loading b { color: var(--sf-orange); }
-.sf-chip.is-skipped b,
-.sf-chip.is-stale b { text-decoration: line-through; }
+.sf-ledger { display: flex; min-width: 0; flex: 1; align-items: center; gap: 12px; font-size: 12px; white-space: nowrap; }
+.sf-ledger strong { font-weight: 600; }
+.sf-ledger-count { color: var(--sf-ink3); font-variant-numeric: tabular-nums; }
 .sf-keys { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; color: var(--sf-ink3); font-size: 11.5px; }
 .sf-keys kbd + * { margin-right: 8px; }
 .sf-close { height: 28px; border: 1px solid var(--sf-line2); border-radius: 8px; background: #fff; padding: 0 14px; color: var(--sf-ink); font-size: 12.5px; }

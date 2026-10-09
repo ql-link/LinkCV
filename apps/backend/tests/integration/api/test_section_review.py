@@ -305,6 +305,52 @@ def test_job_reference_uses_owned_job_label(database_url) -> None:
     assert "虚构科技" in gateway.user_messages[0]
 
 
+def test_method_reference_uses_writing_method_standard(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push({"inferred_focus": None, "notes": []})
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "method@example.test")
+        resume_id = create_resume(client, app)
+        response = client.post(
+            f"/api/resumes/{resume_id}/section-review:analyze",
+            json=analyze_payload(reference={"kind": "method", "method": "star"}),
+        )
+        unknown = client.post(
+            f"/api/resumes/{resume_id}/section-review:analyze",
+            json=analyze_payload(reference={"kind": "method", "method": "unknown"}),
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["reference_label"] == "STAR 法则"
+    assert "情境（Situation）" in gateway.user_messages[0]
+    assert unknown.status_code == 422
+    assert gateway.calls == 1
+
+
+def test_style_with_optional_job_combines_both(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push({"inferred_focus": None, "notes": []})
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "style-job@example.test")
+        resume_id = create_resume(client, app)
+        job_id = create_job(client, "虚构科技")
+        response = client.post(
+            f"/api/resumes/{resume_id}/section-review:analyze",
+            json=analyze_payload(reference={"kind": "method", "method": "xyz"}, job_id=job_id),
+        )
+        doubled = client.post(
+            f"/api/resumes/{resume_id}/section-review:analyze",
+            json=analyze_payload(reference={"kind": "job", "job_id": job_id}, job_id=job_id),
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["reference_label"] == "XYZ 公式 · 虚构科技 · 后端开发工程师"
+    assert "XYZ 公式" in gateway.user_messages[0]
+    assert "虚构科技" in gateway.user_messages[0]
+    assert doubled.status_code == 422
+    assert gateway.calls == 1
+
+
 @pytest.mark.parametrize(
     "overrides",
     [

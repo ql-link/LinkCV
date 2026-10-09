@@ -105,8 +105,8 @@ export function WorkbenchTitleInput({ value, disabled, onChange }: WorkbenchTitl
   );
 }
 
-export function workbenchCanvasClassName(drawerMode: DrawerMode) {
-  return `workbench-canvas${drawerMode ? " has-drawer" : ""}`;
+export function workbenchCanvasClassName(drawerMode: DrawerMode, lensReserved = false) {
+  return `workbench-canvas${drawerMode ? " has-drawer" : ""}${lensReserved ? " has-lens" : ""}`;
 }
 
 export function resumeWorkbenchStyle(
@@ -711,6 +711,7 @@ export function ResumeWorkbench({
   const [workspacePadding, setWorkspacePadding] = useState(80);
   const [horizontalScaleOverride, setHorizontalScaleOverride] = useState<number | null>(null);
   const [zoomFeedback, setZoomFeedback] = useState<{ scale: number; sequence: number } | null>(null);
+  const [lensReserved, setLensReserved] = useState(false);
   const [saveErrorNoticeOpen, setSaveErrorNoticeOpen] = useState(false);
   const [pageArrangement, setPageArrangement] = useState<PageArrangement>(() => {
     try {
@@ -1097,7 +1098,7 @@ export function ResumeWorkbench({
 
   const canvas = (
     <main
-      className={workbenchCanvasClassName(embedded ? null : drawerMode)}
+      className={workbenchCanvasClassName(embedded ? null : drawerMode, !embedded && lensReserved)}
     >
       <div
         ref={paperScrollRef}
@@ -1125,6 +1126,7 @@ export function ResumeWorkbench({
           scrollRef={paperScrollRef}
           scale={renderedPreviewScale}
           onNotice={(label) => setToast({ kind: "warning", label })}
+          onLensReserve={setLensReserved}
         />
       )}
 
