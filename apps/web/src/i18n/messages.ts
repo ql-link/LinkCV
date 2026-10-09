@@ -3774,4 +3774,9 @@ export const messages: Record<string, string> = {
   "答到 L{value0} · 未追问到 L{value1}，不扣分": "Answered L{value0} · not probed to L{value1}, no penalty",
   "总分 {value0} / 100": "Total {value0} / 100",
   "找出最需要加强的能力": "Find the competency that needs the most work",
+  "同类型、同难度再练 1 场后显示变化": "Practise one more of the same type and level to see the trend",
+  "添加时间 ›": "Add time ›",
+  "在投岗位练习": "Practice for an active application",
+  "旧版评分 · 1–5 分 · 最近 {value0} 场": "Previous rubric · 1–5 · Last {value0}",
+  "完成第一份评估报告后显示": "Shown after your first report",
 };

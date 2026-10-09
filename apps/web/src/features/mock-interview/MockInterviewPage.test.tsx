@@ -205,6 +205,8 @@ describe("07 模拟面试 · 文字面试", () => {
     // 每页只有一个黑色主按钮：主卡按钮是黑色，页头「开始新面试」降为描边
     expect(document.querySelectorAll(".v3-btn-dark")).toHaveLength(1);
     expect(screen.getByRole("region", { name: "练习数据" })).toHaveTextContent("得分变化");
+    // 示例场次都是旧版报告：能力表现退回旧版五个维度，不留空
+    expect(screen.getByRole("region", { name: "练习数据" })).toHaveTextContent("旧版评分");
 
     fireEvent.click(screen.getByRole("button", { name: /练习记录/ }));
     view.unmount();
@@ -216,14 +218,27 @@ describe("07 模拟面试 · 文字面试", () => {
     expect(table).toHaveTextContent("没有符合条件的练习记录");
   });
 
-  it("新用户：没有安排也没有记录时显示引导卡与占位统计", async () => {
+  it("没有面试安排时，主卡改为最该练的在投岗位，统计卡保持两栏占位", async () => {
     resetMockInterviewStore(false);
+    go("/mock-interviews");
+    render(<MockInterviewPage view="home" />);
+    const focus = await screen.findByRole("region", { name: "在投岗位练习" });
+    expect(within(focus).getByRole("heading", { name: "示例科技 · 后端工程师" })).toBeInTheDocument();
+    expect(within(focus).getByRole("button", { name: "添加面试时间" })).toBeInTheDocument();
+    const stats = screen.getByRole("region", { name: "练习数据" });
+    expect(stats).toHaveTextContent("得分变化");
+    expect(stats).toHaveTextContent("能力表现");
+    expect(screen.getByRole("button", { name: /练习记录/ })).toBeDisabled();
+  });
+
+  it("新用户：没有在投岗位也没有记录时显示引导卡", async () => {
+    resetMockInterviewStore(false);
+    mocks.listJobApplications.mockResolvedValue({ items: [], next_cursor: null });
     go("/mock-interviews");
     render(<MockInterviewPage view="home" />);
     expect(await screen.findByRole("heading", { name: "还没有面试安排，也还没练过" })).toBeInTheDocument();
     expect(screen.getByText("完成第 1 场面试后生成")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "从在投岗位开始" })).toHaveTextContent("示例科技 · 后端工程师");
-    expect(screen.getByRole("button", { name: /练习记录/ })).toBeDisabled();
+    expect(screen.getByRole("region", { name: "从在投岗位开始" })).toBeInTheDocument();
   });
 
   it("已有进行中的场次时，新建会提示并保留在表单页", async () => {
