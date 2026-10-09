@@ -16,6 +16,49 @@ def styled_run(text="张", size=18):
     }
 
 
+def inline_image():
+    return {
+        "inline_type": "media", "media_kind": "inline_image",
+        "node_id": "node_image000000000001", "source_refs": [],
+        "src": "/api/resumes/1/assets/example.png", "alt": "示例图",
+        "width": 48, "width_unit": "px", "height_px": 24,
+        "align": None, "system_fallback": False,
+    }
+
+
+@pytest.mark.parametrize("model", [TextValue, Contact])
+@pytest.mark.parametrize("image_only", [False, True])
+def test_inline_images_round_trip_in_values_and_labels(model, image_only):
+    payload = {"node_id": "node_aaaaaaaaaaaaaaaa", "source_refs": [],
+               "value": "" if image_only else "张三",
+               "runs": [inline_image()] + ([] if image_only else [styled_run("张三")])}
+    if model is Contact:
+        payload.update(contact_kind="other", label="联系人")
+    assert model.model_validate(payload).model_dump(mode="json") == payload
+    schema = json.loads((Path(__file__).resolve().parents[6] / "contracts/resume/canonical-resume.schema.json").read_text())
+    definition = "contact" if model is Contact else "textValue"
+    Draft202012Validator({"$ref": f"#/$defs/{definition}", "$defs": schema["$defs"]}).validate(payload)
+    # A label can itself contain an image; it is a distinct canonical node.
+    payload["prefix_runs"] = [styled_run("联系人："), {**inline_image(), "node_id": "node_image000000000002"}]
+    assert model.model_validate(payload).model_dump(mode="json") == payload
+
+
+def test_contact_still_rejects_empty_content_without_an_image():
+    with pytest.raises(ValidationError, match="requires text or inline media"):
+        Contact(node_id="node_aaaaaaaaaaaaaaaa", source_refs=[], value="", contact_kind="other")
+
+
+def test_agent_text_edit_preserves_inline_images_in_structured_fields():
+    from linkresume.modules.agent.canonical_targets import replace_runs
+
+    image = inline_image()
+    runs = [styled_run("张"), image, styled_run("三")]
+    changed = replace_runs(runs, "张三", "李四", text_only=True)
+    assert image in changed
+    assert "".join(run["text"] for run in changed if run["inline_type"] == "text") == "李四"
+    assert replace_runs([image], "", "张三", text_only=True)[-1] == image
+
+
 @pytest.mark.parametrize("model", [TextValue, Contact])
 def test_optional_styles_preserve_old_payloads_and_round_trip(model):
     payload = {"node_id": "node_aaaaaaaaaaaaaaaa", "source_refs": [], "value": "张三"}

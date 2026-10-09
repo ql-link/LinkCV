@@ -197,3 +197,5 @@ Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的
 ### Canonical 原生目标
 
 任务启动后由 Pi 运行时从镜像内已注册 Markdown 注入工作流规则，模型不读取文件。简历读取使用 canonical 节点：整份读取返回全部可编辑节点及其稳定 ID，章节下的段落可以直接属于章节而没有 entry。修改计划按节点 ID 或带父范围的逐字摘录定位；`rewrite_entry_star` 的目标没有 entry 时，运行时把被修改节点冻结为一个连续 range（服务端记录授权收据）后再诊断和创建提案。读取超过上限时 `truncated=true`：诊断和修改只针对已读取部分并向模型说明，整份翻译因缺少完整数据直接失败为 `RESUME_TOO_LARGE_TO_TRANSLATE`。模型提交的修改在服务端仍复验授权、版本、节点归属和范围。
+
+结构化字段的 `replace_target_text` 在 `canonical_targets.py` 中按纯文字偏移替换 `runs`，保留行内媒体及 `prefix_runs`；图片 alt 不参与字段的预期文字匹配。文字清空后仍包含图片的经历字段不会被删除。完整行内契约见[语义简历契约](../api/http-contracts.md#语义简历契约)。

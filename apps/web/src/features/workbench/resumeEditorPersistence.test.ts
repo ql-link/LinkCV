@@ -691,6 +691,63 @@ const canonicalEditingFixture: CanonicalResumeDocument = {
 };
 
 describe("canonical resume editing projection", () => {
+  it.each(["identity-name", "identity-headline", "section-title", "entry-field", "contact"])(
+    "saves and reloads inline images in %s, including image-only content",
+    (role) => {
+      for (const imageOnly of [false, true]) {
+        const document = clone(canonicalEditingFixture);
+        const projection = canonicalResumeDocumentToEditorDocument(document);
+        const node = projection.content!.find((candidate) => candidate.content?.some(
+          (child) => child.type === "resumeBlockAnchor" && child.attrs?.role === role,
+        ))!;
+        // Keep the contact anchors but remove every contact's visible text.
+        if (imageOnly) node.content = node.content!.filter((child) => child.type === "resumeBlockAnchor");
+        const image = { type: "inlineImage", attrs: { src: "/api/resumes/1/assets/example.png", width: 48, height: 24, alt: "示例图" } };
+        node.content!.unshift(image);
+        node.content!.push(image);
+        const saved = canonicalResumeDocumentFromEditorDocument(projection, document);
+        const restored = canonicalResumeDocumentToEditorDocument(saved);
+        expect(JSON.stringify(saved).match(/example\.png/gu)).toHaveLength(2);
+        expect(canonicalResumeDocumentFromEditorDocument(restored, saved)).toEqual(saved);
+        expect(JSON.stringify(restored).match(/example\.png/gu)).toHaveLength(2);
+      }
+    },
+  );
+
+  it("preserves images inside labels, entry headings and between contact values", () => {
+    const document = clone(canonicalEditingFixture);
+    const projection = canonicalResumeDocumentToEditorDocument(document);
+    const field = projection.content!.find((node) => node.content?.some((child) => child.attrs?.fieldKey === "organization"))!;
+    const label = field.content!.findIndex((child) => child.type === "text" && child.text === "组织：");
+    field.content!.splice(label, 1,
+      { type: "text", text: "组" },
+      { type: "inlineImage", attrs: { src: "/api/resumes/1/assets/label.png", width: 32, height: 24 } },
+      { type: "text", text: "织：" },
+    );
+    const entry = projection.content!.find((node) => node.type === "heading" && node.attrs?.level === 3)!;
+    entry.content!.push({ type: "inlineImage", attrs: { src: "/api/resumes/1/assets/title.png", width: 32, height: 24 } });
+    const contacts = projection.content!.find((node) => node.content?.some((child) => child.attrs?.role === "contact"))!;
+    const secondContact = contacts.content!.findIndex((child) => child.attrs?.blockId === document.identity.contacts[1].node_id);
+    contacts.content!.splice(secondContact, 0, { type: "inlineImage", attrs: { src: "/api/resumes/1/assets/contact.png", width: 32, height: 24 } });
+    const saved = canonicalResumeDocumentFromEditorDocument(projection, document);
+    expect(saved.sections[0].entries[0].fields.organization?.prefix_runs?.some((run) => run.inline_type === "media")).toBe(true);
+    expect(saved.sections[0].entries[0].fields.name?.runs?.some((run) => run.inline_type === "media")).toBe(true);
+    expect(canonicalResumeDocumentFromEditorDocument(canonicalResumeDocumentToEditorDocument(saved), saved)).toEqual(saved);
+  });
+
+  it("keeps each image once in historical contact rows without contact anchors", () => {
+    const document = clone(canonicalEditingFixture);
+    const projection = canonicalResumeDocumentToEditorDocument(document);
+    const contacts = projection.content!.find((node) => node.content?.some((child) => child.attrs?.role === "contact"))!;
+    contacts.content = contacts.content!.filter((child) => child.type !== "resumeBlockAnchor");
+    contacts.content!.unshift({ type: "inlineImage", attrs: { src: "/api/resumes/1/assets/first.png", width: 32, height: 24 } });
+    contacts.content!.push({ type: "inlineImage", attrs: { src: "/api/resumes/1/assets/last.png", width: 32, height: 24 } });
+    const saved = canonicalResumeDocumentFromEditorDocument(projection, document);
+    expect(JSON.stringify(saved.identity.contacts).match(/first\.png/gu)).toHaveLength(1);
+    expect(JSON.stringify(saved.identity.contacts).match(/last\.png/gu)).toHaveLength(1);
+    expect(canonicalResumeDocumentFromEditorDocument(canonicalResumeDocumentToEditorDocument(saved), saved)).toEqual(saved);
+  });
+
   it("preserves partial font sizes in names, titles, contact values and entry fields through save and reload", () => {
     const document = clone(canonicalEditingFixture);
     const values = [
@@ -720,9 +777,10 @@ describe("canonical resume editing projection", () => {
       ];
       savedValues.forEach((value, index) => {
         expect(value.value).toBe(values[index].value);
-        expect(value.runs?.[0].text).toBe(value.value[0]);
-        expect(value.runs?.[0].style.font_size_pt).toBe(12 + index);
-        expect(value.runs?.slice(1).every((run) => run.style.font_size_pt == null)).toBe(true);
+        const textRuns = value.runs?.filter((run) => run.inline_type === "text");
+        expect(textRuns?.[0].text).toBe(value.value[0]);
+        expect(textRuns?.[0].style.font_size_pt).toBe(12 + index);
+        expect(textRuns?.slice(1).every((run) => run.style.font_size_pt == null)).toBe(true);
       });
       const restored = canonicalResumeDocumentToEditorDocument(saved);
       expect(canonicalResumeDocumentFromEditorDocument(restored, saved)).toEqual(saved);
@@ -746,9 +804,9 @@ describe("canonical resume editing projection", () => {
     };
     visit(projection);
     const saved = canonicalResumeDocumentFromEditorDocument(projection, canonicalEditingFixture);
-    expect(saved.identity.contacts[0].prefix_runs?.[0].style.font_size_pt).toBe(18);
+    expect(saved.identity.contacts[0].prefix_runs?.filter((run) => run.inline_type === "text")[0].style.font_size_pt).toBe(18);
     expect(saved.identity.contacts[0].runs).toBeUndefined();
-    expect(saved.sections[0].entries[0].fields.organization?.prefix_runs?.[0].style.font_size_pt).toBe(18);
+    expect(saved.sections[0].entries[0].fields.organization?.prefix_runs?.filter((run) => run.inline_type === "text")[0].style.font_size_pt).toBe(18);
     expect(canonicalResumeDocumentFromEditorDocument(canonicalResumeDocumentToEditorDocument(saved), saved)).toEqual(saved);
   });
 

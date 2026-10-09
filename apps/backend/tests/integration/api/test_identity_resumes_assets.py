@@ -193,6 +193,38 @@ def test_assets_are_private_to_the_current_user() -> None:
             assert stranger.get(asset["url"]).status_code == 403
 
 
+def test_save_and_read_inline_images_in_title_and_contact_label() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        client.post("/api/auth/register", json={"email": "inline@example.com", "password": "password-123"})
+        resume = client.post("/api/resumes", json=resume_payload(app)).json()["resume"]
+        resume_id = resume["id"]
+        uploaded = client.post(f"/api/resumes/{resume_id}/assets", json={
+            "file_name": "example.png", "data_url": "data:image/png;base64,ZXhhbXBsZQ==",
+        })
+        assert uploaded.status_code == 201
+        url = uploaded.json()["asset"]["url"]
+        image = {
+            "node_id": "node_titleimage000001", "source_refs": [], "inline_type": "media",
+            "media_kind": "inline_image", "src": url, "alt": None,
+            "width": 48, "width_unit": "px", "height_px": 24, "align": None, "system_fallback": False,
+        }
+        data = resume["data"]
+        data["identity"]["name"] = {"node_id": "node_name000000000001", "source_refs": [], "value": "", "runs": [image]}
+        data["identity"]["contacts"] = [{
+            "node_id": "node_contact000000001", "source_refs": [], "value": "", "contact_kind": "other", "label": "标签",
+            "prefix_runs": [{**image, "node_id": "node_labelimage000001"}, {
+                "inline_type": "text", "text": "标签：", "marks": [], "href": None,
+                "style": {"color": None, "font_size_pt": None, "highlight_color": None},
+            }],
+        }]
+        saved = client.put(f"/api/resumes/{resume_id}", json={"data": data, "base_lock_version": 1})
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["resume"]["data"] == data
+        assert client.get(f"/api/resumes/{resume_id}").json()["resume"]["data"] == data
+        assert client.delete(url).status_code == 409
+
+
 def test_resume_assets_are_owned_and_protected_only_while_current_content_references_them() -> None:
     app = build_test_app()
     payload = base64.b64encode(b"png-bytes").decode("ascii")
