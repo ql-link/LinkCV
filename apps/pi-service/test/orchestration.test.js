@@ -158,6 +158,25 @@ test("a task that needs the user is blocked, the run stops, and later tasks stay
   assert.equal(h.eventTypes("assistant.delta").filter((event) => !/继续前需要确认/.test(event.delta)).length, 0);
 });
 
+test("a diagnosis step tells the model today's date and which questions it may ask, and a rejected purpose names them", async (t) => {
+  const h = createHarness(t, {
+    intent: { mode: "plan" },
+    tasks: [task("intent_1", "resume_diagnosis", { context_refs: withResume() })],
+    script: [
+      [call("n1", "submit_task_result", { status: "needs_input", summary: "需要确认", question: {
+        purpose: "missing_fact", id: "when", header: "时间", question: "这段实习已经发生了吗？", options: [{ id: "a", label: "已发生" }, { id: "b", label: "计划中" }] } })],
+      submit("s1", "诊断结论"),
+      [say("诊断完成。")],
+    ],
+  });
+  await h.run({ now: () => new Date("2026-10-08T17:00:00Z") });
+  assert.match(h.turns[0].prompt, /今天是 2026-10-09/);
+  assert.match(h.turns[0].prompt, /question\.purpose 只能是 \[\\"content_location\\"\]/);
+  assert.match(h.turns[1].prompt, /AGENT_INTENT_CLARIFICATION_SCOPE_INVALID：本步骤只能用这些问题类别追问 \[\\"content_location\\"\]/);
+  assert.equal(h.eventTypes("clarification.requested").length, 0);
+  assert.deepEqual(h.statuses(), { intent_1: "completed" });
+});
+
 test("without an intent result the chat model plans once, then the runtime executes the plan", async (t) => {
   const h = createHarness(t, {
     intent: { mode: "fallback", reason: "INTENT_TIMEOUT", routing_rules: "唯一的路由规则 RULES-42" },
