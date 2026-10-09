@@ -447,7 +447,11 @@ export type AgentSelectionContext = {
 export type SectionReviewLine = { id: string; text: string };
 export type SectionReviewSection = { entry_id: string; heading: string; lines: SectionReviewLine[] };
 export type SectionReviewContext = { id: string; label: string; text: string };
-export type SectionReviewReference = { kind: "general" } | { kind: "job"; job_id: string };
+export type SectionReviewWritingMethod = "star" | "xyz" | "car";
+export type SectionReviewReference =
+  | { kind: "general" }
+  | { kind: "job"; job_id: string }
+  | { kind: "method"; method: SectionReviewWritingMethod };
 export type SectionReviewQuestion = { id: string; prompt: string; options: string[] };
 export type SectionReviewVariant = { id: string; label: string; text: string; risky_terms: string[] };
 export type SectionReviewProposal = { context_id: string; summary: string; line_id: string; text: string };
@@ -468,6 +472,8 @@ export type SectionReviewAnalyzeRequest = {
   context: SectionReviewContext[];
   intent?: string | null;
   reference: SectionReviewReference;
+  /** Optional job the resume is aimed at, applied on top of the style. */
+  job_id?: string | null;
 };
 export type SectionReviewAnalyzeResponse = {
   reference_label: string;
@@ -480,6 +486,7 @@ export type SectionReviewRewriteRequest = {
   section: SectionReviewSection;
   context: SectionReviewContext[];
   reference: SectionReviewReference;
+  job_id?: string | null;
   line_id: string | null;
   instruction?: string | null;
   answers: Array<{ question: string; answer: string }>;

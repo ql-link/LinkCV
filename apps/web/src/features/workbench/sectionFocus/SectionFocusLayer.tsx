@@ -145,6 +145,7 @@ export function SectionFocusLayer({
   scrollRef,
   scale = 1,
   onNotice,
+  onLensReserve,
 }: {
   editor: Editor;
   resumeId: string;
@@ -152,6 +153,8 @@ export function SectionFocusLayer({
   /** Canvas zoom. The paper is scaled with CSS, which fires no resize, so a change re-measures. */
   scale?: number;
   onNotice: (label: string) => void;
+  /** Whether the canvas should keep the page-lens column free on its right. */
+  onLensReserve?: (reserve: boolean) => void;
 }) {
   const layerRef = useRef<HTMLDivElement>(null);
   const [revision, setRevision] = useState(0);
@@ -376,6 +379,13 @@ export function SectionFocusLayer({
     const notes = snapshot ? snapshotNotes(snapshot, editor) : [];
     return notes.length ? [{ unit, notes }] : [];
   }), [units, editor, analysesVersion, revision]);
+  // Reserved from the first analysis on, also while the sheet is open, so the
+  // paper moves aside once rather than every time the sheet opens or closes.
+  const reserveLens = lensGroups.length > 0;
+  useEffect(() => {
+    onLensReserve?.(reserveLens);
+  }, [onLensReserve, reserveLens]);
+  useEffect(() => () => onLensReserve?.(false), [onLensReserve]);
   const showLens = lensGroups.length > 0 && !focus && !(landing?.recapOpen);
   // The bar's own input keeps its paragraph while it has focus.
   const entryUnit = caretUnit ?? unitById(barUnitId);
@@ -587,8 +597,8 @@ function CommandPalette({
               <dd><button type="button" className="sf-pill" onClick={() => setChoosing(true)}>{unitLabel(target)} ▾</button></dd>
               <dt>{t("要求")}</dt>
               <dd><span className="sf-pill">{query.trim()}</span><span className="sf-muted">{t("来自你的原话")}</span></dd>
-              <dt>{t("参照")}</dt>
-              <dd><span className="sf-pill">{t("通用写作标准")}</span><span className="sf-muted">{t("聚焦后可以换成你保存的岗位")}</span></dd>
+              <dt>{t("风格")}</dt>
+              <dd><span className="sf-pill">{t("STAR 法则")}</span><span className="sf-muted">{t("聚焦后可以换风格，或选要投递的岗位")}</span></dd>
             </dl>
             <div className="sf-understood-actions">
               <button type="submit" className="sf-btn sf-btn-dark">{t("聚焦并分析这一段 ↵")}</button>

@@ -78,6 +78,10 @@
 }
 .wb3 .workbench-canvas.has-drawer { padding-right: 464px; }
 .wb3.is-embedded .workbench-canvas { padding-right: 0; }
+/* 段落分析结果在纸面右侧成栏：有分析时让出这一栏（412 = PageLens 的 RAIL_ROOM + LENS_GAP + LENS_MAX_WIDTH），纸面在左侧剩余区域居中，任意缩放下分析栏都不被挤掉 */
+@media (min-width: 981px) {
+  .wb3 .workbench-canvas.has-lens:not(.has-drawer) { padding-right: 412px; --wb3-pagebar-right: 412px; }
+}
 .wb3 .workbench-paper-scroll { padding: 23px 40px 96px; }
 .wb3 .resume-paper { filter: drop-shadow(0 4px 9px rgb(0 0 0 / 6%)); }
 .wb3 .resume-paper.smart-one-page { box-shadow: 0 4px 18px rgb(0 0 0 / 6%); filter: none; }

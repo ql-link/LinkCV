@@ -213,7 +213,8 @@ Pi 服务令牌保护的 POST/GET `/internal/agent/runs/:runId/steer[/:submissio
 两者的请求都包含：
 - `section`：`{entry_id,heading,lines:[{id,text}]}`，最多 20 行，每行 ≤ 500 字，合计 ≤ 4000 字，行 `id` 不得重复。
 - `context`：`[{id,label,text}]`，最多 6 段，每段 ≤ 1500 字，合计 ≤ 6000 字。
-- `reference`：`{kind:"general"}` 或 `{kind:"job",job_id}`。
+- `reference` 是分析风格：`{kind:"general"}` 或 `{kind:"method",method}`，`method` 为 `star|xyz|car`；未传时按 `general`（通用写作标准：个人贡献、结果量化、具体、简洁、取舍与去重、写法一致六条）。旧形态 `{kind:"job",job_id}` 继续兼容，等于通用写作标准加该岗位。
+- `job_id`：选填的投递岗位，必须属于本人，否则 `404 JOB_NOT_FOUND`；在所选风格之上叠加岗位要求。与旧形态 `{kind:"job"}` 同传返回 422。`reference_label` 为风格名（「STAR 法则」「XYZ 公式」「CAR 法则」「通用写作标准」），有岗位时追加「 · 公司 · 职位」。
 
 `analyze` 另接受 `intent`（≤ 300 字）。`rewrite` 另接受以下字段，`instruction` 和 `answers` 至少提供一项：
 - `line_id`：必须是 `section.lines` 中的 id；为 `null` 表示起草新行。

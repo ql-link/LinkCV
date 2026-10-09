@@ -11,7 +11,7 @@ import {
   type SectionReviewNote,
   type SectionReviewNoteKind,
   type SectionReviewQuestion,
-  type SectionReviewReference,
+  type SectionReviewWritingMethod,
   type SectionReviewVariant,
 } from "../../../api/client";
 import {
@@ -42,7 +42,22 @@ export type AppliedEdit = LineEdit & {
 /** `itemId` opens the sheet on one saved suggestion, e.g. from the page annotations. */
 export type FocusRequest = { unitId: string; intent: string; itemId?: string };
 
-type Reference = SectionReviewReference & { label?: string };
+/** How the paragraph is judged: a fixed writing method, or the general standard. */
+type Style = { kind: "general" } | { kind: "method"; method: SectionReviewWritingMethod };
+/** The job the resume is aimed at; optional, applied on top of the style. */
+type TargetJob = { id: string; label: string };
+
+/** Fixed analysis styles; STAR is the default. */
+const STYLES: Array<{ style: Style; label: string; hint: string }> = [
+  { style: { kind: "method", method: "star" }, label: "STAR 法则", hint: "情境 · 任务 · 行动 · 结果" },
+  { style: { kind: "method", method: "xyz" }, label: "XYZ 公式", hint: "以 Y 衡量的成果 X，通过 Z 实现" },
+  { style: { kind: "method", method: "car" }, label: "CAR 法则", hint: "挑战 · 行动 · 结果，适合紧凑篇幅" },
+  { style: { kind: "general" }, label: "通用写作标准", hint: "动词开头、结果量化、具体简洁、不重复" },
+];
+const DEFAULT_STYLE: Style = { kind: "method", method: "star" };
+
+const sameStyle = (a: Style, b: Style) => a.kind === b.kind && (a.kind !== "method" || (b.kind === "method" && a.method === b.method));
+const styleLabel = (style: Style) => t(STYLES.find((item) => sameStyle(item.style, style))?.label ?? "STAR 法则");
 type Draft = { variants: SectionReviewVariant[]; missing: string[]; baseText: string; lineId: string };
 type ItemStatus = "todo" | "asking" | "loading" | "pending" | "done" | "skipped" | "stale" | "error";
 type Item = {
@@ -71,7 +86,8 @@ export type SheetSnapshot = {
   phase: Extract<Phase, { kind: "ready" }>;
   items: Item[];
   activeId: string | null;
-  reference: Reference;
+  style: Style;
+  job: TargetJob | null;
   intent: string;
   contextIds: string[];
   draftAnswers: string[];
@@ -219,7 +235,8 @@ export function FocusSheet({
   const [restored] = useState(() => (cached ? { ...cached, items: restoreItems(cached.items, editor) } : null));
   // A new instruction from ⌘K asks for a fresh analysis even when one is saved.
   const [autoRun] = useState(() => !restored || Boolean(request.intent.trim()));
-  const [reference, setReference] = useState<Reference>(restored?.reference ?? { kind: "general" });
+  const [style, setStyle] = useState<Style>(restored?.style ?? DEFAULT_STYLE);
+  const [job, setJob] = useState<TargetJob | null>(restored?.job ?? null);
   const [intent, setIntent] = useState(request.intent.trim() ? request.intent : restored?.intent ?? "");
   const [contextIds, setContextIds] = useState<string[]>(() => restored?.contextIds.filter((id) => units.some((item) => item.id === id)) ?? (
     units.filter((item) => item.id !== request.unitId && item.lines.some((line) => line.text.trim())).slice(0, CONTEXT_LIMIT).map((item) => item.id)
@@ -289,7 +306,8 @@ export function FocusSheet({
         section,
         context: contextPayload(units, contextIds),
         intent: intent.trim() || null,
-        reference: reference.kind === "job" ? { kind: "job", job_id: reference.job_id } : { kind: "general" },
+        reference: style,
+        job_id: job?.id ?? null,
       }, controller.signal);
       if (runId !== runIdRef.current) return;
       const baseLines = Object.fromEntries(section.lines.map((line) => [line.id, line.text]));
@@ -340,7 +358,7 @@ export function FocusSheet({
     } finally {
       release(controller);
     }
-  }, [unit, units, resumeId, contextIds, intent, reference, track, release]);
+  }, [unit, units, resumeId, contextIds, intent, style, job, track, release]);
 
   useEffect(() => {
     if (autoRun) void analyze();
@@ -354,9 +372,9 @@ export function FocusSheet({
   const snapshot = useRef<SheetSnapshot | null>(null);
   useEffect(() => {
     snapshot.current = phase.kind === "ready"
-      ? { phase, items, activeId, reference, intent, contextIds, draftAnswers, runId: runIdRef.current }
+      ? { phase, items, activeId, style, job, intent, contextIds, draftAnswers, runId: runIdRef.current }
       : null;
-  }, [phase, items, activeId, reference, intent, contextIds, draftAnswers]);
+  }, [phase, items, activeId, style, job, intent, contextIds, draftAnswers]);
   useEffect(() => () => {
     if (snapshot.current) onSave(request.unitId, snapshot.current);
     // Saved once, on unmount.
@@ -408,7 +426,8 @@ export function FocusSheet({
       const response = await api.rewriteResumeSectionLine(resumeId, {
         section,
         context: contextPayload(units, contextIds),
-        reference: reference.kind === "job" ? { kind: "job", job_id: reference.job_id } : { kind: "general" },
+        reference: style,
+        job_id: job?.id ?? null,
         line_id: payload.lineId,
         instruction: payload.instruction ?? null,
         answers: payload.answers ?? [],
@@ -695,7 +714,7 @@ export function FocusSheet({
     const phrases = [
       t("通读这一段"),
       t("对照其他 {n} 段经历", { n: contextIds.length }),
-      t("对照{reference}", { reference: reference.kind === "job" ? reference.label ?? t("目标岗位") : t("通用写作标准") }),
+      t("对照{reference}", { reference: job ? `${styleLabel(style)} · ${job.label}` : styleLabel(style) }),
       t("整理批注"),
     ];
     const step = waited < 2 ? 0 : waited < 4 ? 1 : waited < 9 ? 2 : 3;
@@ -714,13 +733,7 @@ export function FocusSheet({
     );
   };
 
-  const statusChip = (item: Item) => (
-    <button key={item.id} type="button" className={`sf-chip is-${item.status} sf-chip-${item.kind}`} onClick={() => setActiveId(item.id)}>
-      <span className="sf-num">{item.number ?? t("你")}</span>
-      <span>{(item.note?.title ?? item.instruction).slice(0, 12)}</span>
-      <b>{t(STATUS_LABEL[item.status])}</b>
-    </button>
-  );
+  const handledCount = items.filter((item) => item.status === "done" || item.status === "skipped").length;
 
   return (
     <div className="sf-stage" role="dialog" aria-modal="true" aria-label={t("段落聚焦")}>
@@ -781,36 +794,58 @@ export function FocusSheet({
           <div className="sf-setup">
             <span className="sf-sentence">
               {t("以")}
-              <DropdownMenu onOpenChange={(open) => open && loadJobs()}>
+              <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button type="button" className="sf-pick" aria-label={t("参照")}>
-                    <span>{reference.kind === "job" ? reference.label ?? t("目标岗位") : t("通用写作标准")}</span>
+                  <button type="button" className="sf-pick" aria-label={t("分析风格")}>
+                    <span>{styleLabel(style)}</span>
                     <ChevronDown size={13} aria-hidden="true" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="sf-menu">
-                  <DropdownMenuItem onSelect={() => setReference({ kind: "general" })}>
-                    <span>{t("通用写作标准")}</span>
-                    {reference.kind === "general" && <Check aria-hidden="true" />}
+                <DropdownMenuContent align="start" className="sf-menu sf-menu-wide">
+                  <div className="sf-menu-label">{t("分析风格")}</div>
+                  {STYLES.map((item) => (
+                    <DropdownMenuItem key={item.label} onSelect={() => setStyle(item.style)}>
+                      <span className="sf-menu-method">
+                        {t(item.label)}
+                        <small>{t(item.hint)}</small>
+                      </span>
+                      {sameStyle(item.style, style) && <Check aria-hidden="true" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {t("分析，投递")}
+              <DropdownMenu onOpenChange={(open) => open && loadJobs()}>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className={`sf-pick${job ? "" : " sf-pick-quiet"}`} aria-label={t("投递岗位")}>
+                    <span>{job?.label ?? t("不指定岗位")}</span>
+                    <ChevronDown size={13} aria-hidden="true" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="sf-menu sf-menu-wide">
+                  <div className="sf-menu-label">{t("选填，选了就按岗位要求分析")}</div>
+                  <DropdownMenuItem onSelect={() => setJob(null)}>
+                    <span>{t("不指定岗位")}</span>
+                    {!job && <Check aria-hidden="true" />}
                   </DropdownMenuItem>
-                  {reference.kind === "job" && !jobs?.some((job) => job.id === reference.job_id) && (
+                  {job && !jobs?.some((item) => item.id === job.id) && (
                     <DropdownMenuItem onSelect={() => undefined}>
-                      <span>{reference.label ?? t("目标岗位")}</span>
+                      <span>{job.label}</span>
                       <Check aria-hidden="true" />
                     </DropdownMenuItem>
                   )}
                   <div className="sf-menu-label">{t("已收集的岗位")}</div>
                   {jobsLoading && <div className="sf-menu-empty">{t("正在读取岗位…")}</div>}
                   {!jobsLoading && jobs?.length === 0 && <div className="sf-menu-empty">{t("还没有收集岗位")}</div>}
-                  {jobs?.map((job) => (
-                    <DropdownMenuItem key={job.id} onSelect={() => setReference({ kind: "job", job_id: job.id, label: `${job.company_name} · ${job.job_title}` })}>
-                      <span>{job.company_name} · {job.job_title}</span>
-                      {reference.kind === "job" && reference.job_id === job.id && <Check aria-hidden="true" />}
+                  {jobs?.map((item) => (
+                    <DropdownMenuItem key={item.id} onSelect={() => setJob({ id: item.id, label: `${item.company_name} · ${item.job_title}` })}>
+                      <span>{item.company_name} · {item.job_title}</span>
+                      {job?.id === item.id && <Check aria-hidden="true" />}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
-              {t("为参照，突出")}
+              <span className="sf-tight">{t("，突出")}</span>
               <input
                 className="sf-intent"
                 aria-label={t("想突出的方向")}
@@ -993,7 +1028,7 @@ export function FocusSheet({
         <footer className="sf-foot">
           <div className="sf-ledger" aria-label={t("本段改动")}>
             <strong>{phase.kind === "ready" && doneCount === 0 ? t("原文未改动") : t("本段改动")}</strong>
-            {items.map(statusChip)}
+            {items.length > 0 && <span className="sf-ledger-count">{t("已处理 {done} / {n}", { done: handledCount, n: items.length })}</span>}
           </div>
           <span className="sf-keys">
             <kbd>↑↓</kbd>{t("切换建议")}

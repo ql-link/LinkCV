@@ -237,7 +237,7 @@ FastAPI 的 OpenAI-compatible 请求使用 `LiteLLMGateway` 适配器，LiteLLM 
 `scripts/db/init_mysql.py` 只允许创建名为 `linkresume` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要，再只读核对 Alembic 当前版本与已知 revision 的表、字段标记。发现版本落后但后续对象已存在，或版本已应用但标记对象缺失时，runner 会在任何 DDL 前停止，要求先人工核实并对齐 schema 与 `alembic_version`。FastAPI 配置支持根 `.env`、显式 `LINKRESUME_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。Web Cookie 和小程序 Bearer 分别要求 `web` 与 `miniprogram` channel；上线前缺少 channel 的旧会话仅兼容为 Web，并在续期时补写 channel。对象存储配置仅使用 `MINIO_*`。
 
 编辑器段落精修由 `application/section_review/service.py` 实现，以 `source=section_review` 调用 `section_review` 场景的结构化输出，路由位于 `modules/resumes/section_review_routes.py`。流程分两步：
-1. 在短会话内校验简历归属，并读取参照岗位（复用 `job_matches.service.job_text`）。
+1. 在短会话内校验简历归属，组装参照：分析风格取 `WRITING_METHODS`（STAR / XYZ / CAR）或细化后的 `GENERAL_STANDARD`；选填的 `job_id` 校验本人归属后把岗位要求（复用 `job_matches.service.job_text`）叠加在风格之后。旧的 `{kind:"job"}` 参照仍按通用写作标准加岗位处理。
 2. 关闭会话后调用模型；结构无效时重试一次。
 
 后端只校验和过滤模型输出：锚点必须回到请求文本，结构提案必须引用已发送的上下文。不写简历，不新增表或迁移。用户文本放在 `<data>` 中并声明不是指令。本段文字少于 20 个字时不调用模型。契约见 [HTTP 契约](../api/http-contracts.md#编辑器段落精修)。
