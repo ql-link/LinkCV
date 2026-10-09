@@ -200,6 +200,45 @@ Agent 目标解析、读取、诊断和提案以 canonical 原生节点为唯一
 
 Pi 服务令牌保护的 POST/GET `/internal/agent/runs/:runId/steer[/:submissionKey]` 只协调进程内输入。FastAPI 服务间 POST `/internal/agent/runs/:runId/steering:activate`、`steering:ack` 与 `messages:complete` 分别激活、确认消费和持久化完整回复。工具回调的可信 `X-Agent-User-Sequence` 必须对应当前活动用户消息；不匹配或多消息 run 缺失来源返回 `409 AGENT_REQUEST_SCOPE_STALE`，仍从 run 反查用户与会话，不能把序号当身份。
 
+## 编辑器段落精修
+
+编辑器的段落聚焦使用两个仅限 Web Cookie 会话的接口，不经过 Pi 运行时，也不写入简历：
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `POST` | `/api/resumes/:resumeId/section-review:analyze` | 页边批注 `{reference_label,inferred_focus,too_thin,draft_questions,notes}` |
+| `POST` | `/api/resumes/:resumeId/section-review:rewrite` | 改写候选 `{variants,missing}` |
+
+两者的请求都包含：
+- `section`：`{entry_id,heading,lines:[{id,text}]}`，最多 20 行，每行 ≤ 500 字，合计 ≤ 4000 字，行 `id` 不得重复。
+- `context`：`[{id,label,text}]`，最多 6 段，每段 ≤ 1500 字，合计 ≤ 6000 字。
+- `reference`：`{kind:"general"}` 或 `{kind:"job",job_id}`。
+
+`analyze` 另接受 `intent`（≤ 300 字）。`rewrite` 另接受以下字段，`instruction` 和 `answers` 至少提供一项：
+- `line_id`：必须是 `section.lines` 中的 id；为 `null` 表示起草新行。
+- `instruction`：≤ 300 字。
+- `answers`：`[{question,answer}]`，最多 3 条。
+
+文本由前端按当前编辑器内容提交，节点 id 只回显，后端只校验简历和参照岗位属于本人。
+
+`notes` 最多 6 条，每条 `{id,kind,line_id,quote,title,detail,questions,variants,proposal}`：
+- `kind` 为 `missing`（只给 `questions`）、`wording`（只给 1–2 个 `variants`）或 `structure`（只给 `proposal:{context_id,summary,line_id,text}`）。
+- `variants` 的元素为 `{id,label,text,risky_terms}`；`risky_terms` 只保留出现在改写文本中、比原文更强、需要用户确认属实的词。
+
+服务端丢弃以下内容：
+- 锚点不在请求行中的批注；
+- 引用未发送上下文的结构提案；
+- 缺少追问或改写的批注。
+
+`quote` 不是该行原文片段时置为空字符串。`intent` 非空时 `inferred_focus` 固定为 `null`。本段可分析文字少于 20 个字时不调用模型，返回 `too_thin=true` 和固定的起草问题。
+
+**错误**：
+- 简历不存在或不属于本人：`404 RESUME_NOT_FOUND`。
+- 参照岗位不存在或不属于本人：`404 JOB_NOT_FOUND`。
+- 超出长度或数量限制、`line_id` 不属于本段，或 `instruction` 与 `answers` 都为空：`422`。
+- `section_review` 场景未配置：`503 LLM_MODEL_NOT_CONFIGURED`。
+- 模型失败，或结构两次都无效：`502`，后者错误码为 `LLM_RESPONSE_INVALID`。
+
 ## 简历分享链接
 
 每份简历一个分享链接，分享状态直接落在 `resumes` 表的 `share_*` 字段，不单独建表。分享内容不另落快照：公开读取时实时取简历主记录中最近一次保存成功的 `data/style` 草稿；所有者自动保存成功后，已分享内容随之更新，不要求创建正式版本。管理接口全部要求登录且只能操作本人简历（`404 RESUME_NOT_FOUND`）；公开接口 `/api/share/{token}` 允许未登录访问。
