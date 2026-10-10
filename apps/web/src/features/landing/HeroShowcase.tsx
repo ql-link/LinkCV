@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from "react";
-import { ArrowRight, RotateCcw } from "lucide-react";
+import { ArrowRight, Play, RotateCcw } from "lucide-react";
 import { useLocale } from "@/i18n";
 import wordmark from "@/assets/linkresume-wordmark.png";
 import { HeroDemo, useDemoShots } from "./HeroDemo";
@@ -65,6 +65,8 @@ export function HeroShowcase({ ref }: { ref?: Ref<HeroShowcaseHandle> }) {
   const [phase, setPhaseState] = useState<Phase>(still ? "done" : "video");
   const [film, setFilm] = useState(!still);
   const [src, setSrc] = useState<string>();
+  /** 浏览器拦截自动播放（如 iOS 低电量模式）时显示播放按钮，由用户点击开始。 */
+  const [blocked, setBlocked] = useState(false);
   const stage = useRef<HTMLDivElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -189,7 +191,11 @@ export function HeroShowcase({ ref }: { ref?: Ref<HeroShowcaseHandle> }) {
     allDone().then(() => { if (id === run.current) finish(); }).catch(() => {});
   };
 
-  const play = () => { void video.current?.play()?.catch(() => {}); };
+  const play = () => {
+    void video.current?.play()?.catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "NotAllowedError") setBlocked(true);
+    });
+  };
 
   const restart = () => {
     run.current += 1;
@@ -296,7 +302,7 @@ export function HeroShowcase({ ref }: { ref?: Ref<HeroShowcaseHandle> }) {
   const live = phase === "done";
   const demo = live || phase === "leaving";
   return (
-    <div ref={stage} id="demo" className="fl-hero-stage fl-showcase" data-phase={phase} aria-label={lt(film ? "LinkResume 产品短片" : "LinkResume 产品首页演示")}>
+    <div ref={stage} id="demo" className="fl-hero-stage fl-showcase" data-phase={phase} aria-label={film ? undefined : lt("DrawOffer 产品首页演示")}>
       <div ref={bar} className="fl-showcase-bar">
         {film
           ? <button type="button" onClick={skip}>{lt("跳过短片")}<ArrowRight size={12} strokeWidth={2} /></button>
@@ -311,11 +317,13 @@ export function HeroShowcase({ ref }: { ref?: Ref<HeroShowcaseHandle> }) {
           muted
           playsInline
           preload="none"
-          aria-label={lt("LinkResume 产品短片")}
+          aria-label={lt("DrawOffer 产品短片")}
           aria-hidden={live}
           style={live ? { opacity: 0 } : undefined}
           onEnded={onEnded}
+          onPlaying={() => setBlocked(false)}
         />
+        {blocked && phase === "video" && <button type="button" className="fl-showcase-play" aria-label={lt("播放短片")} onClick={() => { wanted.current = true; play(); }}><Play size={22} strokeWidth={2} /></button>}
         <div ref={win} className="fl-demo-window" style={{ width: VIEW_W, height: VIEW_H, visibility: phase === "video" ? "hidden" : "visible" }}>
           <div ref={bg} className="fl-showcase-bg" style={demo ? { opacity: 1 } : undefined} />
           <div ref={pieces} />

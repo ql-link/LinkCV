@@ -21,8 +21,10 @@ describe("LandingPage", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("懂你经历的求职搭档");
     expect(container.querySelectorAll(".fs-block")).toHaveLength(5);
     expect(container.querySelectorAll(".dc-card")).toHaveLength(6);
-    expect(screen.getByRole("img", { name: "LinkResume 交流群 QQ 二维码" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "首页 · 示例数据" })).toHaveAttribute("src", expect.stringContaining("zh-CN/home"));
+    expect(screen.getByRole("img", { name: "DrawOffer 交流群 QQ 二维码" })).toBeInTheDocument();
+    // 展示区先播短片，播完才拼装成互动演示
+    expect(screen.getByLabelText("DrawOffer 产品短片")).toHaveAttribute("poster", expect.stringContaining("zh-CN/poster"));
+    expect(screen.getByRole("button", { name: "跳过短片" })).toBeInTheDocument();
     const starts = screen.getAllByRole("link", { name: "免费开始" });
     expect(starts).toHaveLength(3);
     for (const link of starts) expect(link).toHaveAttribute("href", "/resumes");
@@ -50,7 +52,7 @@ describe("LandingPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "切换语言" }));
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("The job-search partner that knows your story");
     expect(screen.getAllByRole("link", { name: "Start free" })).toHaveLength(3);
-    expect(screen.getByLabelText("LinkResume product film")).toHaveAttribute("poster", expect.stringContaining("en-US/poster"));
+    expect(screen.getByLabelText("DrawOffer product film")).toHaveAttribute("poster", expect.stringContaining("en-US/poster"));
     expect(document.documentElement.lang).toBe("en-US");
     fireEvent.click(screen.getByRole("button", { name: "Switch language" }));
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("懂你经历的求职搭档");
@@ -58,7 +60,7 @@ describe("LandingPage", () => {
 
   it("常见问题默认展开第一项，点击后切换展开项", () => {
     render(<LandingPage />);
-    const first = screen.getByRole("button", { name: "LinkResume 免费吗？" });
+    const first = screen.getByRole("button", { name: "DrawOffer 免费吗？" });
     const second = screen.getByRole("button", { name: "支持导入哪些格式的简历？" });
     expect(first).toHaveAttribute("aria-expanded", "true");
     expect(second).toHaveAttribute("aria-expanded", "false");

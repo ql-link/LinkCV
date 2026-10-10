@@ -33,11 +33,11 @@ const menus: Record<string, NavGroup[]> = {
   ],
   了解更多: [
     { title: "探索", links: [{ text: "产品能力", target: "#use-cases" }, { text: "更多细节", target: "#features" }, { text: "常见问题", target: "#faq" }] },
-    { title: "LinkResume", links: [{ text: "从哪里开始", target: "#purpose" }] },
+    { title: "DrawOffer", links: [{ text: "从哪里开始", target: "#purpose" }] },
   ],
 };
 const faqs = [
-  { q: "LinkResume 免费吗？", a: "简历编辑、导出和岗位看板都可以免费使用；AI 相关能力按用量提供免费额度，后续会推出更多方案。" },
+  { q: "DrawOffer 免费吗？", a: "简历编辑、导出和岗位看板都可以免费使用；AI 相关能力按用量提供免费额度，后续会推出更多方案。" },
   { q: "我的简历数据安全吗？", a: "简历、岗位和资料保存在你自己的账号里，只在你发起编辑、分析或模拟面试时使用；不需要的内容可以随时删除。" },
   { q: "支持导入哪些格式的简历？", a: "支持 PDF、Word（DOCX）和 Markdown，导入后会整理成可以直接编辑的简历。" },
   { q: "AI 使用的是哪些模型？", a: "对话中可以切换 DeepSeek 等模型，实际可用的模型以工作区里的列表为准。" },
@@ -59,7 +59,7 @@ function Faq() {
   const [open, setOpen] = useState<number | null>(0);
   return <section id="faq" className="fl-faq-section" aria-labelledby="faq-title"><div className="fl-faq fl-container">
     <header data-reveal><p className="fl-eyebrow"><span />{lt("常见问题")}</p><h2 id="faq-title">{lt("加入用户交流群")}</h2><p>{lt("使用问题、功能建议，都可以在群里反馈。")}</p></header>
-    <figure className="fl-faq-qr" data-reveal><div className="fl-faq-qr-code"><img src={groupQr} alt={lt("LinkResume 交流群 QQ 二维码")} width="168" height="168" /><span><img src={brandMark} alt="" width="33" height="33" /></span></div><figcaption>{lt("QQ 扫码加入")}</figcaption></figure>
+    <figure className="fl-faq-qr" data-reveal><div className="fl-faq-qr-code"><img src={groupQr} alt={lt("DrawOffer 交流群 QQ 二维码")} width="168" height="168" /><span><img src={brandMark} alt="" width="33" height="33" /></span></div><figcaption>{lt("QQ 扫码加入")}</figcaption></figure>
     <div className="fl-faq-list">{faqs.map((item, index) => <div className="fl-faq-item" data-reveal style={{ "--reveal-delay": `${index * 0.06}s` } as CSSProperties} key={item.q}>
       <h3><button type="button" id={`faq-question-${index}`} aria-expanded={open === index} aria-controls={`faq-answer-${index}`} onClick={() => setOpen(open === index ? null : index)}>{lt(item.q)}<ChevronDown size={20} strokeWidth={1.6} /></button></h3>
       <div className="fl-faq-answer" id={`faq-answer-${index}`} role="region" aria-labelledby={`faq-question-${index}`} data-open={open === index} inert={open !== index}><div><p>{lt(item.a)}</p></div></div>
@@ -101,7 +101,7 @@ export function FullLanding() {
   return <div ref={page} className={`marketing-landing fl-page${reduced ? " fl-reduced" : ""}${motion ? " fl-motion" : ""}`}>
     <a className="fl-skip" href="#content">{lt("跳到主要内容")}</a>
     <nav ref={nav} className="fl-nav" aria-label={lt("主导航")}>
-      <div className="fl-nav-row fl-container"><a className="fl-logo" href="#top" aria-label={lt("LinkResume 首页")}><img src={wordmark} alt="LinkResume" width="136" height="28" /></a>
+      <div className="fl-nav-row fl-container"><a className="fl-logo" href="#top" aria-label={lt("DrawOffer 首页")}><img src={wordmark} alt="DrawOffer" width="136" height="28" /></a>
         <div className="fl-desktop-links">{Object.keys(menus).map(label => <button key={label} type="button" aria-expanded={menu === label} aria-controls="desktop-menu" onClick={() => setMenu(menu === label ? null : label)}>{lt(label)}<ChevronDown size={11} /></button>)}<a href="#features">{lt("更多细节")}</a><a href="#use-cases">{lt("功能演示")}</a></div>
         <div className="fl-nav-actions">{languageButton}<a className="fl-pill-primary" href={projectUrl}>{lt("免费开始")}</a></div>
         <button className="fl-mobile-toggle" type="button" aria-label={lt(mobileMenu ? "关闭导航菜单" : "打开导航菜单")} aria-expanded={mobileMenu} onClick={() => { setMobileMenu(value => !value); setMenu(null); }}>{mobileMenu ? <X size={21} /> : <Menu size={21} />}</button>
@@ -114,9 +114,9 @@ export function FullLanding() {
         <HeroBackdrop reduced={reduced} />
         <div className="fl-hero-content fl-container">
           <div className="fl-hero-copy">
-            <img className="fl-hero-wordmark" src={wordmark} alt="LinkResume" width="1701" height="349" />
+            <img className="fl-hero-wordmark" src={wordmark} alt="DrawOffer" width="1701" height="349" />
             <h1>{lt("懂你经历的求职搭档")}</h1>
-            <p>{lt("导入简历和项目资料，AI 帮你改简历、对照 JD、模拟面试。")}<br />{lt("每处修改都由你确认后再写入简历。")}</p>
+            <p>{lt("导入简历和项目资料，AI 帮你改简历、对照 JD、模拟面试。")}{/* 手机上换行隐藏，英文两句之间需要空格 */}{locale === "en-US" && " "}<br />{lt("每处修改都由你确认后再写入简历。")}</p>
             <div className="fl-hero-cta"><div className="fl-cta-row"><PrimaryLink /><a className="fl-button-secondary" href="#demo" onClick={event => { event.preventDefault(); showcase.current?.watch(); }}>{lt("看 1 分钟短片")}</a></div><small>{lt("免费使用 · 支持导入 PDF / Word / Markdown 简历")}</small></div>
           </div>
           <HeroShowcase ref={showcase} />
@@ -125,8 +125,8 @@ export function FullLanding() {
       <FeatureShowcase />
       <DetailCards />
       <Faq />
-      <section id="purpose" className="fl-purpose-section"><div className="fl-purpose fl-container" data-reveal><p className="fl-eyebrow"><span />LinkResume</p><h2>{lt("简历、岗位和面试，从这里开始准备")}</h2><div className="fl-cta-row"><PrimaryLink /></div></div></section>
+      <section id="purpose" className="fl-purpose-section"><div className="fl-purpose fl-container" data-reveal><p className="fl-eyebrow"><span />DrawOffer</p><h2>{lt("简历、岗位和面试，从这里开始准备")}</h2><div className="fl-cta-row"><PrimaryLink /></div></div></section>
     </main>
-    <div className="fl-footer-section" inert={mobileMenu}><footer className="fl-footer fl-container" aria-label={lt("页脚导航")}><div className="fl-footer-brand"><a href="#top"><img src={wordmark} alt="LinkResume" width="136" height="28" /></a><p>{lt("懂你经历的求职搭档")}</p><small>© 2026 LinkResume · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">皖ICP备2026017322号</a></small></div><div><h2>{lt("产品功能")}</h2>{footerFeatures.map(([text, target]) => <a key={text} href={target}>{lt(text)}</a>)}</div><div><h2>{lt("了解 LinkResume")}</h2><a href="#features">{lt("更多细节")}</a><a href="#faq">{lt("常见问题")}</a><a href="#top">{lt("返回顶部")}<ArrowUp size={11} /></a></div></footer></div>
+    <div className="fl-footer-section" inert={mobileMenu}><footer className="fl-footer fl-container" aria-label={lt("页脚导航")}><div className="fl-footer-brand"><a href="#top"><img src={wordmark} alt="DrawOffer" width="136" height="28" /></a><p>{lt("懂你经历的求职搭档")}</p><small>© 2026 DrawOffer · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">皖ICP备2026017322号</a></small></div><div><h2>{lt("产品功能")}</h2>{footerFeatures.map(([text, target]) => <a key={text} href={target}>{lt(text)}</a>)}</div><div><h2>{lt("了解 DrawOffer")}</h2><a href="#features">{lt("更多细节")}</a><a href="#faq">{lt("常见问题")}</a><a href="#top">{lt("返回顶部")}<ArrowUp size={11} /></a></div></footer></div>
   </div>;
 }

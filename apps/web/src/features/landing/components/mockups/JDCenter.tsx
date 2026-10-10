@@ -1,6 +1,6 @@
 import { Search } from 'lucide-react'
 import { ChromeIcon } from '../ChromeIcon'
-import brandMark from '@/assets/linkresume-mark.png'
+import brandMark from '@/assets/drawoffer-mark.png'
 
 const jobs = [
   { title: '高级产品经理', company: '某科技公司', salary: '30-50K·14薪', active: true },
@@ -47,7 +47,7 @@ export function ExtensionPopup() {
     <div className="w-full max-w-[300px] overflow-hidden rounded-lg border border-black/[0.08] bg-white shadow-2xl shadow-black/15 dark:border-white/10 dark:bg-[#101013] dark:shadow-black/60">
       <div className="flex items-center gap-2 border-b border-black/[0.06] px-3.5 py-2.5 dark:border-white/[0.07]">
         <img className="h-5 w-5 object-contain dark:invert" src={brandMark} alt="" aria-hidden="true" width="1080" height="1080" />
-        <span className="text-[11px] font-medium text-zinc-800 dark:text-zinc-200">LinkResume 采集助手</span>
+        <span className="text-[11px] font-medium text-zinc-800 dark:text-zinc-200">DrawOffer 采集助手</span>
         <ChromeIcon className="ml-auto h-3.5 w-3.5 text-zinc-400 dark:text-zinc-600" />
       </div>
       <div className="px-3.5 py-3">
@@ -59,7 +59,7 @@ export function ExtensionPopup() {
             负责求职工具产品规划与迭代，推动简历编辑、导出等核心链路优化…
           </div>
         </div>
-        <button className="mt-3 w-full rounded-full bg-zinc-900 py-1.5 text-[11px] font-medium text-white dark:bg-white dark:text-black">确认导入 LinkResume</button>
+        <button className="mt-3 w-full rounded-full bg-zinc-900 py-1.5 text-[11px] font-medium text-white dark:bg-white dark:text-black">确认导入 DrawOffer</button>
         <div className="mt-2 text-center text-[9px] text-zinc-400 dark:text-zinc-600">仅读取当前打开的岗位页 · 需手动确认</div>
       </div>
     </div>
