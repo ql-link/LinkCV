@@ -23,6 +23,7 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -50,6 +51,7 @@
 
 .tally {
   display: flex;
+  flex-wrap: wrap;
   gap: 14px;
 }
 

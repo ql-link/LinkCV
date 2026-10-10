@@ -5,6 +5,7 @@ import { getSettings, onStorageChange, type Settings } from '../../src/autofill/
 import {
   activeTab,
   clearMarks,
+  clearPageValues,
   focusField,
   initialRunState,
   pageOrigin,
@@ -40,15 +41,16 @@ function statusText(item: ResultItem) {
     case 'failed':
       return '填写失败，请手动处理';
     case 'skipped':
-      return '控件不可用';
+      return '控件不可用或无法确认，未自动填写';
     default:
       return '未执行';
   }
 }
 
-function bucketOf(item: ResultItem): 'pending' | 'filled' | 'none' {
+function bucketOf(item: ResultItem): 'pending' | 'filled' | 'kept' | 'none' {
   if (item.status === 'none') return 'none';
-  if (item.status === 'kept' || item.fill === 'filled' || item.fill === 'kept') return 'filled';
+  if (item.status === 'kept' || item.fill === 'kept') return 'kept';
+  if (item.fill === 'filled') return 'filled';
   return 'pending';
 }
 
@@ -106,6 +108,10 @@ function AutofillPanel() {
   const [tab, setTab] = useState<{ id?: number; origin: string | null }>({ origin: null });
   const [run, setRun] = useState<RunState | null>(null);
   const [running, setRunning] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const clearingRef = useRef(false);
+  const [clearTarget, setClearTarget] = useState<{ id: number; origin: string } | null>(null);
+  const [clearNotice, setClearNotice] = useState('');
   const [showNone, setShowNone] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -127,7 +133,7 @@ function AutofillPanel() {
           setSnapshot(selected.snapshot);
           setResumeId(selected.snapshot.resume_id);
         } else {
-          abortRef.current?.abort();
+          if (!clearingRef.current) abortRef.current?.abort();
           setSnapshot(null);
           setRun(null);
           if (selected) await clearSnapshot();
@@ -135,7 +141,7 @@ function AutofillPanel() {
         setNotice('');
       } catch (error) {
         if (disposed || revision !== generation) return;
-        abortRef.current?.abort();
+        if (!clearingRef.current) abortRef.current?.abort();
         setSnapshot(null);
         setRun(null);
         setNotice(error instanceof Error ? error.message : '连接失败，请重试');
@@ -152,19 +158,25 @@ function AutofillPanel() {
   }, []);
 
   useEffect(() => {
+    let revision = 0;
+    let disposed = false;
     const refresh = async () => {
+      const current = ++revision;
       const t = await activeTab();
+      if (disposed || current !== revision) return;
       setTab({ id: t?.id, origin: pageOrigin(t?.url) });
     };
     refresh();
     const onUpdated = (id: number, info: { status?: string; url?: string }) => {
       if (id === runTab.current && (info.url || info.status === 'loading')) abortRef.current?.abort();
+      if (info.url || info.status === 'loading') setClearTarget(null);
       if (info.url || info.status === 'complete') void refresh();
     };
-    const onActivated = () => { abortRef.current?.abort(); void refresh(); };
+    const onActivated = () => { abortRef.current?.abort(); setClearTarget(null); void refresh(); };
     browser.tabs.onActivated.addListener(onActivated);
     browser.tabs.onUpdated.addListener(onUpdated);
     return () => {
+      disposed = true;
       browser.tabs.onActivated.removeListener(onActivated);
       browser.tabs.onUpdated.removeListener(onUpdated);
     };
@@ -174,27 +186,25 @@ function AutofillPanel() {
   const missing = !connection ? '无法连接 LinkResume' : !connection.user ? '请先在 LinkResume 登录' : !profile ? '请选择并导入一份简历' : null;
 
   const start = async () => {
-    if (starting.current || !tab.origin || tab.id == null || !settings || !snapshot || !connection?.user) return;
+    if (starting.current || clearTarget || !tab.origin || tab.id == null || !settings || !snapshot || !connection?.user) return;
     starting.current = true;
     const targetTab = tab.id;
     const expectedUser = connection.user.id;
-    // 授权请求必须是点击后的第一个异步操作
-    let granted: boolean;
-    try { granted = await requestPageAccess(tab.origin); }
-    catch { starting.current = false; setRun({ ...initialRunState(), error: '无法申请网站权限，请重新打开插件' }); return; }
-    if (!granted) {
-      starting.current = false;
-      setRun({ ...initialRunState(), error: '没有获得当前网站的访问权限' });
-      return;
-    }
     const controller = new AbortController();
     abortRef.current = controller;
     runTab.current = targetTab;
     resultTab.current = targetTab;
     setRunning(true);
     setShowNone(false);
+    setClearNotice('');
     setRun(initialRunState());
     try {
+      // 申请权限必须是点击后的第一个异步操作；等待授权时也要取消页面切换。
+      let granted: boolean;
+      try { granted = await requestPageAccess(tab.origin); }
+      catch { throw new Error('无法申请网站权限，请重新打开插件'); }
+      if (controller.signal.aborted) throw new Error('页面已刷新或切换，请重新开始');
+      if (!granted) throw new Error('没有获得当前网站的访问权限');
       const fresh = await loadSnapshot(connection, snapshot.resume_id, controller.signal);
       if (controller.signal.aborted) return;
       setSnapshot(fresh);
@@ -206,7 +216,12 @@ function AutofillPanel() {
         (patch) => setRun((current) => patch(current ?? initialRunState())), controller.signal);
     } catch (error) {
       setRun({ ...initialRunState(), error: error instanceof Error ? error.message : '读取资料失败' });
-    } finally { starting.current = false; setRunning(false); runTab.current = null; }
+    } finally {
+      starting.current = false;
+      setRunning(false);
+      runTab.current = null;
+      if (abortRef.current === controller) abortRef.current = null;
+    }
 
   };
 
@@ -217,9 +232,40 @@ function AutofillPanel() {
     setRun(null);
   };
 
+  const clearAll = async () => {
+    if (starting.current || !clearTarget || tab.id !== clearTarget.id || tab.origin !== clearTarget.origin) return;
+    const target = clearTarget;
+    starting.current = true;
+    clearingRef.current = true;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    runTab.current = target.id;
+    setClearing(true);
+    setClearNotice('');
+    setClearTarget(null);
+    try {
+      const granted = await requestPageAccess(target.origin);
+      if (controller.signal.aborted) throw new Error('页面已刷新或切换，清除已停止');
+      if (!granted) throw new Error('没有获得当前网站的访问权限，未清除内容');
+      const report = await clearPageValues(target.id, target.origin, controller.signal);
+      if (controller.signal.aborted) throw new Error('页面已刷新或切换，清除已停止');
+      setRun(null);
+      setClearNotice(`已清除 ${report.cleared} 个字段，${report.empty} 个原本为空。${report.failed.length ? `还有 ${report.failed.length} 个控件未能清空，请手动处理：${report.failed.join('、')}。` : ''}禁用、只读字段及附件保留。`);
+    } catch (error) {
+      setClearNotice(error instanceof Error ? error.message : '清除失败，请重试');
+    } finally {
+      starting.current = false;
+      clearingRef.current = false;
+      runTab.current = null;
+      setClearing(false);
+      if (abortRef.current === controller) abortRef.current = null;
+    }
+  };
+
   const items = run?.items ?? [];
   const pending = items.filter((i) => bucketOf(i) === 'pending');
   const filled = items.filter((i) => bucketOf(i) === 'filled');
+  const kept = items.filter((i) => bucketOf(i) === 'kept');
   const none = items.filter((i) => bucketOf(i) === 'none');
   const rowNotes = (run?.rows ?? []).filter((r) => r.note || r.added < r.wanted - r.had);
   const focus = (uid: string) => (runTab.current ?? resultTab.current) != null && focusField((runTab.current ?? resultTab.current)!, uid);
@@ -236,11 +282,11 @@ function AutofillPanel() {
       <section className="block">
         <div className="muted small">{loading ? '正在连接…' : connection?.user ? (connection.user.nickname || connection.user.email || '已登录') : '尚未登录'}{connection && <span> · {connection.origin}</span>}</div>
         <div className="resume-picker">
-          <select aria-label="选择简历" value={resumeId} disabled={running || !connection?.user} onChange={(event) => setResumeId(event.target.value)}>
+          <select aria-label="选择简历" value={resumeId} disabled={running || clearing || !connection?.user} onChange={(event) => setResumeId(event.target.value)}>
             <option value="">选择一份简历</option>
             {resumes.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
           </select>
-          <button className="btn" disabled={running || !resumeId || !connection?.user} onClick={async () => {
+          <button className="btn" disabled={running || clearing || !resumeId || !connection?.user} onClick={async () => {
             if (!connection) return;
             try { const imported = await loadSnapshot(connection, resumeId); await saveSnapshot(connection.origin, imported); setSnapshot(imported); setRun(null); }
             catch (error) { setNotice(error instanceof Error ? error.message : '导入失败'); }
@@ -276,20 +322,32 @@ function AutofillPanel() {
       </section>
 
       <div className="actions">
-        <button className="btn btn-primary" disabled={!!missing || !tab.origin || running || loading} onClick={start}>
+        <button className="btn btn-primary" disabled={!!missing || !tab.origin || running || clearing || !!clearTarget || loading} onClick={start}>
           {running ? '填写中…' : run ? '重新填写' : '开始填写'}
         </button>
-        {running && (
+        {(running || clearing) && (
           <button className="btn" onClick={stop}>
             停止
           </button>
         )}
-        {!running && run && (
+        {!running && !clearing && run && (
           <button className="btn" onClick={reset}>
             清除标记
           </button>
         )}
+        <button className="btn" disabled={!tab.origin || tab.id == null || running || clearing || !!clearTarget} onClick={() => {
+          if (tab.id != null && tab.origin) setClearTarget({ id: tab.id, origin: tab.origin });
+        }}>{clearing ? '清除中…' : '全部清除'}</button>
       </div>
+
+      {clearTarget && <section className="notice" role="alertdialog" aria-label="确认全部清除">
+        <div>清空 {clearTarget.origin} 当前页面可编辑的表单内容？包括手动输入及之前各轮填写的内容，清除后无法从插件撤销。附件和只读字段保留，不删除经历条目，不提交表单。</div>
+        <div className="actions">
+          <button className="btn" onClick={() => setClearTarget(null)}>取消</button>
+          <button className="btn" onClick={clearAll}>确认全部清除</button>
+        </div>
+      </section>}
+      {clearNotice && <div role="status" className="notice small">{clearNotice}</div>}
 
       {run && (
         <section className="block">
@@ -320,13 +378,14 @@ function AutofillPanel() {
           <section className="block">
             <div className="tally">
               <span>
-                <span className="dot filled" /> 已填 {filled.length}
+                <span className="dot filled" /> 本轮已填 {filled.length}
               </span>
+              <span>保留已有 {kept.length}</span>
               <span>
                 <span className="dot pending" /> 待处理 {pending.length}
               </span>
               <span>
-                <span className="dot" /> 无对应 {none.length}
+                <span className="dot" /> 跳过 {none.length}
               </span>
             </div>
             {pending.length > 0 && (
@@ -349,9 +408,13 @@ function AutofillPanel() {
                 </ul>
               </>
             )}
+            {kept.length > 0 && <>
+              <h2>保留已有内容</h2>
+              <ul className="rows">{kept.map((i) => <ResultRow key={i.uid} item={i} onFocus={() => focus(i.uid)} />)}</ul>
+            </>}
             {none.length > 0 && (
               <button className="btn-link small" onClick={() => setShowNone((v) => !v)}>
-                {showNone ? '收起' : `查看 ${none.length} 个无对应字段`}
+                {showNone ? '收起' : `查看 ${none.length} 个跳过字段`}
               </button>
             )}
             {showNone && (

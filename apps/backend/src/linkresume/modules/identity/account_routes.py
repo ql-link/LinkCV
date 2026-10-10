@@ -38,6 +38,7 @@ from linkresume.modules.identity.models import AccountPreference, User, UserProf
 from linkresume.modules.identity.default_avatar import is_custom_avatar
 from linkresume.modules.identity.schemas import (
     AccountProfileResponse,
+    ApplicationImportPreview,
     AvatarResponse,
     AvatarUploadRequest,
     ChangePasswordRequest,
@@ -57,6 +58,10 @@ from linkresume.modules.identity.schemas import (
     AccountDeletionRequest, AccountDeletionStatusRequest,
 )
 from linkresume.modules.resumes.models import Resume
+from linkresume.application.resumes.service import find_owned_resume
+from linkresume.domain.resume.models import CanonicalResumeDocument
+from linkresume.modules.browser_extension.profile import project
+from .application_data import import_preview
 
 router = APIRouter(prefix="/account", tags=["account"])
 MAX_AVATAR_BYTES = 10 * 1024 * 1024
@@ -156,6 +161,8 @@ def _apply_profile_fields(
     profile.certifications = list(payload.certifications)
     profile.honors = list(payload.honors)
     profile.campus_experiences = list(payload.campus_experiences)
+    if "application_data" in payload.model_fields_set:
+        profile.application_data = payload.application_data.model_dump(mode="json") if payload.application_data else None
 
 
 @router.get("/profile", response_model=AccountProfileResponse)
@@ -265,6 +272,11 @@ def put_user_profile(
     db: Session = Depends(get_db),
 ) -> UserProfileData:
     user = lock_active_user(db, user.id)
+    if payload.application_data:
+        ids = set(payload.application_data.resume_ids) | {r.source.resume_id for r in payload.application_data.records if r.source}
+        owned = {str(id) for id in db.scalars(select(Resume.id).where(Resume.user_id == user.id, Resume.id.in_([int(id) for id in ids])))}
+        if ids != owned:
+            raise ApiError(400, "INVALID_USER_PROFILE", details={"message": "网申资料只能关联本人已有简历"})
     current = _select_user_profile(db, user.id)
 
     # 首次写入：尝试 INSERT，并发时 UNIQUE 冲突回退到 409。
@@ -328,6 +340,8 @@ def put_user_profile(
             certifications=list(payload.certifications),
             honors=list(payload.honors),
             campus_experiences=list(payload.campus_experiences),
+            **({"application_data": payload.application_data.model_dump(mode="json") if payload.application_data else None}
+               if "application_data" in payload.model_fields_set else {}),
         )
     )
     if updated.rowcount == 0:
@@ -347,6 +361,17 @@ def put_user_profile(
         raise
     db.refresh(current)
     return _user_profile_data(current)
+
+
+@router.get("/user-profile/resume-preview/{resume_id}", response_model=ApplicationImportPreview)
+def preview_application_import(resume_id: str, user: User = Depends(get_current_account_user), db: Session = Depends(get_db)):
+    resume = find_owned_resume(db, resume_id, user.id)
+    if resume is None:
+        raise ApiError(404, "RESUME_NOT_FOUND")
+    document = CanonicalResumeDocument.model_validate(resume.data_json)
+    profile, warnings, _ = project(document.model_dump(mode="json"))
+    return ApplicationImportPreview(resume_id=str(resume.id), resume_lock_version=resume.lock_version,
+        title=resume.title, application_data=import_preview(profile, str(resume.id), warnings), warnings=list(dict.fromkeys(warnings)))
 
 
 @router.patch("/profile", response_model=UserProfileResponse)

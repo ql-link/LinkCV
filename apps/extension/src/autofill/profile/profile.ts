@@ -79,7 +79,7 @@ export function lookup(profile: Profile, key: string, index = 0): ProfileValue {
   let list = entriesOf(profile, group);
   if (group === 'work' || group === 'internship') {
     const other = entriesOf(profile, group === 'work' ? 'internship' : 'work');
-    list = [...list, ...other];
+    if (!list.length) list = other;
     // 实习字段名与工作字段名一致，可以直接混用。
   }
   return list[index]?.[field];

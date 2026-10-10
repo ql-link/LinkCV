@@ -2,6 +2,9 @@
 import re
 from datetime import date as calendar_date
 
+from .source_fields import person_name, recover_entries
+from linkresume.modules.identity.application_data import ApplicationData, merge_application
+
 
 def text(value):
     return value.get("value", "").strip() if isinstance(value, dict) else ""
@@ -36,13 +39,13 @@ def date(value):
     return raw if re.fullmatch(r"\d{4}", raw) else ""
 
 
-def project(document, user_profile=None):
+def project(document, user_profile=None, resume_id=None):
     profile = {}
     warnings = []
     identity = document.get("identity", {})
     name = text(identity.get("name"))
     if name:
-        profile["basics"] = {"name": name}
+        profile["basics"] = {"name": person_name(name)}
     contact = {}
     links = {}
     for item in identity.get("contacts", []):
@@ -62,7 +65,7 @@ def project(document, user_profile=None):
     for section in document.get("sections", []):
         kind = section.get("semantic_kind")
         group = {"education": "education", "work": "work", "project": "projects",
-                 "awards": "awards", "certificates": "certificates", "languages": "languages"}.get(kind)
+                 "awards": "awards", "certificates": "certificates", "languages": "languages", "activity": "campus"}.get(kind)
         if kind == "work" and re.search(r"实习|internship", text(section.get("title")), re.I):
             group = "internship"
         if kind == "skills":
@@ -78,6 +81,13 @@ def project(document, user_profile=None):
             if section.get("entries") and kind not in {"skills", "profile"}:
                 warnings.append(f"「{text(section.get('title')) or kind}」未映射，请在填写时核对")
             continue
+        if not section.get("entries") and section.get("blocks"):
+            recovered = recover_entries(section, group, block_text, date)
+            if recovered:
+                profile.setdefault(group, []).extend(recovered)
+                warnings.append(f"「{text(section.get('title')) or kind}」仅使用正文中明确的资料，其余字段请补充")
+            else:
+                warnings.append(f"「{text(section.get('title')) or kind}」资料无法明确分项，未用于自动填写")
         for entry in section.get("entries", []):
             fields = entry.get("fields", {})
             item = {}
@@ -89,19 +99,20 @@ def project(document, user_profile=None):
                 "awards": {"name": "title"},
                 "certificates": {"name": "name"},
                 "languages": {"name": "language", "role": "level"},
+                "campus": {"organization": "organization", "role": "title", "name": "name"},
             }[group]
             for source, target in mapping.items():
                 if value := text(fields.get(source)):
                     item[target] = value
-            if group in {"education", "work", "internship", "projects"}:
+            if group in {"education", "work", "internship", "projects", "campus"}:
                 for source, target in [("start_date", "enrollDate" if group == "education" else "startDate"),
                                        ("end_date", "gradDate" if group == "education" else "endDate")]:
                     if value := date(fields.get(source)):
                         item[target] = value
                     elif text(fields.get(source)):
                         warnings.append(f"「{text(section.get('title'))}」日期格式无法确定，已留空")
-            if group in {"work", "internship", "projects"} and (value := block_text(entry.get("blocks", []))):
-                item["description" if group == "projects" else "summary"] = value
+            if group in {"work", "internship", "projects", "campus"} and (value := block_text(entry.get("blocks", []))):
+                item["description" if group in {"projects", "campus"} else "summary"] = value
             # Keep empty entries so positional correspondence never silently shifts.
             profile.setdefault(group, []).append(item)
     if user_profile:
@@ -124,6 +135,8 @@ def project(document, user_profile=None):
             intent["salary"] = " ".join(filter(None, [amount, user_profile.salary_currency])) + (f"/{period}" if period else "")
         if "skills" not in profile and user_profile.skills:
             profile["skills"] = {"domain": "、".join(user_profile.skills)}
+    if user_profile and resume_id and getattr(user_profile, "application_data", None):
+        merge_application(profile, ApplicationData.model_validate(user_profile.application_data), str(resume_id), warnings)
     missing = [key for key in ["basics.name", "contact.phone", "contact.email", "basics.birthDate", "basics.idNumber"]
                if not profile.get(key.split(".")[0], {}).get(key.split(".")[1])]
     return profile, list(dict.fromkeys(warnings)), missing

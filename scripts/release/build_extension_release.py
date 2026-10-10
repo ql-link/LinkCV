@@ -91,7 +91,7 @@ def validate_zip(path: Path, *, version: str, origin: str, environment: str) -> 
     )
     if manifest.get("name") != expected_name:
         raise ValueError("extension name does not match the target environment")
-    if set(manifest.get("permissions", [])) != {"activeTab", "scripting", "storage", "sidePanel"}:
+    if set(manifest.get("permissions", [])) != {"activeTab", "tabs", "scripting", "storage", "sidePanel"}:
         raise ValueError("extension permissions do not match the unified plugin")
     if set(manifest.get("optional_host_permissions", [])) != {"http://*/*", "https://*/*"}:
         raise ValueError("extension optional host permissions do not match")

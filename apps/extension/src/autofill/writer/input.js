@@ -5,16 +5,16 @@ import { sleep } from './dom.js';
 // React/Vue 受控组件会拦截实例上的 value 赋值，必须调用原型上的原生 setter 才能让框架感知变化。
 export function setNativeValue(el, value) {
   try {
-    el.value = value;
     const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, value);
-    el.setAttribute('value', value);
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    if (setter) setter.call(el, value);
+    else el.value = value;
   } catch {}
 }
 
 // 直接赋值并派发 input/change，用于搜索框触发联想。
 export async function setValueWithEvents(el, value, waitAfter = 20) {
-  el.value = value;
+  setNativeValue(el, value);
   el.dispatchEvent(new Event('input', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
   await sleep(waitAfter);

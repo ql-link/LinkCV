@@ -13,6 +13,7 @@ const MODULE_PATTERNS: [ListGroup, RegExp][] = [
   ['awards', /获奖|奖项|荣誉|award/i],
   ['certificates', /证书|certificate/i],
   ['languages', /语言|外语|language/i],
+  ['campus', /校园|社团|学生组织|campus/i],
   ['family', /家庭|家属|family/i],
 ];
 const ADD_TEXT = /(添加|新增|增加|\badd\b)/i;
@@ -73,14 +74,20 @@ export async function addMissingRows(site: SiteConfig | null, wanted: Partial<Re
   const seen = new Set<ListGroup>();
   for (const m of modules(site)) {
     if (signal?.aborted) break;
-    // 学生没有工作经历时，“工作经历”模块会用实习经历来填，所以按两者之和补齐
+    // 只有目标类型没有资料时才使用另一类经历；不能把两类经历无条件拼接。
     const target =
-      m.group === 'work' || m.group === 'internship' ? (wanted.work ?? 0) + (wanted.internship ?? 0) : (wanted[m.group] ?? 0);
+      m.group === 'work' || m.group === 'internship'
+        ? (wanted[m.group] || wanted[m.group === 'work' ? 'internship' : 'work'] || 0) : (wanted[m.group] ?? 0);
     if (seen.has(m.group) || target <= 0) continue;
     seen.add(m.group);
     const had = countGroups(site, m);
     if (had >= target) continue;
     const report: AddRowsReport = { group: m.group, had, wanted: target, added: 0 };
+    if (!had || (/工作/.test(cleanText(m.title.textContent)) && /实习/.test(cleanText(m.title.textContent)) && wanted.work && wanted.internship)) {
+      report.note = !had ? '无法确认已有经历块，请手动添加' : '工作与实习合并后的顺序需要确认，请手动添加';
+      reports.push(report);
+      continue;
+    }
     for (let i = 0; i < Math.min(target - had, MAX_CLICKS_PER_MODULE); i++) {
       if (signal?.aborted) break;
       const button = findAddButton(m);

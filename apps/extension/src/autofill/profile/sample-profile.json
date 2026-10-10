@@ -38,10 +38,11 @@
       "degreeTitle": "硕士",
       "enrollDate": "2024-09",
       "gradDate": "2027-06",
-      "gpa": "3.8/4.0",
+      "gpa": "3.8",
       "rank": "前10%",
-      "trainingMode": "全日制",
-      "city": "上海市"
+      "city": "上海市",
+      "studyMode": "全日制",
+      "gpaScale": "4.0"
     },
     {
       "school": "样例理工大学",
@@ -50,9 +51,10 @@
       "degreeTitle": "学士",
       "enrollDate": "2020-09",
       "gradDate": "2024-06",
-      "gpa": "3.6/4.0",
-      "trainingMode": "全日制",
-      "city": "杭州市"
+      "gpa": "3.6",
+      "city": "杭州市",
+      "studyMode": "全日制",
+      "gpaScale": "4.0"
     }
   ],
   "internship": [
@@ -77,23 +79,42 @@
     }
   ],
   "awards": [
-    { "title": "全国大学生数学建模竞赛省级一等奖", "date": "2022-11", "level": "省级" }
+    {
+      "title": "全国大学生数学建模竞赛省级一等奖",
+      "date": "2022-11",
+      "level": "省级"
+    }
   ],
   "certificates": [
-    { "name": "全国计算机等级考试二级", "date": "2021-09" }
+    {
+      "name": "全国计算机等级考试二级",
+      "date": "2021-09"
+    }
   ],
   "languages": [
-    { "language": "英语", "level": "熟练", "cert": "CET-6 560" }
+    {
+      "language": "英语",
+      "level": "熟练",
+      "cert": "CET-6 560"
+    }
   ],
   "skills": {
     "domain": "Java、Go、MySQL、Redis、Kubernetes"
   },
   "family": [
-    { "name": "林某", "relation": "父亲", "employer": "示例制造公司", "position": "工程师" }
+    {
+      "name": "林某",
+      "relation": "父亲",
+      "employer": "示例制造公司",
+      "position": "工程师"
+    }
   ],
   "intent": {
     "position": "后端开发工程师",
-    "cities": ["上海市", "杭州市"],
+    "cities": [
+      "上海市",
+      "杭州市"
+    ],
     "salary": "面议",
     "acceptRelocation": true,
     "availableDate": "2027-07",
@@ -105,5 +126,15 @@
     "portfolio": "https://github.com/example",
     "selfEvaluation": "做事踏实，乐于钻研，具备良好的沟通能力。",
     "hobbies": "跑步、摄影"
-  }
+  },
+  "campus": [
+    {
+      "name": "示例技术交流活动",
+      "organization": "示例编程社",
+      "title": "组织者",
+      "startDate": "2022-09",
+      "endDate": "2023-06",
+      "description": "组织校园技术分享。"
+    }
+  ]
 }

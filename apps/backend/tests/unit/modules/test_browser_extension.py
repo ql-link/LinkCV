@@ -68,3 +68,68 @@ def test_preferences_preserve_currency_period_range_and_calendar_dates():
     assert profile["intent"] == {"cities": ["示例城市"], "workExperience": 2, "jobType": ["全职"], "salary": "10000–20000 CNY/月"}
     assert date({"value": "2024-02-31"}) == ""
     assert date({"value": "2024-02-29"}) == "2024-02-29"
+
+
+def paragraph(value):
+    return {"block_type": "paragraph", "runs": [{"inline_type": "text", "text": value}]}
+
+
+def test_source_only_import_projects_explicit_facts_without_editing_the_document():
+    document = {"identity": {"name": {"value": "张三 - Java实习生"}}, "sections": [
+        {"semantic_kind": "education", "title": {"value": "教育背景"}, "blocks": [
+            paragraph("示例大学 - 计算机学院 - 软件工程 ｜ 2020.9-2024.6")]},
+        {"semantic_kind": "work", "title": {"value": "实习经历"}, "blocks": [
+            paragraph("示例甲公司 ｜ 2024.04-2024.09 ｜ 后端工程师"), paragraph("实现示例接口。"),
+            paragraph("示例乙公司 ｜ 2023.10-2024.01 ｜ 开发实习生"), paragraph("编写示例测试。") ]},
+        {"semantic_kind": "project", "title": {"value": "个人项目"}, "blocks": [
+            paragraph("DemoRag"), paragraph("项目描述：示例资料检索。"),
+            paragraph("项目描述：另一个项目的内容。") ]},
+    ]}
+    before = json.dumps(document)
+    profile, warnings, missing = project(document)
+    assert profile["basics"] == {"name": "张三"}
+    assert profile["education"] == [{"school": "示例大学", "major": "软件工程", "enrollDate": "2020-09", "gradDate": "2024-06"}]
+    assert profile["internship"] == [
+        {"company": "示例甲公司", "title": "后端工程师", "startDate": "2024-04", "endDate": "2024-09", "summary": "实现示例接口。"},
+        {"company": "示例乙公司", "title": "开发实习生", "startDate": "2023-10", "endDate": "2024-01", "summary": "编写示例测试。"},
+    ]
+    assert profile["projects"] == [{"name": "DemoRag"}]
+    assert len(warnings) == 3 and "basics.idNumber" in missing
+    assert json.dumps(document) == before
+
+
+def test_source_recovery_keeps_unrecognized_entry_positions_and_ignores_body_dates():
+    document = {"sections": [{"semantic_kind": "work", "title": {"value": "工作经历"}, "blocks": [
+        paragraph("示例甲公司 ｜ 2024.02-2024.09 ｜ 工程师"),
+        {"block_type": "bullet_list", "items": [{"runs": [{"inline_type": "text", "text": "项目在2024.03-2024.05上线"}]}]},
+        paragraph("名称不明 ｜ 2023.02-2023.09 ｜ 工程师"), paragraph("不得合并到第一段。"),
+        paragraph("示例丙公司 ｜ 2022.02-2022.09 ｜ 工程师"),
+    ]}]}
+    profile, _, _ = project(document)
+    assert len(profile["work"]) == 3
+    assert profile["work"][1] == {}
+    assert profile["work"][2]["company"] == "示例丙公司"
+    assert profile["work"][0]["summary"] == "项目在2024.03-2024.05上线"
+
+
+def test_structured_entries_remain_authoritative_and_unlabeled_prose_is_not_inferred():
+    document = {"identity": {"name": {"value": "张三 - 爱好"}}, "sections": [
+        {"semantic_kind": "education", "entries": [{"fields": {"organization": {"value": "明确大学"}}}],
+         "blocks": [paragraph("另一大学 ｜ 2020.09-2024.06")]},
+        {"semantic_kind": "work", "blocks": [paragraph("曾经在某公司开发后端。") ]},
+        {"semantic_kind": "project", "blocks": [paragraph("项目描述：参与多个系统。") ]},
+    ]}
+    profile, warnings, _ = project(document)
+    assert profile["basics"]["name"] == "张三 - 爱好"
+    assert profile["education"] == [{"school": "明确大学"}]
+    assert "work" not in profile and "projects" not in profile
+    assert len(warnings) == 2
+
+
+def test_recovery_does_not_guess_degree_major_or_replace_invalid_dates():
+    document = {"sections": [{"semantic_kind": "education", "blocks": [
+        paragraph("示例大学 - 计算机学院 ｜ 2020.09-2024.06"),
+        paragraph("另一大学 ｜ 2024.02.31-2025.06"),
+    ]}]}
+    profile, _, _ = project(document)
+    assert profile["education"] == [{"school": "示例大学", "enrollDate": "2020-09", "gradDate": "2024-06"}, {}]

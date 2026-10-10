@@ -13,6 +13,7 @@ export type ToContent = (
   | { type: 'af:mark'; marks: { uid: string; status: MarkStatus }[] }
   | { type: 'af:focus'; uid: string }
   | { type: 'af:clear' }
+  | { type: 'af:clear-values' }
   | { type: 'af:stop' }
 ) & { documentToken?: string; pageUrl?: string; runId?: string };
 

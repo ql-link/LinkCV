@@ -16,7 +16,7 @@ export const KEYS: Record<string, string> = {
   'basics.idType': '证件类型；身份证件类型；ID type',
   'basics.idNumber': '证件号码；身份证号；护照号；ID number; passport number',
   'basics.hukou': '户口所在地；户籍；户籍所在地；household registration',
-  'basics.hometown': '籍贯；老家；生源地；native place; hometown',
+  'basics.hometown': '籍贯；老家；native place; hometown',
   'basics.gaokaoOrigin': '高考生源地；高考所在省份',
   'basics.heightCm': '身高（厘米）；height',
   'basics.weightKg': '体重（公斤）；weight',
@@ -36,7 +36,7 @@ export const KEYS: Record<string, string> = {
   'education.gradDate': '毕业时间；教育经历结束时间；预计毕业日期；graduation date; end date of study',
   'education.gpa': 'GPA；绩点；平均学分绩点；grade point average',
   'education.rank': '成绩排名；专业排名；class rank',
-  'education.trainingMode': '培养方式；学习形式；全日制/非全日制；study mode',
+  'education.trainingMode': '培养方式；统招/定向/非定向/委培；admission mode',
   'education.studentNumber': '学号；student ID',
   'work.company': '工作单位；公司名称；雇主；employer; company',
   'work.title': '职位名称；职位；岗位；职务；job title; position',
@@ -56,7 +56,7 @@ export const KEYS: Record<string, string> = {
   'projects.description': '项目描述；项目内容；project description',
   'awards.title': '奖项名称；获奖情况；荣誉名称；award name; honor',
   'languages.language': '语言；外语语种；语言类型；language',
-  'languages.cert': '外语证书；语言成绩；英语等级；CET-6；IELTS；TOEFL；language certificate',
+  'languages.cert': '外语证书；语言证书名称；语言考试名称；外语考试名称；language certificate; language exam',
   'skills.domain': '技能；专业技能；技能特长；skills',
   'family.name': '家庭成员姓名；父亲姓名；母亲姓名；family member name',
   'family.relation': '与本人关系；家庭成员关系；relationship',
@@ -104,15 +104,33 @@ export const KEYS: Record<string, string> = {
   'intent.jobType': '求职类型；全职/实习；job type',
   'intent.industry': '期望行业；industry',
   'intent.workExperience': '工作年限；工作经验年数；years of experience',
+  'basics.hukouType': '户籍性质；户口性质；household registration type',
+  'education.studyMode': '学习形式；教育形式；是否全日制；全日制/非全日制；study mode',
+  'education.department': '学院名称；所在学院；院系；college department',
+  'education.gpaScale': '绩点满分；GPA满分；GPA scale',
+  'education.duration': '学制；修业年限；program duration',
+  'internship.city': '实习地点；实习城市；internship location',
+  'languages.score': '语言考试分数；考试分数；外语考试成绩；language exam score',
+  'languages.date': '语言考试时间；外语考试时间；language exam date',
+  'certificates.issuer': '发证机构；发证单位；issuing authority',
+  'certificates.number': '证书编号；资格证书编号；certificate number',
+  'awards.issuer': '颁奖单位；颁奖机构；award issuer',
+  'awards.description': '奖项说明；获奖描述；award description',
+  'campus.organization': '校园组织；社团名称；学生组织；campus organization',
+  'campus.name': '校园活动名称；活动名称；campus activity name',
+  'campus.title': '担任职务；校园职务；社团职务；campus position',
+  'campus.startDate': '校园经历开始时间；校园活动开始时间；campus activity start date',
+  'campus.endDate': '校园经历结束时间；校园活动结束时间；campus activity end date',
+  'campus.description': '校园活动内容；校园经历描述；campus activity description',
 };
 
 // 这些分组在 JSON 简历中是数组，字段路径形如 education.0.school。
-export const LIST_GROUPS = ['education', 'work', 'internship', 'projects', 'awards', 'certificates', 'languages', 'family'] as const;
+export const LIST_GROUPS = ['education', 'work', 'internship', 'projects', 'awards', 'certificates', 'languages', 'campus', 'family'] as const;
 export type ListGroup = (typeof LIST_GROUPS)[number];
 
 export const isListGroup = (group: string): group is ListGroup => (LIST_GROUPS as readonly string[]).includes(group);
 
-const DATE_SUFFIX = /(Date|enrollDate|gradDate)$/;
+const DATE_SUFFIX = /(Date|\.date)$/;
 export const isDateKey = (key: string) => DATE_SUFFIX.test(key);
 
 // 开始/结束成对的日期 key，用于“起止时间”这类同标签字段按先后顺序纠正。
@@ -121,6 +139,7 @@ export const START_END_PAIRS: Record<string, string> = {
   'work.startDate': 'work.endDate',
   'internship.startDate': 'internship.endDate',
   'projects.startDate': 'projects.endDate',
+  'campus.startDate': 'campus.endDate',
 };
 
 export const GROUP_LABELS: Record<ListGroup, string> = {
@@ -131,5 +150,6 @@ export const GROUP_LABELS: Record<ListGroup, string> = {
   awards: '获奖',
   certificates: '证书',
   languages: '语言',
+  campus: '校园经历',
   family: '家庭成员',
 };

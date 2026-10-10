@@ -1,6 +1,7 @@
 // Only bounded page metadata reaches LinkResume; profile values stay in the extension.
 import { apiRequest, LinkResumeApiError } from '../../api/linkresume';
 import type { ScannedField } from '../scan/scanner';
+import { manualReason } from './policy';
 export const NONE = 'none';
 export interface Decision { choice: string; prob: number; ranked: [string, number][] }
 export type DecisionResult = Decision | { error: string };
@@ -15,6 +16,11 @@ export async function decideAll(fields: ScannedField[], origin: string,
     while (next < fields.length && !signal?.aborted) {
       const field = fields[next++]!;
       try {
+        if (manualReason(field)) {
+          results.set(field.uid, { choice: NONE, prob: 1, ranked: [] });
+          onProgress?.(++done, fields.length);
+          continue;
+        }
         if (fatal) throw new Error(fatal);
         const result = await apiRequest<Decision>(origin, '/api/browser-extension/autofill/decisions', {
           method: 'POST', body: JSON.stringify({ version: 1, field: {

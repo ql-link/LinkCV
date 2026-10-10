@@ -187,6 +187,7 @@ def get_current_account_user(
         method in {"GET", "PATCH"} and path in {"/api/account/profile", "/api/account/preferences"}
         or method == "PUT" and path == "/api/account/contact-email"
         or method in {"GET", "PUT"} and path == "/api/account/user-profile"
+        or method == "GET" and path.startswith("/api/account/user-profile/resume-preview/")
         or method in {"PUT", "DELETE"} and path == "/api/account/avatar"
     )
     if not allowed:

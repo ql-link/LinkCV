@@ -1,0 +1,16 @@
+.app-profile-dialog .v3-dialog-body { display: flex; flex-direction: column; max-height: 88vh; }
+.app-import-bar { display: flex; gap: 12px; margin: 12px 0; }
+.app-import-bar select { flex: 1; min-width: 0; }
+.app-profile-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.app-profile-tabs [aria-selected="true"] { font-weight: 600; background: var(--v3-field); }
+.app-profile-pane { overflow-y: auto; min-height: 0; padding: 2px 8px 12px 2px; }
+.app-fact-card { padding: 16px; border: 1px solid var(--v3-cl); border-radius: 8px; margin: 0 0 16px; }
+.app-fact-card h3 { font-size: 14px; margin: 0 0 12px; }
+.app-fact-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.app-fact-wide { grid-column: 1 / -1; }
+.app-fact-value { overflow-wrap: anywhere; white-space: pre-wrap; font-size: 13px; }
+.app-record-heading { display: flex; justify-content: space-between; gap: 12px; }
+.app-resume-choice { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 13px; }
+.app-profile-error { margin: 10px 0; font-size: 13px; }
+.app-import-preview { max-height: 55vh; }
+@media (max-width: 640px) { .app-fact-fields { grid-template-columns: minmax(0, 1fr); } }

@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { messages } from "./messages";
+import { applicationProfileMessages } from "./application-profile";
 
 export type Locale = "zh-CN" | "en-US";
 const BROWSER_LOCALE_KEY = "linkresume.interface-locale";
@@ -25,7 +26,7 @@ export function useLocale() {
 }
 /** Only call with an application-owned UI message; never with user content. */
 export function t(message: string, values: Record<string, string | number | null | undefined> = {}): string {
-  const template = locale === "en-US" ? messages[message] ?? message : message;
+  const template = locale === "en-US" ? messages[message] ?? applicationProfileMessages[message] ?? message : message;
   return template.replace(/\{(\w+)\}/g, (match, key: string) => String(values[key] ?? match));
 }
 export function formatDate(value: string | Date, options: Intl.DateTimeFormatOptions = { year: "numeric", month: "short", day: "numeric" }) {

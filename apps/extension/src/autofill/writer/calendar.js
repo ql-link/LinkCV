@@ -174,14 +174,13 @@ export async function pickDate(config) {
   };
 
   let [year, month, day] = String(dateStr).split('-').map((n) => parseInt(n, 10));
-  if (isNaN(day)) day = 1;
   const yearOk = !isNaN(year) && year >= 1900 && year <= 2100;
   const monthOk = !isNaN(month) && month >= 1 && month <= 12;
   const dayOk = !isNaN(day) && day >= 1 && day <= 31;
   if (!yearOk && !monthOk && !dayOk) return false;
 
   async function selectDay() {
-    if (!dayElementSelector || !dayOk) return true;
+    if (!dayElementSelector) return true;
     refresh();
     await sleep(50);
     // 月份选择器在选完月份后会自动关闭，此时没有日期面板，视为成功。
@@ -189,6 +188,8 @@ export async function pickDate(config) {
     const cells = queryAllVisible(dayElementSelector, container);
     if (!cells.length) return true;
     if (textOf(cells[0]).includes('月')) return true;
+    // 月份资料可以用于月份选择器；日历需要具体日期时不能编造“1 日”。
+    if (!dayOk) return false;
     const hits = cells.filter((c) => parseInt(textOf(c), 10) === day);
     // 日期网格首尾会混入上/下月的日期，前半月取第一个、后半月取最后一个。
     const cell = day <= 15 ? hits[0] : hits[hits.length - 1];

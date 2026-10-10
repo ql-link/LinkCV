@@ -85,12 +85,18 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 `/api/account/*` 通过当前用户身份确定资源归属，不接受 `user_id`。除 profile、昵称、头像和求职画像外，还提供联系邮箱、偏好、当前会话、环境对应的敏感操作及注销回执接口，详见本文「账号补充接口」。Web 账号页按能力显示开发改密或正式微信注销确认，普通微信绑定入口已撤下。`user.email` 对微信用户为 `null`。最近简历仍按更新时间倒序返回最多 5 条。
 
-`GET/PUT /api/account/user-profile` 维护跨简历共享的个人画像，聚合可比较的求职条件、教育背景与技能成果，独立保存于 `user_profiles` 表，不修改任何简历内容；这是唯一画像资源入口。未创建时 `GET` 返回 `lock_version=1` 的约定空画像且不写库；`PUT` 整体替换全部可编辑字段，缺省字段以 `null`/空数组覆盖旧值。`PUT` 必须携带 `base_lock_version`（首次创建固定为 1），服务端原子比较版本号，并发基准过期返回 `409 USER_PROFILE_VERSION_CONFLICT`，响应 `{profile}` 携带最新画像供调用方刷新后重试。可编辑字段包括 `candidate_cities`（最多 20 项）、`employment_types`（最多 2 项且只接受 `internship`/`full_time`）、薪资四字段、`candidate_status`、`graduation_year`、`years_experience`、教育字段和语言/技能/证书/荣誉/校园经历列表。城市及普通字符串列表会去除空串、去重并保留首次顺序；单项最长 100 字符，普通列表最多 100 项，`school_tier` 只接受 `project_985`/`project_211`/`double_first_class` 且最多 10 项。薪资必须成组填写：`salary_min`/`salary_max` 任一非空时要求 `salary_currency`（大写三字母 ISO 4217）与 `salary_period` 同时非空，最高值不得低于最低值。`candidate_status=fresh_graduate` 时 `graduation_year` 必须为 1900–9999 的四位年份且 `years_experience` 固定为 0；`experienced` 时毕业年份必须为空；未选择类型时毕业年份也必须为空。非法枚举、超长列表或违反联动约束返回 `400 INVALID_USER_PROFILE`。`GET /api/account/profile` 只返回账号资料、简历数量和最近简历，不内嵌 `profile`。
+`GET/PUT /api/account/user-profile` 维护跨简历共享的个人画像，聚合可比较的求职条件、教育背景与技能成果，独立保存于 `user_profile` 表，不修改任何简历内容；这是唯一画像资源入口。未创建时 `GET` 返回 `lock_version=1` 的约定空画像且不写库；`PUT` 整体替换既有求职字段，缺省字段以 `null`/空数组覆盖旧值；新增 `application_data` 省略时保留，显式 `null` 才清空。`PUT` 必须携带 `base_lock_version`（首次创建固定为 1），服务端原子比较版本号，并发基准过期返回 `409 USER_PROFILE_VERSION_CONFLICT`，响应 `{profile}` 携带最新画像供调用方刷新后重试。可编辑字段包括 `candidate_cities`（最多 20 项）、`employment_types`（最多 2 项且只接受 `internship`/`full_time`）、薪资四字段、`candidate_status`、`graduation_year`、`years_experience`、教育字段和语言/技能/证书/荣誉/校园经历列表。城市及普通字符串列表会去除空串、去重并保留首次顺序；单项最长 100 字符，普通列表最多 100 项，`school_tier` 只接受 `project_985`/`project_211`/`double_first_class` 且最多 10 项。薪资必须成组填写：`salary_min`/`salary_max` 任一非空时要求 `salary_currency`（大写三字母 ISO 4217）与 `salary_period` 同时非空，最高值不得低于最低值。`candidate_status=fresh_graduate` 时 `graduation_year` 必须为 1900–9999 的四位年份且 `years_experience` 固定为 0；`experienced` 时毕业年份必须为空；未选择类型时毕业年份也必须为空。非法枚举、超长列表或违反联动约束返回 `400 INVALID_USER_PROFILE`。`GET /api/account/profile` 只返回账号资料、简历数量和最近简历，不内嵌 `profile`。
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/account/user-profile` | 新画像完整对象；未创建返回 `lock_version=1` 空对象 |
 | `PUT` | `/api/account/user-profile` | 保存后的新画像完整对象；请求含 `base_lock_version` 及可编辑字段，并发过期返回 `409 USER_PROFILE_VERSION_CONFLICT` 并携带最新画像 |
+
+画像响应新增 `application_data: object|null`（未配置为 null），请求可省略以兼容旧客户端。对象包含 `version:1`、`resume_ids:string[]`、`basics/contact/others` 字符串字段对象，以及 `records[{id,group,fields,source}]`。`group` 为 education/work/internship/projects/languages/certificates/awards/campus；字段白名单与输入规范由 `identity/application_data.py` 定义。字符串去空白、空串移除，单值最多4000字符，标识字段最多100字符，整个对象最多64KiB；最多100条记录、20份基础资料关联简历。未知字段、非字符串事实、重复 ID/来源锚点、非法日历日期、反向时间范围、非十进制成绩均为 `400 INVALID_USER_PROFILE`。日期只保存 YYYY、YYYY-MM、YYYY-MM-DD；经历结束日期另可为“至今”，不推断缺失精度。绩点与满分分别保存为十进制字符串；满分必须大于零，绩点不得超过已填写的满分。
+
+`source` 可为空，或 `{resume_id,index,fingerprint}`。导入来源使用分组内下标及该原始投影条目的 SHA-256 指纹，下标与指纹须同时存在；插件必须两者匹配才补充，不按索引单独合并。不对应所选简历、来源变化或字段冲突均跳过；冲突字段连同原候选值不自动填写。手动补充条目可明确关联本人简历并令 index/fingerprint 同为空，此时作为额外条目使用；source 为空不参与填写。所有关联简历每次保存均校验归属，不能引用他人或不存在的简历。基础资料另以 resume_ids 明确限制适用简历，姓名冲突时姓名候选值和全部网申补充资料暂停使用，需确认身份对应关系。画像 AI 材料使用求职字段显式白名单，application_data 始终排除。
+
+`GET /api/account/user-profile/resume-preview/{resume_id}` 为只读导入预览，返回 `{resume_id,resume_lock_version,title,application_data,warnings}`，只提取所选本人简历明确事实，不读取现有求职偏好、不写画像或简历、不调用模型。未登录401、简历不属本人或不存在404 RESUME_NOT_FOUND；超限或不能确认的来源字段省略并提示。Web 与 desktop 可调用，mini 不开放。
 
 `0111–0115` 按阿里巴巴 MySQL 规约修改了数据库表名、时间列和布尔列名称，HTTP 契约不变：响应仍使用 `created_at`/`updated_at`（或既有的 `createdAt`/`updatedAt`）、`pinned`、`enabled`、`share_allow_download` 等原字段名。旧画像重复学历标签的读取兼容处理同样保留该时间响应契约，规则见[账号功能](../features/identity-account.md)。详见[阿里巴巴 MySQL 规约整改](../internals/backend.md#阿里巴巴-mysql-规约整改)。
 
@@ -754,6 +760,10 @@ Agent 结构化上下文增加 `type:"user_profile"`；ID 必须属于当前账�
 
 以下接口使用现有 Web Cookie 会话（401 表示未登录或失效），不接受页面提供的用户 ID。`GET /api/browser-extension/resumes` 返回 `{user_id, resumes:[{id,title,lock_version,updated_at}]}`，只列本人简历，不附带预览。`GET /api/resumes/{id}/autofill-profile` 校验本人归属，未知或他人简历返回 404 `RESUME_NOT_FOUND`；返回 `{version:1,user_id,resume_id,title,lock_version,profile_lock_version,updated_at,profile,warnings,missing}`，ID 为十进制字符串，不改写简历。
 
+投影沿用版本 1：已有结构化条目优先；只有正文的经历可使用确定性格式提取明确事实，无法确认的内容留空并返回 `warnings`，规则和数据来源见 [网申填写数据投影](../internals/autofill.md#数据投影)。
+
 `POST /api/browser-extension/autofill/decisions` 接收 `{version:1,field:{uid,section,label,placeholder,kind,options}}`，额外字段拒绝，输入长度有界，options 至多六项。返回 `{choice,prob,ranked}`，choice 必须属于版本 1 字段目录或 `none`，prob 为有限的 0 到 1 数值。该接口只判断网页字段含义，不接受或生成个人资料。429 `AUTOFILL_RATE_LIMITED`、503 `AUTOFILL_UNAVAILABLE` / `LLM_MODEL_NOT_CONFIGURED`、502 模型失败、504 `LLM_TIMEOUT`；额度为每账户每分钟 240 请求。
 
 Web 与插件桥接命令为 `PING`、`SELECT_RESUME(resumeId)`、`AUTH_CHANGED`，消息带 source 与 requestId。桥接只接受当前环境精确 Origin 和顶层页面，回复不返回个人资料，不能通过桥接调用任意 API 或执行表单填写。
+
+网申网站访问由插件在用户点击填写时按当前 Origin 申请。拒绝授权时不扫描网页，也不调用字段识别接口；浏览器权限与上述 Web Cookie 会话分别校验，详见 [网申填写的模型与权限](../internals/autofill.md#模型与权限)。

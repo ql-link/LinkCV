@@ -139,9 +139,13 @@ def _list_item(snapshot: AgentContextSnapshot) -> AgentContextListItem:
 
 
 def _profile_content(profile: UserProfile) -> str:
-    values = UserProfileData.model_validate(profile).model_dump(mode="json")
-    for key in ("lock_version", "created_at", "updated_at"):
-        values.pop(key, None)
+    # Explicit career-material projection: newly added identity/contact/application facts
+    # must never silently enter an existing AI context selection.
+    career_fields = {"candidate_cities", "salary_min", "salary_max", "salary_currency", "salary_period",
+                     "employment_types", "school", "school_tier", "major", "education_level",
+                     "years_experience", "candidate_status", "graduation_year", "languages", "skills",
+                     "certifications", "honors", "campus_experiences"}
+    values = UserProfileData.model_validate(profile).model_dump(mode="json", include=career_fields)
     lines = [
         f"- {key}: {json.dumps(value, ensure_ascii=False)}"
         for key, value in values.items() if value is not None and value != [] and value != ""

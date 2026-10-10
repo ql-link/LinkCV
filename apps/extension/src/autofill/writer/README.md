@@ -18,7 +18,7 @@ const results = await fillAll(
     { element: nameInput, value: '张三', label: '姓名' },
     { element: schoolInput, value: '示例大学', label: '学校名称' },
     { element: degreeSelect, value: '本科', label: '学历' },
-    // 日期区间：开始、结束两个输入框相邻传入，先开始后结束
+    // 独立的开始、结束日期框分别传入；未支持的区间组件跳过
     { element: startInput, value: '2021-09-01', label: '开始时间' },
     { element: endInput, value: '2025-06-30', label: '结束时间' },
     // 级联：用 / 分隔各级
@@ -46,21 +46,19 @@ const results = await fillAll(
 | `src/adapters/` | antd、Element、atsx、iView、美团 mtd、kuma、北森、Moka、飞书、智联 |
 | `src/fill.js` | 调度顺序与 `fillAll` |
 
-调度顺序：antd → atsx → Element → iView → mtd/kuma → 原生日期 → 站点专用（北森 / Moka / 飞书 / 智联）→ 通用下拉 → 文本兜底。每个字段填完点一次空白处，收起残留浮层。
+原生 select 精确匹配选项；其余调度顺序为 antd → atsx → Element → iView → mtd/kuma → 原生日期 → 普通可编辑文本 → 站点专用（北森 / Moka / 飞书 / 智联）。未知自定义控件跳过。每个字段写入后收起浮层并读回验证目标值。
 
 ## 行为与边界
 
-- `match.js` 在本地匹配选项；匹配不到返回失败。
+- `match.js` 默认只接受精确、归一化等值和明确同义选项；自动填写不采用包含关系或相似度，匹配不到返回失败。
 - 级联和树形下拉：把值按 `/`、`-`、空格拆成路径逐级匹配。
 - iView 级联通过 `menuItemSelector` 定位选项。
 - 只有一项且文本为占位提示时视为空列表，“无锡”等有效选项正常参与匹配。
 - 北森普通下拉匹配不到时不选择候选项，并按实际操作结果返回状态。
 - atsx 和 iView 下拉在没有站点配置时使用默认浮层选择器。
 - antd 普通输入框会先尝试“点击弹出对话框选择”，没有对话框再直接输入，每个字段多约 100ms。
-- atsx 年月区间控件当前把同一个值同时用作开始和结束。
+- Ant Design/atsx 区间组件暂时跳过：单字段调用不能确定同一控件的两个端点，不将相邻调用合并或用同一个值填两端。
 
-## 验证状态
+## 验证边界
 
-- 已做：所有文件 `node --check` 语法检查；`pickOption`、`splitPath` 的 Node 冒烟测试。
-- 未做：没有在任何真实网申页面或浏览器里运行过，建议先在 2～3 个常见站点逐个字段验证组件交互。
-- 当前没有“填完读回校验”这一步，写入后控件是否真的显示目标值需要自己确认。
+`fill.test.ts` 验证普通文本的框架事件与读回、原生选项唯一性、美团选择标签与失败搜索恢复，以及未知控件和日期精度的拒绝路径。组件测试不代替各招聘网站的真实人工验收；读回展示值也不代表网站服务端已经保存。完整策略见 [网申填写](../../../../../docs/internals/autofill.md)。

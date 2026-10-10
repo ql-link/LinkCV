@@ -147,7 +147,8 @@ export async function atsxAdapter(el, value, ctx) {
   if (closestOf(el, '.atsx-select')) return { handled: true, success: await atsxSelect(el, value, ctx) };
   if (el instanceof HTMLInputElement && !el.classList.contains('atsx-date-picker-period-hidden-input')) {
     if (closestOf(el, 'atsx-date-picker-period-month')) {
-      return { handled: true, success: await atsxMonthPeriod(el, value, value).catch(() => false) };
+      // 单个字段的值无法同时确定两个端点；不能将开始日期也填到结束日期。
+      return { handled: true, success: false, skipped: true };
     }
     const picker = closestOf(el, 'atsx-date-picker');
     if (picker && !picker.classList.contains('atsx-date-picker-period-month')) {

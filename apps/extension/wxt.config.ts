@@ -50,7 +50,8 @@ export default defineConfig({
       48: "linkresume-mark.png",
       128: "linkresume-mark.png",
     },
-    permissions: ["activeTab", "scripting", "storage", "sidePanel"],
+    // 侧栏按钮不会触发 activeTab；先读取 URL，才能按当前站点申请可选主机权限。
+    permissions: ["activeTab", "tabs", "scripting", "storage", "sidePanel"],
     optional_host_permissions: ["https://*/*", "http://*/*"],
     host_permissions: [
       ...bossPermissions,

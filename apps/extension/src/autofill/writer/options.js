@@ -24,14 +24,14 @@ function popupSelectorsFor(el, site) {
   return LIBRARY_POPUPS.find((p) => closestOf(el, p.owner)) ?? null;
 }
 
-// 在浮层中收集可见选项，按文本去重；只有一项且是“暂无数据”时视为空。
+// 在浮层中收集可见选项；同名选项保留，以便拒绝含义不唯一的匹配。
 export function optionsIn(container, optionSelector) {
   const items = queryAllVisible(optionSelector, container);
   if (items.length === 1 && isEmptyOptionText(textOf(items[0]))) return [];
   const out = [];
   for (const el of items) {
     const text = textOf(el);
-    if (text && !out.some((o) => o.text === text)) out.push({ text, element: el });
+    if (text) out.push({ text, element: el });
   }
   return out;
 }
@@ -74,7 +74,7 @@ export async function collectOptions(el, { value = null, searchable = false, sit
 async function selectNativeByText(select, options, text) {
   const index = options.findIndex((o) => o.text === text);
   if (index < 0) return false;
-  select.selectedIndex = index;
+  select.selectedIndex = options[index].element.index;
   select.dispatchEvent(new Event('change', { bubbles: true }));
   await sleep(20);
   return true;
@@ -85,15 +85,16 @@ export async function clickMatchingOption(el, options, value, { useMatcher = tru
   try {
     const isNative = el instanceof HTMLSelectElement;
     const pick = async (text) => {
-      const hit = options.find((o) => o.text === text);
-      if (!hit) return false;
+      const hits = options.filter((o) => o.text === text);
+      if (hits.length !== 1) return false;
+      const hit = hits[0];
       if (isNative) return selectNativeByText(el, options, text);
       await realClick(hit.element, waitAfter);
       return true;
     };
     if (await pick(value)) return true;
     if (!useMatcher || !options.length) return false;
-    const best = pickOption(options.map((o) => o.text), value);
+    const best = pickOption(options.map((o) => o.text), value, { strict: true });
     return best ? pick(best) : false;
   } catch {
     return false;
@@ -115,9 +116,12 @@ export async function selectFromPopup(el, value, { label = '', site = null, forc
 
 // 与 selectFromPopup 相同，但收集不到选项时也视为已处理（失败），不再走文本兜底。
 export async function selectFromPopupStrict(el, value, { site = null, searchable = false } = {}) {
+  const before = el instanceof HTMLInputElement ? el.value : null;
   const options = await collectOptions(el, { value, searchable, site });
-  if (!options.length) return { handled: true, success: false };
-  return { handled: true, success: await clickMatchingOption(el, options, value) };
+  const success = options.length > 0 && await clickMatchingOption(el, options, value);
+  // 失败的远程搜索不能把查询词留在页面，伪装成已选中的值。
+  if (!success && before != null && el.value !== before) await setValueWithEvents(el, before, 0);
+  return { handled: true, success };
 }
 
 // 在搜索框中输入，等待选项列表发生变化后返回新列表。
@@ -170,7 +174,7 @@ export async function selectInTree(popup, value, { wrapper, title, switcher, cli
         target = nodes[exact].querySelector(title);
         break;
       }
-      const best = pickOption(texts, path[Math.min(depth, path.length - 1)] ?? value);
+      const best = pickOption(texts, path[Math.min(depth, path.length - 1)] ?? value, { strict: true });
       const index = best == null ? -1 : texts.indexOf(best);
       if (index === -1) return false;
       const node = nodes[index];

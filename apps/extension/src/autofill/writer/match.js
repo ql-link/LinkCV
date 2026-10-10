@@ -18,7 +18,7 @@ const ALIAS_GROUPS = [
   ['否', 'No', '无'],
   ['身份证', '居民身份证', '中华人民共和国居民身份证', '大陆身份证'],
   ['未婚', '单身'],
-  ['已婚', '已婚已育', '已婚未育'],
+  ['已婚', 'Married'],
 ];
 
 // 去空白、全角转半角、统一大小写，去掉“（选填）”和常见行政区后缀以外的括号说明。
@@ -63,21 +63,22 @@ export function similarity(a, b) {
  * 从候选文本中选出与目标值最匹配的一项。
  * @param {string[]} candidates
  * @param {string} target
- * @param {{ threshold?: number }} [opts]
+ * @param {{ threshold?: number, strict?: boolean }} [opts]
  * @returns {string | null} 命中的候选原文；没有足够把握时返回 null，交给调用方标记待处理。
  */
-export function pickOption(candidates, target, { threshold = 0.5 } = {}) {
+export function pickOption(candidates, target, { threshold = 0.5, strict = true } = {}) {
   if (!candidates?.length || target == null || target === '') return null;
-  if (candidates.includes(target)) return target;
   const t = normalize(target);
-  const exact = candidates.find((c) => normalize(c) === t);
-  if (exact) return exact;
+  const exact = candidates.filter((c) => normalize(c) === t);
+  if (exact.length) return strict && exact.length !== 1 ? null : exact[0];
 
   const key = aliasKey(target);
   if (key != null) {
-    const alias = candidates.find((c) => aliasKey(c) === key);
-    if (alias) return alias;
+    const aliases = candidates.filter((c) => aliasKey(c) === key);
+    if (aliases.length) return strict && aliases.length !== 1 ? null : aliases[0];
   }
+  // 自动填写不能用包含关系或相似度替用户选择另一所学校/公司。
+  if (strict) return null;
 
   // 包含关系：如“北京大学”对“北京大学（本部）”，取多余字符最少的一项。
   let contained = null;

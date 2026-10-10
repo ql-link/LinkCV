@@ -38,7 +38,7 @@ def autofill_profile(resume_id: str, db: Session = Depends(get_db), user: User =
         raise ApiError(404, "RESUME_NOT_FOUND")
     document = CanonicalResumeDocument.model_validate(resume.data_json)
     user_profile = db.scalar(select(UserProfile).where(UserProfile.user_id == user.id))
-    profile, warnings, missing = project(document.model_dump(mode="json"), user_profile)
+    profile, warnings, missing = project(document.model_dump(mode="json"), user_profile, str(resume.id))
     return {"version": 1, "user_id": str(user.id), "resume_id": str(resume.id), "title": resume.title,
             "lock_version": resume.lock_version, "profile_lock_version": user_profile.lock_version if user_profile else None,
             "updated_at": resume.update_time, "profile": profile, "warnings": warnings, "missing": missing}

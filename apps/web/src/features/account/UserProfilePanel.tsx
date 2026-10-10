@@ -18,6 +18,7 @@ import { Dialog, Popover, Select, Toast } from "../../v3/primitives";
 import { accountErrorMessage } from "./accountErrors";
 import { ProfileBannerArt } from "./accountArt";
 import { readPageCache, updatePageCache, writePageCache } from "@/v3/pageCache";
+import { ApplicationProfileDialog } from "./ApplicationProfileDialog";
 
 const USER_PROFILE_CACHE_KEY = "account-user-profile";
 
@@ -398,6 +399,7 @@ export function UserProfilePanel() {
   const [failed, setFailed] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [applicationDialogOpen, setApplicationDialogOpen] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
 
   useEffect(() => {
@@ -447,6 +449,7 @@ export function UserProfilePanel() {
         <div className="acc-profile-header">
           <h3 data-locale-motion>{t("个人画像")}</h3>
           <div className="acc-profile-actions">
+            <button type="button" className="acc-row-link" disabled={loading || unavailable} onClick={() => setApplicationDialogOpen(true)}>{t("网申资料")}</button>
             <span className="acc-row-meta" data-locale-motion>{status}</span>
             <button
               type="button"
@@ -467,6 +470,12 @@ export function UserProfilePanel() {
           </div>)}
         </dl>}
       </div>
+
+      <MotionPresence>{applicationDialogOpen && (
+        <ApplicationProfileDialog serverData={serverData} onClose={() => setApplicationDialogOpen(false)}
+          onSaved={(profile) => { setServerData(profile); updatePageCache(USER_PROFILE_CACHE_KEY, profile); setApplicationDialogOpen(false); setNotice({ kind: "success", message: t("网申资料已保存，插件重新读取简历后生效。") }); }}
+          onConflict={(profile) => { setServerData(profile); updatePageCache(USER_PROFILE_CACHE_KEY, profile); }} />
+      )}</MotionPresence>
 
       <MotionPresence>{editDialogOpen && (
         <UserProfileEditDialog

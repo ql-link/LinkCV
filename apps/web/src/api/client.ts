@@ -87,6 +87,19 @@ export type EducationLevel =
 
 export type SchoolTier = "project_985" | "project_211" | "double_first_class";
 
+export type ApplicationRecordGroup = "education" | "work" | "internship" | "projects" | "languages" | "certificates" | "awards" | "campus";
+export type ApplicationFactSource = { resume_id: string; index: number | null; fingerprint: string | null };
+export type ApplicationRecord = { id: string; group: ApplicationRecordGroup; fields: Record<string, string>; source: ApplicationFactSource | null };
+export type ApplicationData = {
+  version: 1;
+  resume_ids: string[];
+  basics: Record<string, string>;
+  contact: Record<string, string>;
+  others: Record<string, string>;
+  records: ApplicationRecord[];
+};
+export type ApplicationImportPreview = { resume_id: string; resume_lock_version: number; title: string; application_data: ApplicationData; warnings: string[] };
+
 export type UserProfileData = {
   candidate_cities: string[];
   salary_min: number | null;
@@ -106,6 +119,7 @@ export type UserProfileData = {
   certifications: string[];
   honors: string[];
   campus_experiences: string[];
+  application_data?: ApplicationData | null;
   lock_version: number;
   created_at: string | null;
   updated_at: string | null;
@@ -1748,6 +1762,7 @@ export const api = {
       body: { nickname },
     }),
   getUserProfile: () => request<UserProfileData>("/api/account/user-profile"),
+  previewApplicationImport: (resumeId: string) => request<ApplicationImportPreview>(`/api/account/user-profile/resume-preview/${encodeURIComponent(resumeId)}`),
   putUserProfile: (payload: UserProfileUpdate) =>
     request<UserProfileData>("/api/account/user-profile", {
       method: "PUT",

@@ -177,7 +177,7 @@ Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的
 
 ## 账号能力与客户端边界
 
-结构化上下文支持 user_profile，后端按当前用户和版本读取求职画像，只传 profile_markdown，不传登录身份和联系邮箱。Web 添加资料入口的可选类型见[助手功能](../features/ai-assistant.md)；入口展示不改变历史 user_profile 引用的解析及权限校验。Pi 上下文白名单接受这一只读字段，不能据此写画像或自动改简历。Agent 新运行、提案操作、模型日志及终态消息写回与账号注销协调；前端界面语言不改变模型正文或模拟面试作答语言。见[账号功能](../features/identity-account.md)。
+结构化上下文支持 user_profile，新增 application_data 网申资料（包括身份、联系方式和结构化经历）始终从画像 AI 投影排除，仅原求职字段白名单可作为材料。后端按当前用户和版本读取求职画像，只传 profile_markdown，不传登录身份和联系邮箱。Web 添加资料入口的可选类型见[助手功能](../features/ai-assistant.md)；入口展示不改变历史 user_profile 引用的解析及权限校验。Pi 上下文白名单接受这一只读字段，不能据此写画像或自动改简历。Agent 新运行、提案操作、模型日志及终态消息写回与账号注销协调；前端界面语言不改变模型正文或模拟面试作答语言。见[账号功能](../features/identity-account.md)。
 
 ## 文字面试复盘
 

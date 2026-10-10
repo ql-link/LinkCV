@@ -5,6 +5,7 @@ import { countEntries, type Profile } from './profile/profile';
 import type { AddRowsReport } from './scan/add-rows';
 import type { Settings } from './storage';
 import type { FillStatus } from './writer/types';
+import type { ClearReport } from './writer/clear';
 import { markOf, type FillProgress, type FillResult, type PrepareResult, type ScanResult, type ToContent } from './messages';
 
 export type StageKey = 'prepare' | 'scan' | 'decide' | 'fill';
@@ -67,6 +68,18 @@ export function focusField(tabId: number, uid: string) {
 
 export function clearMarks(tabId: number) {
   return send<boolean>(tabId, { type: 'af:clear' }).catch(() => false);
+}
+
+export async function clearPageValues(tabId: number, expectedOrigin: string, signal: AbortSignal): Promise<ClearReport> {
+  if (signal.aborted) throw new Error('页面已刷新或切换，清除已停止');
+  await inject(tabId);
+  const page = await send<{ documentToken: string; pageUrl: string }>(tabId, { type: 'af:ping' });
+  if (signal.aborted || pageOrigin(page.pageUrl) !== expectedOrigin) throw new Error('页面已刷新或切换，清除已停止');
+  const runId = crypto.randomUUID();
+  const stop = () => { void send(tabId, { type: 'af:stop', ...page, runId }).catch(() => {}); };
+  signal.addEventListener('abort', stop);
+  try { return await send<ClearReport>(tabId, { type: 'af:clear-values', ...page, runId }); }
+  finally { signal.removeEventListener('abort', stop); }
 }
 
 export async function runFill(

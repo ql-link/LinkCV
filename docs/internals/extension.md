@@ -47,6 +47,6 @@ BOSS 采集将实习、校招/校园招聘/应届、正式/社招/全职的标�
 
 插件版本从 0.2.0 起共用一个侧边栏，提供岗位采集和网申填写两个功能。`entrypoints/background.ts` 设置工具栏打开侧边栏，并处理仅来自允许的 LinkResume Origin 顶层内容脚本的桥接消息。`entrypoints/linkresume.content.ts` 只接受同页面、同 Origin、有界请求 ID 的 `PING`、`SELECT_RESUME`、`AUTH_CHANGED` 命令，后台重新读取登录身份与本人简历，不接受任意 API 路径或填写命令。Development 与 Production 包仍分别绑定精确 Origin；内容脚本运行时额外检查端口，以弥补浏览器匹配模式对端口的限制。
 
-网申模块与资料边界见 [网申填写](autofill.md)。API 刷新请求按 Origin 合并，并用扩展 Origin 的 Web Locks 协调侧边栏与后台；捕获预览仍经用户确认导入，复用原岗位与求职记录契约。
+网申模块与资料边界见 [网申填写](autofill.md)。Manifest 的 `tabs` 权限用于读取当前页面地址，网页内容的访问仍由固定主机权限或用户点击填写时授予的当前站点可选权限控制。API 刷新请求按 Origin 合并，并用扩展 Origin 的 Web Locks 协调侧边栏与后台；捕获预览仍经用户确认导入，复用原岗位与求职记录契约。
 
 侧边栏持续打开时可点击“重新采集”读取当前 BOSS 岗位，避免列表页换岗但 URL 未变化时沿用旧预览；编辑过程中不会因其他标签页加载事件丢弃草稿。

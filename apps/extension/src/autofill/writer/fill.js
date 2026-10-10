@@ -1,17 +1,44 @@
-// 调度入口：按组件库逐个尝试适配器，最后用直接输入兜底。
+// 调度入口：明确的组件或普通文本才写入，未知控件跳过。
 
-import { isVisible, clickBlank, scrollIntoViewIfNeeded, elementByXPath } from './dom.js';
+import { isVisible, clickBlank, scrollIntoViewIfNeeded, elementByXPath, sleep } from './dom.js';
 import { typeTextChunked, setValueWithEvents } from './input.js';
 import { detectSite } from './sites.js';
-import { selectFromPopup } from './options.js';
+import { clickMatchingOption } from './options.js';
 import { antdAdapter } from './adapters/antd.js';
 import { atsxAdapter } from './adapters/atsx.js';
 import { elementAdapter } from './adapters/element.js';
 import { iviewAdapter, mtdKumaAdapter } from './adapters/misc.js';
 import { beisenAdapter } from './adapters/beisen.js';
 import { mokaAdapter, feishuAdapter, zhilianAdapter } from './adapters/sites.js';
+import { pickOption } from './match.js';
 
 const COMPONENT_ADAPTERS = [antdAdapter, atsxAdapter, elementAdapter, iviewAdapter, mtdKumaAdapter];
+const CHOICE_OWNER = '.ant-select,.ant-cascader,.ant-picker,.ant-calendar-picker,.el-select,.el-cascader,.el-date-editor,.ivu-select,.ivu-cascader,.ivu-date-picker,.atsx-select,.atsx-date-picker,.mtd-select,.mtd-date-picker,[role="combobox"]';
+const SELECTED_TEXT = '.ant-select-selection-item,.ant-select-selection-selected-value,.atsx-select-selection-item,.atsx-select-selection-selected-value,.el-select__selected-item,.ivu-select-selected-value,.mtd-select-filter-label:not(.mtd-select-filter-hint),.mtd-select-selected-label,.mtd-select-selection-item';
+const SEARCH_SELECT = '.mtd-select,.ant-select,.atsx-select';
+
+function readbackMatches(el, value) {
+  let actual;
+  if (el instanceof HTMLSelectElement) actual = el.selectedOptions[0]?.textContent?.trim();
+  else {
+    const owner = el.closest(CHOICE_OWNER);
+    const shown = owner?.querySelector(SELECTED_TEXT);
+    actual = shown ? shown.textContent?.trim() : owner?.matches(SEARCH_SELECT) ? ''
+      : el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement ? el.value.trim() : undefined;
+  }
+  if (actual == null || actual === '') return false;
+  const date = (text) => String(text).replace(/^(\d{4})[./-](\d{1,2})(?:[./-](\d{1,2}))?$/, (_, year, month, day) => `${year}-${month.padStart(2, '0')}${day ? `-${day.padStart(2, '0')}` : ''}`);
+  if (el.closest(CHOICE_OWNER) || el instanceof HTMLSelectElement) {
+    return date(actual) === date(value) || pickOption([actual], value, { strict: true }) === actual;
+  }
+  return actual === String(value).trim();
+}
+
+async function verified(el, value, success) {
+  await clickBlank();
+  await sleep(100);
+  return success && el.isConnected && readbackMatches(el, value) ? 'filled' : 'failed';
+}
 
 async function nativeDateAdapter(el, value) {
   if (!(el instanceof HTMLInputElement) || (el.type || '').toLowerCase() !== 'date') return { handled: false, success: false };
@@ -40,7 +67,7 @@ function adaptDateForPlaceholder(el, value) {
 }
 
 function isDisabled(el) {
-  return el instanceof HTMLInputElement && (el.disabled || el.classList.contains('ant-input-disabled'));
+  return el.disabled || el.classList.contains('ant-input-disabled') || !!el.closest('[aria-disabled="true"],.mtd-select-disabled,.ant-select-disabled,.el-select.is-disabled');
 }
 
 /**
@@ -48,28 +75,42 @@ function isDisabled(el) {
  * @param {Element} el
  * @param {string} value 日期统一用 YYYY-MM-DD 或 YYYY-MM；级联用“一级/二级/三级”。
  * @param {{ label?: string, site?: object | null }} [ctx]
- * @returns {Promise<'filled' | 'typed' | 'failed' | 'skipped'>}
- *   typed 表示没有识别出组件，按普通文本输入写入，需要人工复核。
+ * @returns {Promise<'filled' | 'failed' | 'skipped'>}
  */
 export async function fillField(el, value, ctx = {}) {
   if (value == null || !String(value).trim()) return 'skipped';
   if (!el || isDisabled(el) || !isVisible(el)) return 'skipped';
   const context = { label: ctx.label || el.getAttribute('data-af-label') || '', site: ctx.site ?? detectSite() };
+  const originalSearch = el instanceof HTMLInputElement && el.closest(SEARCH_SELECT) ? el.value : null;
+  const verify = async (success) => {
+    const result = await verified(el, value, success);
+    if (result === 'failed' && originalSearch != null && el.value !== originalSearch) await setValueWithEvents(el, originalSearch, 0);
+    return result;
+  };
   try {
     await scrollIntoViewIfNeeded(el);
+    if (el instanceof HTMLSelectElement) {
+      const options = Array.from(el.options).filter((o) => !o.disabled && o.value).map((o) => ({ text: o.textContent.trim(), element: o }));
+      return await verified(el, value, await clickMatchingOption(el, options, value));
+    }
     for (const adapter of [...COMPONENT_ADAPTERS, nativeDateAdapter]) {
       const r = await adapter(el, value, context);
-      if (r.handled) return r.success ? 'filled' : 'failed';
+      if (r.handled) return r.skipped ? 'skipped' : await verify(r.success);
+    }
+    // 普通可编辑文本框是明确的控件，写入后读回即可；不去点击其他字段残留的下拉。
+    if ((el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)
+      && !el.readOnly && !el.closest(CHOICE_OWNER)
+      && !/^请?选择/.test(el.getAttribute('placeholder') || '') && el.getAttribute('aria-autocomplete') !== 'list') {
+      await typeTextChunked(el, adaptDateForPlaceholder(el, value));
+      return await verified(el, adaptDateForPlaceholder(el, value), true);
     }
     let r = { handled: false, success: false };
     const siteAdapter = siteAdapterFor(context.site);
     if (siteAdapter) r = await siteAdapter(el, value, context);
-    if (!r.handled) r = await selectFromPopup(el, value, { label: context.label, site: context.site });
-    if (r.success) return 'filled';
+    if (r.success) return await verified(el, value, true);
     if (r.handled) return 'failed';
-    await typeTextChunked(el, adaptDateForPlaceholder(el, value));
-    await clickBlank();
-    return 'typed';
+    // 不认识的自定义控件不使用文本兜底，以免只写入搜索词。
+    return 'skipped';
   } catch {
     return 'failed';
   }

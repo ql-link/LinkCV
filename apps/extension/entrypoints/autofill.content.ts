@@ -1,6 +1,7 @@
 // 由侧边栏在用户点击“开始填写”时注入，不随页面自动加载。
 import { detectSite } from '../src/autofill/writer/sites.js';
 import { fillAll } from '../src/autofill/writer/fill.js';
+import { clearAllFields } from '../src/autofill/writer/clear';
 import { scanPage, elementByUid, currentValue } from '../src/autofill/scan/scanner';
 import { addMissingRows } from '../src/autofill/scan/add-rows';
 import type { SiteConfig } from '../src/autofill/writer/types';
@@ -61,9 +62,10 @@ export default defineContentScript({
   registration: 'runtime',
   matches: [],
   main() {
-    const w = window as unknown as { __linkAutofill?: boolean };
-    if (w.__linkAutofill) return;
-    w.__linkAutofill = true;
+    // Reloading the extension invalidates old listeners without resetting the page's window.
+    // Replace the listener when injection is needed instead of trusting a persistent boolean.
+    const w = window as unknown as { __linkAutofillCleanup?: () => void };
+    w.__linkAutofillCleanup?.();
 
     const documentToken = crypto.randomUUID();
     let fillController: AbortController | null = null;
@@ -71,7 +73,7 @@ export default defineContentScript({
     const stopped = new Set<string>();
     let site: SiteConfig | null = null;
 
-    browser.runtime.onMessage.addListener((raw: unknown) => {
+    const onMessage = (raw: unknown) => {
       const message = raw as ToContent;
       if (!message || typeof message !== 'object' || !String(message.type).startsWith('af:')) return undefined;
       if (message.type !== 'af:ping' && message.documentToken &&
@@ -131,8 +133,27 @@ export default defineContentScript({
         case 'af:clear':
           clearMarks();
           return Promise.resolve(true);
+        case 'af:clear-values':
+          return (async () => {
+            fillController?.abort();
+            const controller = new AbortController();
+            fillController = controller;
+            activeRunId = message.runId ?? null;
+            const pageUrl = location.href;
+            const guard = window.setInterval(() => { if (location.href !== pageUrl) controller.abort(); }, 100);
+            try {
+              const report = await clearAllFields(detectSite(), controller.signal);
+              clearMarks();
+              return report;
+            } finally { window.clearInterval(guard); }
+          })();
       }
       return undefined;
-    });
+    };
+    browser.runtime.onMessage.addListener(onMessage);
+    w.__linkAutofillCleanup = () => {
+      fillController?.abort();
+      try { browser.runtime.onMessage.removeListener(onMessage); } catch {}
+    };
   },
 });

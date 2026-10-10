@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { runFill, initialRunState } from './run';
+import { runFill, initialRunState, clearPageValues } from './run';
 import { DEFAULT_SETTINGS } from './storage';
 import { decideAll } from './decide/jev';
 vi.mock('./decide/jev', () => ({ NONE: 'none', decideAll: vi.fn() }));
@@ -25,6 +25,20 @@ it('verifies identity before writing and binds messages to the scanned document'
   expect(verify).toHaveBeenCalledTimes(2);
   const write = send.mock.calls.find((call) => call[1].type === 'af:fill');
   expect(write).toEqual([7, expect.objectContaining({ documentToken: 'document-one', pageUrl: 'https://apply.example.test/form', items: [{ uid: 'one', value: '张三', label: '姓名' }] })]);
+});
+
+it('binds clear-all to the current document and URL without invoking the model', async () => {
+  const send = setup();
+  await clearPageValues(7, 'https://apply.example.test', new AbortController().signal);
+  expect(send.mock.calls.find((call) => call[1].type === 'af:clear-values')).toEqual([7, expect.objectContaining({
+    documentToken: 'document-one', pageUrl: 'https://apply.example.test/form', runId: expect.any(String),
+  })]);
+});
+
+it('does not clear a page that has changed to another origin', async () => {
+  const send = setup();
+  await expect(clearPageValues(7, 'https://other.example.test', new AbortController().signal)).rejects.toThrow('清除已停止');
+  expect(send.mock.calls.some((call) => call[1].type === 'af:clear-values')).toBe(false);
 });
 
 it('does not write after identity verification fails', async () => {

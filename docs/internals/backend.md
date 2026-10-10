@@ -41,7 +41,7 @@ LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验�
 | `src/linkresume/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkresume/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkresume/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
-| `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、三渠道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
+| `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、三渠道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profile`）与管理端用户管理 |
 | `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（自定义头像二进制仅经 `/api/miniprogram/account/avatar` 分发，该接口也支持默认 Logo） |
 | `src/linkresume/modules/resumes/` | ORM、HTTP DTO（用户模板列表与详情按 `resumes.template_id` 实时聚合 `use_count`，无新增列）、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
 | `src/linkresume/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
@@ -329,7 +329,9 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ## 当前 Muse 目录迁移
 
-当前迁移链 head 为 `0117`（`0099 → 0100 → … → 0110 → 0111 → 0112 → 0113 → 0114 → 0115 → 0116 → 0117`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。`0111–0115` 的内容见下文「阿里巴巴 MySQL 规约整改」。
+当前迁移链 head 为 `0118`（`0099 → 0100 → … → 0110 → 0111 → 0112 → 0113 → 0114 → 0115 → 0116 → 0117 → 0118`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。`0111–0115` 的内容见下文「阿里巴巴 MySQL 规约整改」。
+
+`0118` 为 `user_profile` 增加可空 `application_data` JSON 对象及对象类型约束，旧数据、版本号和时间戳不回填。先升级 schema 再启动新版后端；旧客户端省略字段时保留，旧后端不会写此字段。迁移 forward-only，恢复依赖备份或新的向前修正。资料结构与消费隔离见[账号功能](../features/identity-account.md#网申资料)。
 
 `0117` 将内置 Muse 模板中仍匹配原始样本的示例姓名统一为“张三”，按已知模板 key 和原始姓名精确匹配，只修改 `data_json.identity.name.value`。管理员编辑过的姓名、自定义模板、已有用户简历与其他字段不修改；没有 schema 变化，重复执行不再改变数据。迁移为 forward-only，恢复原示例姓名依赖备份或新的向前迁移。
 
@@ -426,4 +428,4 @@ Agent 跨轮身份记忆覆盖现有六类 contexts；通用历史引用通过�
 
 ## 浏览器网申接入
 
-`modules/browser_extension` 提供本人简历的轻量列表、确定性网申字段投影及有界页面字段识别接口，使用 Web 身份校验与统一 `browser_autofill` LLM 场景。只读现有 `resumes` 与 `user_profile`，不持久化投影；LLM 配置与计量沿用已有表，本次不新增 schema 或 revision。投影不包含版式或图片，细节见 [网申填写](autofill.md) 与 [HTTP 契约](../api/http-contracts.md)。
+`modules/browser_extension` 提供本人简历的轻量列表、确定性网申字段投影及有界页面字段识别接口，使用 Web 身份校验与统一 `browser_autofill` LLM 场景。只读现有 `resumes` 与 `user_profile`，不持久化投影；LLM 配置与计量沿用已有表，本次不新增 schema 或 revision。可选导入注释缺失时，`source_fields.py` 仅从明确的正文头部提取学校、单位、日期、职位和项目名称，不推断学历等缺失事实，不改写原简历；现有结构化条目优先，歧义通过投影 `warnings` 告知。投影不包含版式或图片，细节见 [网申填写](autofill.md) 与 [HTTP 契约](../api/http-contracts.md)。

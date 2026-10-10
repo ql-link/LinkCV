@@ -8,6 +8,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from linkresume.modules.job_descriptions.schemas import (
     SalaryPeriod,
 )
+from .application_data import ApplicationData
 
 
 EmploymentType = Literal["internship", "full_time"]
@@ -251,6 +252,14 @@ class RecentResumeSummary(BaseModel):
     updated_at: datetime
 
 
+class ApplicationImportPreview(BaseModel):
+    resume_id: str
+    resume_lock_version: int
+    title: str
+    application_data: ApplicationData
+    warnings: list[str]
+
+
 class UserProfileBase(BaseModel):
     """用户画像可编辑字段集合，请求体与响应共用。"""
 
@@ -286,6 +295,7 @@ class UserProfileBase(BaseModel):
     campus_experiences: list[ProfileStringItem] = Field(
         default_factory=list, max_length=100
     )
+    application_data: ApplicationData | None = None
 
     @field_validator(*_OPTIONAL_TEXT_FIELDS)
     @classmethod

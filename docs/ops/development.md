@@ -240,6 +240,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 - 独立意图识别的虚构回归用例位于 `apps/backend/tests/fixtures/intent_routing_cases.json`。`LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/dev/verify_intent_routing.py` 默认只列出用例，不调用模型；加 `--live` 才使用当前有效的 Dev 意图模型，重复 `--case` 可限制场景和调用数量，`--output` 可保存安全结果。脚本拒绝 Production，不读取用户资料或创建业务任务，调用来源为 `intent_acceptance`；不能替代真实 Pi 工具、回退和权限验收，详见 [助手人工测试手册](assistant-resume-manual-testing.md#独立意图识别回归)。
 - 跨浏览器插件、BOSS 页面、Web、FastAPI、真实 MySQL 和 Redis 的完整导入流程由浏览器人工验证。侧载目录和步骤见 [`apps/extension/README.md`](../../apps/extension/README.md)。
 - 网申填写插件使用 `typecheck:autofill` 检查类型，`eval` 提供可选的字段决策评测；真实招聘页面的控件交互、站点权限和写入结果需人工验证，评测不等同于浏览器端到端验收。
+- 统一插件读取当前网申 URL 需要 Manifest 的 `tabs` 权限；更新侧载包后在 Chrome 重新加载，并处理新增权限提示。首次点击填写只申请当前网站权限，拒绝授权不会扫描或填写；具体边界见 [网申填写](../internals/autofill.md#模型与权限)。
 
 ### 小程序求职联调
 

@@ -9,12 +9,14 @@ export interface ScannedField {
   placeholder: string;
   kind: string;
   options: string[];
-  /** 是否为下拉/选择类控件，决定数组值取第一项还是拼接。 */
+  /** 是否为下拉/选择类控件；只允许单个明确值，不能擅取数组第一项。 */
   isChoice: boolean;
   /** 位于站点配置的经历容器中时，表示同一模块内第几个容器。 */
   group: number | null;
   /** 控件当前已有值。 */
   hasValue: boolean;
+  /** 多选控件不能擅自从多个资料值中选择第一项。 */
+  isMultiple?: boolean;
 }
 
 const SKIP_INPUT_TYPES = new Set(['hidden', 'radio', 'checkbox', 'file', 'submit', 'button', 'image', 'reset', 'password']);
@@ -22,6 +24,7 @@ const CUSTOM_SELECTS =
   '.ant-select, .atsx-select, .kuma-select2, hc-super-selector, .ivu-select, .ui-select, .select-input, .el-dropdown, .brick-select';
 const CHOICE_OWNERS =
   '.ant-select, .ant-cascader, .ant-picker, .ant-calendar-picker, .el-select, .el-cascader, .el-date-editor, .ivu-select, .ivu-cascader, .ivu-date-picker, .atsx-select, .atsx-date-picker, .mtd-select, .mtd-date-picker, .ud__select, .ud__picker-dateInput, [class*="sd-Dropdown-container"], [role="combobox"]';
+const SELECT_OWNERS = '.ant-select,.el-select,.ivu-select,.atsx-select,.mtd-select,[role="combobox"]';
 const SKIP_LABEL = /验证码|captcha|verification code|密码|password/i;
 const HEADING =
   'h1,h2,h3,h4,h5,legend,[role="heading"],[class*="title" i]:not(input):not(textarea),[class*="header" i]:not(input):not(textarea)';
@@ -70,6 +73,7 @@ function collectControls(site: SiteConfig | null): HTMLElement[] {
 }
 
 function labelByConfig(el: Element, level2: string): string {
+  const boundary = el.closest(FIELD_WRAPPER);
   let node: Element | null = el;
   for (let i = 0; i < 15 && node; i++) {
     node = node.parentElement;
@@ -78,22 +82,18 @@ function labelByConfig(el: Element, level2: string): string {
     if (found.length) {
       // 取文档顺序上位于控件之前的最后一个标签
       let best: Element | null = null;
-      found.forEach((f) => {
+      for (const f of found) {
         if (f.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) best = f;
-      });
-      return cleanText((best ?? found[0]!).textContent);
+      }
+      return best ? cleanText(best.textContent) : '';
     }
+    // 不跨表单项查找标签，否则页面顶部的控件会借用后面的“姓名”。
+    if (node === boundary || node === document.body || node.matches('form,[role="form"]')) break;
   }
   return '';
 }
 
 function labelOf(el: HTMLElement, site: SiteConfig | null): string {
-  if (site?.level2_class) {
-    try {
-      const t = labelByConfig(el, site.level2_class);
-      if (t) return t;
-    } catch {}
-  }
   if (el.id) {
     const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
     if (l && cleanText(l.textContent)) return cleanText(l.textContent);
@@ -110,17 +110,26 @@ function labelOf(el: HTMLElement, site: SiteConfig | null): string {
     const t = cleanText(by.split(/\s+/).map((id) => document.getElementById(id)?.textContent).join(' '));
     if (t) return t;
   }
+  if (site?.level2_class) {
+    try {
+      const t = labelByConfig(el, site.level2_class);
+      if (t) return t;
+    } catch {}
+  }
+  const boundary = el.closest(FIELD_WRAPPER);
   let node: Element | null = el;
-  for (let i = 0; i < 5 && node; i++) {
+  for (let i = 0; i < 12 && node; i++) {
     node = node.parentElement;
     if (!node || node === document.body) break;
     const cand = Array.from(node.querySelectorAll('label,th,dt,[class*="label" i]')).find(
-      (c) => !c.contains(el) && !hasControl(c) && cleanText(c.textContent),
+      (c) => !c.contains(el) && !hasControl(c) && cleanText(c.textContent)
+        && !!(c.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING),
     );
     if (cand) return cleanText(cand.textContent);
     const prev = node.previousElementSibling;
     const prevText = prev && !hasControl(prev) ? cleanText(prev.textContent) : '';
     if (prevText && prevText.length <= 30) return prevText;
+    if (node === boundary || node.matches('form,[role="form"]')) break;
   }
   return '';
 }
@@ -152,6 +161,7 @@ function kindOf(el: HTMLElement) {
   if (tag === 'select') return 'select';
   if (tag === 'textarea') return 'textarea';
   if (tag !== 'input') return 'custom-select';
+  if (el.closest(SELECT_OWNERS)) return 'custom-select';
   return `input:${((el as HTMLInputElement).type || 'text').toLowerCase()}`;
 }
 
@@ -160,8 +170,10 @@ export function currentValue(el: HTMLElement): string {
     const opt = el.selectedOptions[0];
     return opt && opt.value ? cleanText(opt.textContent) : '';
   }
+  const root = el.closest(SELECT_OWNERS) ?? el;
+  const shown = root.querySelector('.ant-select-selection-item, .ant-select-selection-selected-value, .el-select__selected-item, .ivu-select-selected-value, .mtd-select-filter-label:not(.mtd-select-filter-hint)');
+  if (shown && cleanText(shown.textContent)) return cleanText(shown.textContent);
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value.trim();
-  const shown = el.querySelector('.ant-select-selection-item, .ant-select-selection-selected-value, .el-select__selected-item, .ivu-select-selected-value');
   return shown ? cleanText(shown.textContent) : '';
 }
 
@@ -191,8 +203,13 @@ export function scanPage(site: SiteConfig | null): ScannedField[] {
   const sectionCache = new Map<Element, string>();
   const fields: ScannedField[] = [];
   for (const el of collectControls(site)) {
-    const label = labelOf(el, site);
-    const placeholder = cleanText(el.getAttribute('placeholder'));
+    let label = labelOf(el, site);
+    const choiceOwner = el.closest(CHOICE_OWNERS);
+    const placeholder = cleanText(el.getAttribute('placeholder')) || cleanText(
+      choiceOwner?.querySelector('[class*="placeholder"],.mtd-select-filter-hint')?.textContent,
+    );
+    // 证件类型与号码共用一个表单标签时，用选择器自身明确的提示区分它们。
+    if (choiceOwner && label === '证件号码' && placeholder === '请选择证件类型') label = '证件类型';
     if (SKIP_LABEL.test(label) || SKIP_LABEL.test(placeholder)) continue;
     const section = sectionOf(el, site, headings);
     let uid = el.getAttribute('data-af-uid');
@@ -218,6 +235,7 @@ export function scanPage(site: SiteConfig | null): ScannedField[] {
       isChoice: kind === 'select' || kind === 'custom-select' || !!el.closest(CHOICE_OWNERS) || /^请?选择/.test(placeholder),
       group: groupIndex(el, site, section, sectionCache, headings),
       hasValue: !!currentValue(el),
+      isMultiple: !!((el as HTMLSelectElement).multiple || choiceOwner?.matches('[aria-multiselectable="true"],[class*="multiple"]')),
     });
   }
   return fields;

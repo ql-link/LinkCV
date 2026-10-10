@@ -230,6 +230,12 @@ export function installDemoRuntime() {
   api.updateAccountProfile = async nickname => { profile.nickname = nickname; return clone(profile); };
   api.updateContactEmail = async email => { profile.contact_email = email; return { contact_email: email }; };
   api.getUserProfile = async () => clone(userProfile);
+  api.previewApplicationImport = async key => {
+    const resume = resumeFor(key);
+    return { resume_id: key, resume_lock_version: resume.lock_version, title: resume.title,
+      application_data: { version: 1, resume_ids: [key], basics: { name: "张三" }, contact: {}, others: {}, records: [] },
+      warnings: ["演示只提供虚构资料，不会读取真实工作区。"] };
+  };
   api.putUserProfile = async patch => { userProfile = { ...userProfile, ...patch, lock_version: userProfile.lock_version + 1 }; return clone(userProfile); };
   api.uploadAccountAvatar = async payload => { profile.avatar_url = payload.dataUrl; return { url: payload.dataUrl }; };
   api.deleteAccountAvatar = async () => { profile.avatar_url = null; return { ok: true }; };

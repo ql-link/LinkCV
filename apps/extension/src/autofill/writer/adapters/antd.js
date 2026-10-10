@@ -53,9 +53,7 @@ async function selectAntOption(el, value, searchable) {
   }
   let options = [];
   await waitFor(() => (options = collectAntOptions(popup)).length > 0, 10, 100);
-  const exact = options.find((o) => o.text === value);
-  if (exact) {
-    await realClick(exact.element, 50);
+  if (await clickMatchingOption(el, options, value, { useMatcher: false, waitAfter: 50 })) {
     return true;
   }
   const input = searchInputOf(el);
@@ -98,6 +96,9 @@ async function selectAntOption(el, value, searchable) {
 }
 
 async function antSelect(el, value, label) {
+  const input = searchInputOf(el);
+  const before = input?.value;
+  let success = false;
   try {
     if (isCascader(el)) return await antCascader(el, value);
     const trigger = closestOf(el, '.ant-select-selector') || findIn(el, '.ant-select-selector') || el;
@@ -112,14 +113,15 @@ async function antSelect(el, value, label) {
     }
     const searchable = /学校|专业/.test(label) || findIn(el, '.ant-select-search') !== null || closestOf(el, '.ant-select-selection-search') !== null;
     const ok = await selectAntOption(el, value, searchable);
-    // 可搜索下拉匹配失败时保留输入的原文，至少让表单有值。
-    if (!ok && searchable && el instanceof HTMLInputElement) await setValueWithEvents(el, value);
+    success = ok;
     dispatchBlur(el);
     await sleep(10);
     return ok;
   } catch {
     dispatchBlur(el);
     return false;
+  } finally {
+    if (!success && input && before != null && input.value !== before) await setValueWithEvents(input, before, 0);
   }
 }
 
@@ -252,22 +254,9 @@ export async function antdAdapter(el, value, ctx) {
   const cls = typeof el.className === 'string' ? el.className : '';
   const isOldRange = closestOf(el, '.ant-calendar-range-picker-input');
   const isNewRange = closestOf(el, '.ant-picker-range') != null;
-  if (!isOldRange && !isNewRange && rangeState) rangeState = null;
   if (isOldRange || isNewRange) {
-    const v = String(value ?? '').trim();
-    if (!rangeState || rangeState.startElement === el) {
-      rangeState = { startElement: el, startDate: v };
-      return { handled: true, success: true };
-    }
-    const { startElement, startDate } = rangeState;
-    rangeState = null;
-    if (!startDate) return { handled: true, success: false };
-    try {
-      const ok = isOldRange ? await fillAntCalendarRange(startElement, startDate, v) : await fillAntPickerRange(startElement, startDate, v);
-      return { handled: true, success: ok };
-    } catch {
-      return { handled: true, success: false };
-    }
+    // 当前单字段调用没有同一控件两个端点的确定契约，不跨字段暂存并猜测区间。
+    return { handled: true, success: false, skipped: true };
   }
   if (cls.includes('ant-calendar') || el.closest(SEL.CALENDAR_PICKER) || closestOf(el, '.ant-col [class*=" u-date"]')) {
     return { handled: true, success: await fillAntCalendar(el, value).catch(() => false) };

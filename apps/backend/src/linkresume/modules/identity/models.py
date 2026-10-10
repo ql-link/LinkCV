@@ -191,6 +191,7 @@ class UserProfile(Base):
         PrimaryKeyConstraint("id", name="pk_user_profile"),
         UniqueConstraint("user_id", name="uk_user_profile_user_id"),
         CheckConstraint("lock_version >= 1", name="ck_user_profile_lock_version"),
+        CheckConstraint("application_data IS NULL OR LOWER(JSON_TYPE(application_data)) = 'object'", name="ck_user_profile_application_data_object"),
         CheckConstraint(
             "salary_period IS NULL OR salary_period IN ('hour', 'day', 'month', 'year')",
             name="ck_user_profile_salary_period",
@@ -339,6 +340,10 @@ class UserProfile(Base):
     )
     campus_experiences: Mapped[list[str]] = mapped_column(
         JSON(), nullable=False, default=list, comment="校园经历字符串数组"
+    )
+    application_data: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True,
+        comment="用户确认的网申事实与简历对应关系，版本化对象，应用限制64KiB",
     )
     create_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now(),
