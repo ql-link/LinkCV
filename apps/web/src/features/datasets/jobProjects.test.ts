@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { DatasetRecord, InterviewSessionSummary, JobApplicationSummary } from "../../api/client";
-import { buildJobProjects, compactStageNodes, datasetProjectLabels } from "./jobProjects";
+import { buildJobProjects, datasetProjectLabels } from "./jobProjects";
 
 const application = (overrides: Partial<JobApplicationSummary> = {}) => ({
   id: "a1",
@@ -88,16 +88,5 @@ describe("buildJobProjects", () => {
   it("所在项目名称以求职进程为准", () => {
     const projects = buildJobProjects([application()], [session("s1")], [dataset("d1", { interview_session_id: "s1" })]);
     expect(datasetProjectLabels(projects).get("d1")).toBe("虚构甲公司 · 后端开发");
-  });
-});
-
-describe("compactStageNodes", () => {
-  it("超过 4 个节点时保留投递和最近三个阶段", () => {
-    const [project] = buildJobProjects(
-      [application()],
-      ["一面", "二面", "三面", "HR 面"].map((label, index) => session(`s${index}`, { stage_label: label, start_at: `2026-09-2${index}T02:00:00Z` })),
-      [],
-    );
-    expect(compactStageNodes(project.nodes).map((node) => node.label)).toEqual(["投递", "三面", "HR 面", "Offer"]);
   });
 });

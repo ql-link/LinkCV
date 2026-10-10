@@ -4040,7 +4040,6 @@ export const messages: Record<string, string> = {
   "资料都还在，刷新一下试试。": "Your materials are safe; try refreshing.",
   "返回资料库": "Back to library",
   "还没有其他项目": "No other projects yet",
-  "还没有资料 · 进入后添加": "No materials yet · Open to add",
   "还没有资料。": "No materials yet.",
   "这个求职进程不存在或已删除": "This application does not exist or was deleted",
   "这个求职进程已归档，资料只读。": "This application is archived. Its materials are read-only.",
@@ -4082,4 +4081,6 @@ export const messages: Record<string, string> = {
   "项目里的 {value0} 份资料会和项目一起永久删除（包括源文件和解析结果），无法恢复。想保留的资料，请先移到其他项目。": "The {value0} materials in this project will be permanently deleted with it, including source files and parsed results. Move any materials you want to keep to another project first.",
   "项目里的资料会一起永久删除": "Materials in the project are permanently deleted too",
   "查看转写稿": "View transcript",
+  "下一场 {value0} {value1}": "Next: {value0} {value1}",
+  "下一场 {value0}": "Next: {value0}",
 };
