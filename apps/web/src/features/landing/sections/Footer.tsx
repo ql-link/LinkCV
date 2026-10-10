@@ -22,7 +22,7 @@ export function Footer({ onStart }: { onStart: () => void }) {
         aria-hidden
       >
         <div className="-mb-[0.34em] select-none whitespace-nowrap font-display text-[28vw] leading-[0.72] font-semibold tracking-[-0.075em] text-transparent opacity-45 [-webkit-text-stroke:1px_rgba(24,24,27,0.42)] sm:text-[23vw] md:-mb-[0.36em] md:text-[18vw] dark:opacity-35 dark:[-webkit-text-stroke:1px_rgba(255,255,255,0.5)]">
-          LinkResume
+          DrawOffer
         </div>
       </div>
 
@@ -60,7 +60,7 @@ export function Footer({ onStart }: { onStart: () => void }) {
             <Reveal>
               <div>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-                  <Brand className="landing-footer-brand" label="LinkResume" />
+                  <Brand className="landing-footer-brand" label="DrawOffer" />
                   <span className="hidden h-4 w-px bg-white/30 sm:block" aria-hidden />
                   <p className="font-mono text-[10px] tracking-[0.16em] text-white/85 uppercase">
                     {t.footer.tagline}

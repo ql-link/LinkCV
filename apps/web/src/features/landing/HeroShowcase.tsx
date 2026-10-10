@@ -296,7 +296,7 @@ export function HeroShowcase({ ref }: { ref?: Ref<HeroShowcaseHandle> }) {
   const live = phase === "done";
   const demo = live || phase === "leaving";
   return (
-    <div ref={stage} id="demo" className="fl-hero-stage fl-showcase" data-phase={phase} aria-label={lt(film ? "LinkResume 产品短片" : "LinkResume 产品首页演示")}>
+    <div ref={stage} id="demo" className="fl-hero-stage fl-showcase" data-phase={phase} aria-label={film ? undefined : lt("DrawOffer 产品首页演示")}>
       <div ref={bar} className="fl-showcase-bar">
         {film
           ? <button type="button" onClick={skip}>{lt("跳过短片")}<ArrowRight size={12} strokeWidth={2} /></button>
@@ -311,7 +311,7 @@ export function HeroShowcase({ ref }: { ref?: Ref<HeroShowcaseHandle> }) {
           muted
           playsInline
           preload="none"
-          aria-label={lt("LinkResume 产品短片")}
+          aria-label={lt("DrawOffer 产品短片")}
           aria-hidden={live}
           style={live ? { opacity: 0 } : undefined}
           onEnded={onEnded}

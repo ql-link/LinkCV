@@ -15,7 +15,7 @@ export const zh = {
   },
 
   hero: {
-    brand: 'LinkResume',
+    brand: 'DrawOffer',
     taglines: [
       '把每一份经历，都写成下一份机会',
       '把每一次成长，都沉淀成可见的轨迹',
@@ -158,7 +158,7 @@ export const zh = {
   },
 
   marquee: {
-    eyebrow: 'LINKRESUME / ONE WORKSPACE',
+    eyebrow: 'DRAWOFFER / ONE WORKSPACE',
     title: '一份简历，只是开始',
     subtitle: '继续向下，进入完整的求职工作台',
     keywords: ['A4 纸面编辑', '简历管理', 'PDF 导出', '智能一页', '岗位库', 'Chrome 插件', '模板导入', '自动保存'],
@@ -170,7 +170,7 @@ export const zh = {
     title2: '不该散落在',
     titleAccent: '七个地方',
     description: '简历躺在 Word、PDF、模板网站和多个副本里，岗位信息分散在招聘平台、收藏夹和聊天记录中，每次修改、排版、回看 JD，都要在工具之间反复切换',
-    answer: 'LinkResume 的答案：',
+    answer: 'DrawOffer 的答案：',
     answerAccent: '内容优先、排版可控',
     answerSuffix: '的一个工作区',
   },
@@ -186,7 +186,7 @@ export const zh = {
       { num: '02', title: '简历管理', desc: '自动保存当前修改，需要不同内容时复制为独立简历' },
       { num: '03', title: 'PDF 导出', desc: '标准 A4 分页，或「智能一页」模式，导出适合投递的高质量 PDF' },
       { num: '04', title: '岗位库', desc: '记录、搜索和编辑岗位资料，简历与岗位要求在同一个工作区对照' },
-      { num: '05', title: 'Chrome 插件采集', desc: '读取当前打开的 BOSS 直聘岗位详情，经你确认后一键导入 LinkResume' },
+      { num: '05', title: 'Chrome 插件采集', desc: '读取当前打开的 BOSS 直聘岗位详情，经你确认后一键导入 DrawOffer' },
     ],
     manifesto: ['CONTENT FIRST.', 'LAYOUT UNDER CONTROL.', 'EVERY CHANGE RECOVERABLE.'],
   },
@@ -196,7 +196,7 @@ export const zh = {
     eyebrow: '编辑器',
     title1: '在真正的 A4 纸面上，',
     title2: '写你的简历',
-    description: '不是表单，不是填坑模板，LinkResume 让你直接在接近最终打印效果的纸面上编辑文字、图片与左右分栏，字体、字号、行距、页边距全部可调',
+    description: '不是表单，不是填坑模板，DrawOffer 让你直接在接近最终打印效果的纸面上编辑文字、图片与左右分栏，字体、字号、行距、页边距全部可调',
     controls: [
       { label: '字体 / 字号', value: '思源黑体 · 10.5pt' },
       { label: '行距', value: '1.45' },
@@ -257,7 +257,7 @@ export const zh = {
     eyebrow: '理念',
     title1: '不替你投递，',
     title2: '不后台抓取',
-    description: 'LinkResume 不做黑盒式的自动化，它相信求职是自己的事——工具该做的，是把内容管好、把过程留痕，把控制权完完整整地交回你手里',
+    description: 'DrawOffer 不做黑盒式的自动化，它相信求职是自己的事——工具该做的，是把内容管好、把过程留痕，把控制权完完整整地交回你手里',
     principles: [
       { title: '明确的用户控制', desc: '每一次导入、保存、导出，都由你亲手确认' },
       { title: '可靠的内容保存', desc: '自动保存当前内容，复制简历保留不同方向' },
@@ -270,8 +270,8 @@ export const zh = {
     eyebrow: '常见问题',
     title: '你可能想问',
     items: [
-      { q: '可以从已有的简历文件开始吗？', a: '可以，除了空白内容和内置模板，LinkResume 支持导入已有的 Markdown、DOCX、PDF 文件，在此基础上继续编辑' },
-      { q: 'Chrome 插件会抓取哪些数据？', a: '插件只读取你当前打开的 BOSS 直聘岗位详情页，并且在你手动点击确认后才会导入 LinkResume，它不会在后台批量抓取，也不会替你投递' },
+      { q: '可以从已有的简历文件开始吗？', a: '可以，除了空白内容和内置模板，DrawOffer 支持导入已有的 Markdown、DOCX、PDF 文件，在此基础上继续编辑' },
+      { q: 'Chrome 插件会抓取哪些数据？', a: '插件只读取你当前打开的 BOSS 直聘岗位详情页，并且在你手动点击确认后才会导入 DrawOffer，它不会在后台批量抓取，也不会替你投递' },
       { q: '「智能一页」是怎么工作的？', a: '导出 PDF 时选择智能一页模式，系统会自动调节排版密度，把内容收进一页 A4；需要多页时则使用标准 A4 分页模式' },
       { q: '误删或改错了内容怎么办？', a: '编辑时可使用撤销；大幅调整前建议先复制简历。系统自动保存当前内容，不提供历史版本恢复' },
       { q: '岗位库能管理多少岗位？', a: '没有硬性上限。岗位资料可以搜索、查看和编辑；不再需要时可确认后直接删除' },
@@ -283,8 +283,8 @@ export const zh = {
     title1: '下一份简历，',
     title2: '从这里开始',
     description: '管理简历与岗位，把每一次修改和投递都留在同一个工作区',
-    cta: '开始使用 LinkResume',
-    copyright: '© 2026 LinkResume · RESUME · VERSION · PDF · JD',
+    cta: '开始使用 DrawOffer',
+    copyright: '© 2026 DrawOffer · RESUME · VERSION · PDF · JD',
     navLabel: '页脚导航',
     linkGroups: [
       { title: '产品', links: [{ label: '功能总览', href: '#features' }, { label: 'A4 编辑器', href: '#editor' }, { label: '岗位库', href: '#jd' }] },
