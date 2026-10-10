@@ -248,6 +248,9 @@ export function FocusSheet({
   ));
   const [askText, setAskText] = useState("");
   const [askLineId, setAskLineId] = useState<string | null>(null);
+  // The user request being reworded in the ask bar; it is set aside once the new one is sent.
+  const [revisingId, setRevisingId] = useState<string | null>(null);
+  const askInput = useRef<HTMLInputElement>(null);
   const [jobs, setJobs] = useState<JobDescriptionSummary[] | null>(null);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [draftAnswers, setDraftAnswers] = useState<string[]>(restored?.draftAnswers ?? []);
@@ -523,9 +526,24 @@ export function FocusSheet({
     });
   };
 
+  // Hand a line to the ask bar, so the user can say in their own words what to change.
+  const askAbout = (lineId: string | null, text = "") => {
+    setAskLineId(lineId && editable.has(lineId) ? lineId : null);
+    setAskText(text);
+    askInput.current?.focus();
+  };
+
+  const reviseAsk = (item: Item) => {
+    setRevisingId(item.id);
+    askAbout(item.lineId, item.instruction);
+  };
+
   const submitAsk = () => {
     const instruction = askText.trim();
     if (!instruction || !unit || phase.kind !== "ready") return;
+    const revised = items.find((item) => item.id === revisingId && item.status !== "done");
+    setRevisingId(null);
+    if (revised) skip(revised);
     const indexFromText = lineIndexFromText(instruction);
     const usable = (id: string | null | undefined) => (id && editable.has(id) ? id : null);
     const activeLine = items.find((item) => item.id === activeId)?.lineId ?? null;
@@ -594,6 +612,11 @@ export function FocusSheet({
     const draft = item.draft;
     const note = item.note;
     const question = note?.questions[item.qIndex];
+    const open = draft !== null && (item.status === "pending" || item.status === "todo");
+    // Each kind offers the next step that fits it: missing facts → revisit the answers,
+    // a user request → reword it, wording → another tone or the user's own words.
+    const asked = note?.kind === "missing" && note.questions.length > 0;
+    const canRetune = open && item.lineId !== null && (item.kind === "wording" || (item.kind === "missing" && !asked));
     return (
       <div className={`sf-panel sf-panel-${item.kind}`}>
         {note?.kind === "missing" && question && item.status !== "done" && (
@@ -667,9 +690,24 @@ export function FocusSheet({
                   {t("重试")}
                 </button>
               )}
-              {draft && (item.status === "pending" || item.status === "todo") && note?.kind !== "structure" && item.lineId && (
+              {asked && item.qIndex > 0 && item.status !== "loading" && (
+                <button type="button" className="sf-btn" title={t("回到第 1 题修改补充的信息")} onClick={() => patch(item.id, { qIndex: 0 })}>
+                  {t("改回答")}
+                </button>
+              )}
+              {item.kind === "ask" && item.status !== "loading" && (
+                <button type="button" className="sf-btn" title={t("把这条要求放回下方输入栏修改后重新生成")} onClick={() => reviseAsk(item)}>
+                  {t("改要求")}
+                </button>
+              )}
+              {canRetune && (
                 <button type="button" className="sf-btn" title={t("基于当前这版换一种语气，内容不变")} onClick={() => retune(item)}>
                   {t("再调语气")}
+                </button>
+              )}
+              {open && item.kind === "wording" && item.lineId && (
+                <button type="button" className="sf-btn" title={t("在下方输入栏写下你对这一句的要求")} onClick={() => askAbout(item.lineId)}>
+                  {t("说说要求")}
                 </button>
               )}
               {item.status !== "skipped" && (
@@ -1020,8 +1058,12 @@ export function FocusSheet({
         >
           <i className="sf-ring" aria-hidden="true" />
           <input
+            ref={askInput}
             value={askText}
-            onChange={(event) => setAskText(event.target.value)}
+            onChange={(event) => {
+              setAskText(event.target.value);
+              if (!event.target.value.trim()) setRevisingId(null);
+            }}
             placeholder={phase.kind === "loading" ? t("AI 分析完成后，可以在这里继续提要求") : t("还有想法？直接告诉 AI，比如「第 2 条写得更有冲击力，但别夸大」")}
             maxLength={300}
             disabled={phase.kind !== "ready" || !unit.lines.length}
