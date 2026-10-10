@@ -54,7 +54,7 @@ LINKRESUME_INTERNAL_AGENT_TOKEN=<different-at-least-32-random-characters>
 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`，否则会覆盖通过
 `tolink-app-net` 使用的生产 Docker DNS 地址。
 
-Production Cloud 需要 Docker、Docker Compose、`ossutil 2.x`、外部网络 `tolink-app-net` 和至少一个可回滚的上一版本镜像对。远端脚本按同一 `prod-<commit>-b<build>` 标签构建 `linkresume` 与 `linkresume-pi`，先从 Web 镜像提取 `/app/web/assets` 上传到 OSS 的 `LinkResume/assets/` 前缀，并把 `/app/web/favicon.png` 上传到 `LinkResume/favicon.png`；两类对象都通过 OSS 公网 HTTPS 地址验证，成功后才进入迁移和应用切换；部署时同时提供 `TAG` 与 `PI_TAG`：
+Production Cloud 需要 Docker、Docker Compose、`ossutil 2.x`、外部网络 `tolink-app-net` 和至少一个可回滚的上一版本镜像对。远端脚本按同一 `prod-<commit>-b<build>` 标签构建 `linkresume` 与 `linkresume-pi`，先从 Web 镜像提取 `/app/web/assets`，与 OSS 对象比较内容及响应头，仅增量上传缺失、变化或缓存头不符的资源到 `LinkResume/assets/` 前缀；`/app/web/favicon.png` 同样增量发布到 `LinkResume/favicon.png`。最多 8 个并发请求核对公网响应，未变化的对象跳过上传，新上传对象再次验证，成功后才进入迁移和应用切换；部署时同时提供 `TAG` 与 `PI_TAG`：
 
 ```bash
 export TAG=prod-<commit>-b<build>
