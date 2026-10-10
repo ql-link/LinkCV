@@ -21,6 +21,12 @@ def create_import(client, name="Example Tech", **values):
         "source_url": "https://www.zhipin.com/job_detail/fictional-shared.html", **values})
 
 
+def imported(client, name, key=None):
+    # A distinct posting per call: the same source URL would resolve to the existing job.
+    url = f"https://www.zhipin.com/job_detail/fictional-{key if key is not None else name.encode().hex()}.html"
+    return create_import(client, name=name, source_url=url).json()["job_description"]
+
+
 def test_company_admin_permissions_alias_validation_and_version_conflict(app, client):
     seed(app)
     assert client.get("/api/admin/companies").status_code == 403
@@ -198,12 +204,12 @@ def test_shared_placeholder_is_suspected_reviewed_and_blocked(app, client):
         db.commit()
     placeholder = picture("gray", mark=(150, 50, 250, 150))
     for index in range(2):
-        assert upload(client, create_import(client, name=f"虚构公司{index}").json()["job_description"], placeholder).status_code == 200
+        assert upload(client, imported(client, f"虚构公司{index}"), placeholder).status_code == 200
     admin(app)
     shared = [company for company in client.get("/api/admin/companies").json()["items"] if company["logo_url"]]
     assert len(shared) == 2
     # The third different company name makes the image suspected; it is no longer shared.
-    third = create_import(client, name="虚构公司2").json()["job_description"]
+    third = imported(client, "虚构公司2")
     assert upload(client, third, placeholder).status_code == 200
     suspected = client.get("/api/admin/companies/logo-fingerprints").json()["items"]
     assert len(suspected) == 1 and suspected[0]["company_count"] == 3
@@ -215,7 +221,7 @@ def test_shared_placeholder_is_suspected_reviewed_and_blocked(app, client):
     assert marked.status_code == 200 and marked.json()["cleared_company_count"] == 2
     assert client.post(f"/api/admin/companies/logo-fingerprints/{suspected[0]['id']}/mark-placeholder").json()["cleared_company_count"] == 0
     assert all(company["logo_url"] is None for company in client.get("/api/admin/companies").json()["items"])
-    blocked = upload(client, create_import(client, name="虚构公司3").json()["job_description"], placeholder)
+    blocked = upload(client, imported(client, "虚构公司3"), placeholder)
     assert blocked.status_code == 200 and blocked.json() == {"logo_url": None, "revision": "none"}
     allowed = client.post(f"/api/admin/companies/logo-fingerprints/{suspected[0]['id']}/allow")
     assert allowed.json()["status"] == "allowed"
@@ -243,8 +249,8 @@ def test_unmatched_names_are_counted_assigned_or_ignored(app, client):
     storage = LogoStorage()
     app.dependency_overrides[get_storage] = lambda: storage
     seed(app)
-    for name in ("虚构新公司", " 虚构新公司 ", "另一家虚构公司"):
-        assert upload(client, create_import(client, name=name).json()["job_description"]).status_code == 200
+    for index, name in enumerate(("虚构新公司", " 虚构新公司 ", "另一家虚构公司")):
+        assert upload(client, imported(client, name, index)).status_code == 200
     assert client.get("/api/admin/companies/unmatched-names").status_code == 403
     admin(app)
     items = client.get("/api/admin/companies/unmatched-names").json()["items"]

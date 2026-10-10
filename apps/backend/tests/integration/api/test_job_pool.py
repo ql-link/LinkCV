@@ -212,7 +212,7 @@ def test_new_admission_scope_rebaselines_once_instead_of_reporting_a_drop(app, c
 
 
 def test_release_script_closes_out_of_scope_jobs_and_recategorizes_the_rest(app, client):
-    path = Path(__file__).resolve().parents[2] / "scripts/release/close_out_of_scope_jobs.py"
+    path = Path(__file__).resolve().parents[3] / "scripts/release/close_out_of_scope_jobs.py"
     spec = importlib.util.spec_from_file_location("linkresume_close_out_of_scope_jobs_test", path)
     script = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(script)

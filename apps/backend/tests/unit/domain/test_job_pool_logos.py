@@ -69,13 +69,15 @@ def test_logo_is_returned_even_when_jobs_are_temporarily_unavailable():
         async def request(self, url, **kwargs):
             if kwargs.get("as_text"):
                 return '<link rel="icon" href="/fictional-brand.ico">'
+            if kwargs.get("as_bytes"):
+                return b"fictional-artwork"
             raise CollectionError("JOB_SOURCE_NETWORK_ERROR")
 
     entry = source("netease")
     result = asyncio.run(OfficialAdapter(HTTP()).collect(entry.adapter, entry.host, entry.config()))
     assert not result.is_complete and result.error_code == "JOB_SOURCE_NETWORK_ERROR"
     assert result.company_logo_url == "https://hr.163.com/fictional-brand.ico"
-    assert result.company_logo_error_code is None
+    assert result.company_logo_bytes == b"fictional-artwork" and result.company_logo_error_code is None
 
 
 def moka_page(org='moonshot', site=148506, logo='https://public-cdn.mokahr.com/moonshot/fictional-brand.png'):
