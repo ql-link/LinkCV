@@ -1,5 +1,5 @@
 appId: cn.linkresume.desktop
-productName: LinkResume
+productName: DrawOffer
 directories:
   output: release
 files:

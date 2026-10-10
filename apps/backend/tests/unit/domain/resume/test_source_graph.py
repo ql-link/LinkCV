@@ -1,13 +1,13 @@
 import pytest
 from pydantic import ValidationError
 
-from linkresume.domain.document_conversion import PdfLayoutBlock
-from linkresume.domain.resume import (
+from drawoffer.domain.document_conversion import PdfLayoutBlock
+from drawoffer.domain.resume import (
     ParsedSourceBlock,
     build_source_graph,
     build_source_graph_from_layout_ir,
 )
-from linkresume.domain.section_ir import build_section_ir
+from drawoffer.domain.section_ir import build_section_ir
 
 
 def blocks() -> list[ParsedSourceBlock]:

@@ -9,12 +9,12 @@ from zoneinfo import ZoneInfo
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
-from linkresume.core.config import Settings
-from linkresume.core.errors import ApiError
-from linkresume.core.storage import StreamUploadResult
-from linkresume.main import create_app
-from linkresume.modules.resumes.models import ResumeTemplate
-from linkresume.services import dataset_ingest_service
+from drawoffer.core.config import Settings
+from drawoffer.core.errors import ApiError
+from drawoffer.core.storage import StreamUploadResult
+from drawoffer.main import create_app
+from drawoffer.modules.resumes.models import ResumeTemplate
+from drawoffer.services import dataset_ingest_service
 from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
 
@@ -2606,7 +2606,7 @@ def test_media_capacity_limit_rejects_extra_media() -> None:
 
 
 def test_elapsed_schedule_waits_for_result_and_settles_on_next_stage() -> None:
-    from linkresume.modules.interviews.models import InterviewSession
+    from drawoffer.modules.interviews.models import InterviewSession
 
     app = build_app()
     with TestClient(app) as client:
@@ -2684,8 +2684,8 @@ def test_deleting_archived_legacy_application_removes_its_stages() -> None:
     """Stages used to rely on a database cascade; the service now deletes them."""
     from sqlalchemy import func, select, update
 
-    from linkresume.core.database import utc_now
-    from linkresume.modules.interviews.models import JobApplication, JobApplicationStage
+    from drawoffer.core.database import utc_now
+    from drawoffer.modules.interviews.models import JobApplication, JobApplicationStage
 
     app = build_app()
     with TestClient(app) as client:

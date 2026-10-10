@@ -6,7 +6,7 @@ from pathlib import Path
 from alembic import op
 from sqlalchemy import inspect
 
-from linkresume.core.migration_sql import execute_sql_file
+from drawoffer.core.migration_sql import execute_sql_file
 
 revision: str = "0106"
 down_revision: str | None = "0105"

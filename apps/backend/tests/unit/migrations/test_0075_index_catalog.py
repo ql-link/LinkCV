@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 
-from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition, compile_layout_plan
+from drawoffer.domain.resume import CanonicalResumeDocument, TemplateDefinition, compile_layout_plan
 
 ROOT = Path(__file__).resolve().parents[5]
 SQL = (ROOT / "apps/backend/migrations/sql/0075.up.sql").read_text(encoding="utf-8")

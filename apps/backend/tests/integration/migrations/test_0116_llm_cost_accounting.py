@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from sqlalchemy import create_engine, inspect, text
 
-from linkresume.modules.llm.models import LLMPriceRevision, LLMCostOperation, LLMCallCostRevision
+from drawoffer.modules.llm.models import LLMPriceRevision, LLMCostOperation, LLMCallCostRevision
 from tests.integration.migrations.test_mysql_migrations import migration_test_url, reset_test_database_to_base, run_alembic
 
 

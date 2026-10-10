@@ -7,11 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.application.resumes.copy_service import copy_resume
-from linkresume.core.errors import ApiError
-from linkresume.modules.interviews.models import JobApplication
-from linkresume.modules.product_events.models import ProductEvent
-from linkresume.modules.resumes.models import Resume
+from drawoffer.application.resumes.copy_service import copy_resume
+from drawoffer.core.errors import ApiError
+from drawoffer.modules.interviews.models import JobApplication
+from drawoffer.modules.product_events.models import ProductEvent
+from drawoffer.modules.resumes.models import Resume
 from tests.integration.api.test_interviews import build_app, register, create_job, create_resume
 
 
@@ -164,7 +164,7 @@ def test_copy_compensation_respects_commit_boundary(monkeypatch, failure):
                 storage.fail_copy = True
             else:
                 patch.setattr(
-                    "linkresume.application.resumes.copy_service.validate_resume_pdf_asset_contract",
+                    "drawoffer.application.resumes.copy_service.validate_resume_pdf_asset_contract",
                     fail,
                 )
             expected_error = RuntimeError if failure in {"refresh", "commit_ack"} else ApiError

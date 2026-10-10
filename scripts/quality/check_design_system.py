@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the LinkResume Settings Pattern token contract and shared layout CSS."""
+"""Validate the DrawOffer Settings Pattern token contract and shared layout CSS."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(
-    os.environ.get("LINKRESUME_REPO_ROOT", Path(__file__).resolve().parents[2])
+    os.environ.get("DRAWOFFER_REPO_ROOT", Path(__file__).resolve().parents[2])
 ).resolve()
 TOKENS_FILE = REPO_ROOT / "apps" / "web" / "src" / "design-system" / "tokens.css"
 LAYOUT_PATTERNS_CSS_FILE = REPO_ROOT / "apps" / "web" / "src" / "components" / "ui" / "layout-patterns.css"

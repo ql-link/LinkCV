@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createSteeringHandle } from "../src/steering.js";
-import { createLinkResumeClient } from "../src/tools/linkresume-client.js";
+import { createDrawOfferClient } from "../src/tools/drawoffer-client.js";
 
 test("one admitted input, immutable snapshots, stable replay and changed-body rejection", async () => {
   const inputs = [];
@@ -35,7 +35,7 @@ test("trusted client updates source on every tool callback and completion", asyn
     calls.push({ url, options });
     return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
   });
-  const client = createLinkResumeClient({ toolTimeoutMs: 1000, linkresumeBaseUrl: "http://example.test", linkresumeToken: "fictional-token" },
+  const client = createDrawOfferClient({ toolTimeoutMs: 1000, drawofferBaseUrl: "http://example.test", drawofferToken: "fictional-token" },
     "run", new AbortController().signal, 1);
   await client.planTasks({ tasks: [] });
   await client.activateSteering({ idempotency_key: "steer_key_1", content: "后续" });

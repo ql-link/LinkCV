@@ -17,20 +17,20 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-import linkresume.models  # noqa: F401  # Register every mapped model.
-from linkresume.core.config import load_settings
-from linkresume.core.database import build_engine
-from linkresume.domain.resume_document import ResumeDocument, with_default_semantics
-from linkresume.domain.resume_snapshot import ResumeSnapshot
-from linkresume.domain.resume_style import ResumePresentation, default_template_manifest
-from linkresume.domain.resume.legacy_cutover import (
+import drawoffer.models  # noqa: F401  # Register every mapped model.
+from drawoffer.core.config import load_settings
+from drawoffer.core.database import build_engine
+from drawoffer.domain.resume_document import ResumeDocument, with_default_semantics
+from drawoffer.domain.resume_snapshot import ResumeSnapshot
+from drawoffer.domain.resume_style import ResumePresentation, default_template_manifest
+from drawoffer.domain.resume.legacy_cutover import (
     blank_canonical_document,
     convert_legacy_document,
     convert_legacy_template,
     presentation_for_legacy,
 )
-from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import Resume, ResumeTemplate
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.resumes.models import Resume, ResumeTemplate
 
 LEGACY_SETTING_KEYS = {
     "fontFamily",

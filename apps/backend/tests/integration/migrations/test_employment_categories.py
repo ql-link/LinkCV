@@ -17,12 +17,12 @@ PRE_NAMING_HEAD = "0110"
 
 
 def test_employment_categories_upgrade_and_reject_legacy_values() -> None:
-    raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
+    raw = os.environ.get("DRAWOFFER_TEST_MYSQL_URL")
     if not raw:
-        pytest.skip("LINKRESUME_TEST_MYSQL_URL required")
+        pytest.skip("DRAWOFFER_TEST_MYSQL_URL required")
     source = make_url(raw)
     assert source.host in {"127.0.0.1", "localhost"}
-    name = f"linkresume_category_test_{uuid4().hex}"
+    name = f"drawoffer_category_test_{uuid4().hex}"
     admin = create_engine(source.set(database=None))
     with admin.begin() as connection:
         connection.exec_driver_sql(f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci")

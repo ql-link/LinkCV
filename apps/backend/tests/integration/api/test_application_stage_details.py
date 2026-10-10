@@ -3,8 +3,8 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.modules.datasets.models import UserDataset
-from linkresume.modules.identity.models import User
+from drawoffer.modules.datasets.models import UserDataset
+from drawoffer.modules.identity.models import User
 from tests.integration.api.test_interviews import build_app, create_job, register
 
 

@@ -25,7 +25,7 @@ from typing import Any, Literal
 import sqlalchemy as sa
 from alembic import op
 
-from linkresume.core.migration_sql import execute_sql_file
+from drawoffer.core.migration_sql import execute_sql_file
 
 revision: str = "0051"
 down_revision: str | None = "0050"

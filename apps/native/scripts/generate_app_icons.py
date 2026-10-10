@@ -8,10 +8,10 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[3]
-SOURCE = ROOT / "apps/web/src/assets/linkresume-mark.png"
-MAC_PNG = ROOT / "apps/mac/Sources/LinkResumeApp/Resources/AppIcon.png"
-MAC_ICNS = ROOT / "apps/mac/Resources/LinkResume.icns"
-WINDOWS_ICO = ROOT / "apps/windows/src/LinkResume.App/Assets/LinkResume.ico"
+SOURCE = ROOT / "apps/web/src/assets/drawoffer-mark.png"
+MAC_PNG = ROOT / "apps/mac/Sources/DrawOfferApp/Resources/AppIcon.png"
+MAC_ICNS = ROOT / "apps/mac/Resources/DrawOffer.icns"
+WINDOWS_ICO = ROOT / "apps/windows/src/DrawOffer.App/Assets/DrawOffer.ico"
 ELECTRON_PNG = ROOT / "apps/desktop/build/icon.png"
 
 for target in [MAC_PNG, MAC_ICNS, WINDOWS_ICO, ELECTRON_PNG]:

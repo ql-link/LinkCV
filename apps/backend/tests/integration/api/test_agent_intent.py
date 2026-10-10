@@ -8,10 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.modules.agent.models import AgentMessage, AgentRun, AgentSession
-from linkresume.modules.agent.intent_schemas import IntentDecision
-from linkresume.modules.agent.intent import recognize_run_intent
-from linkresume.modules.llm.service import LLMError
+from drawoffer.modules.agent.models import AgentMessage, AgentRun, AgentSession
+from drawoffer.modules.agent.intent_schemas import IntentDecision
+from drawoffer.modules.agent.intent import recognize_run_intent
+from drawoffer.modules.llm.service import LLMError
 from tests.integration.api.test_agent_routes import build_app, internal_headers, register
 
 
@@ -150,7 +150,7 @@ def test_identity_conflict_requires_explicit_current_resume(context):
 
 def test_timeout_cancels_provider_before_fallback(context, monkeypatch):
     _, client, mock, run_id = context
-    monkeypatch.setattr("linkresume.modules.agent.intent.INTENT_TIMEOUT_SECONDS", 0.02)
+    monkeypatch.setattr("drawoffer.modules.agent.intent.INTENT_TIMEOUT_SECONDS", 0.02)
     cancelled = []
     async def slow(**kwargs):
         try:

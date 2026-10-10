@@ -1,5 +1,5 @@
 interface ImportMetaEnv {
-  readonly WXT_PUBLIC_LINKRESUME_ORIGIN?: string;
+  readonly WXT_PUBLIC_DRAWOFFER_ORIGIN?: string;
 }
 
 interface ImportMeta {

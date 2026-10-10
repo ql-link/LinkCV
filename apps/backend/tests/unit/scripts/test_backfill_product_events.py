@@ -8,11 +8,11 @@ from pathlib import Path
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-import linkresume.models  # noqa: F401
-from linkresume.core.database import Base
-from linkresume.modules.identity.models import User
-from linkresume.modules.product_events.models import ProductEvent
-from linkresume.modules.product_events.service import build_event
+import drawoffer.models  # noqa: F401
+from drawoffer.core.database import Base
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.product_events.models import ProductEvent
+from drawoffer.modules.product_events.service import build_event
 
 ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location(

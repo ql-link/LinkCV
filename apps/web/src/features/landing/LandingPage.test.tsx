@@ -21,7 +21,7 @@ describe("LandingPage", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("懂你经历的求职搭档");
     expect(container.querySelectorAll(".fs-block")).toHaveLength(5);
     expect(container.querySelectorAll(".dc-card")).toHaveLength(6);
-    expect(screen.getByRole("img", { name: "LinkResume 交流群 QQ 二维码" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "DrawOffer 交流群 QQ 二维码" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "首页 · 示例数据" })).toHaveAttribute("src", expect.stringContaining("zh-CN/home"));
     const starts = screen.getAllByRole("link", { name: "免费开始" });
     expect(starts).toHaveLength(3);
@@ -58,7 +58,7 @@ describe("LandingPage", () => {
 
   it("常见问题默认展开第一项，点击后切换展开项", () => {
     render(<LandingPage />);
-    const first = screen.getByRole("button", { name: "LinkResume 免费吗？" });
+    const first = screen.getByRole("button", { name: "DrawOffer 免费吗？" });
     const second = screen.getByRole("button", { name: "支持导入哪些格式的简历？" });
     expect(first).toHaveAttribute("aria-expanded", "true");
     expect(second).toHaveAttribute("aria-expanded", "false");

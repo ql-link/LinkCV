@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.domain.resume import CanonicalResumeDocument
-from linkresume.modules.resumes import template_compilation
-from linkresume.modules.resumes.models import ResumeTemplate
-from linkresume.modules.resumes.template_compilation import (
+from drawoffer.domain.resume import CanonicalResumeDocument
+from drawoffer.modules.resumes import template_compilation
+from drawoffer.modules.resumes.models import ResumeTemplate
+from drawoffer.modules.resumes.template_compilation import (
     compiled_template_layout_plan,
     validated_template_snapshot,
 )
-from linkresume.modules.resumes.template_routes import template_record
+from drawoffer.modules.resumes.template_routes import template_record
 
 ROOT = Path(__file__).resolve().parents[5]
 SQL = (ROOT / "apps/backend/migrations/sql/0075.up.sql").read_text(encoding="utf-8")

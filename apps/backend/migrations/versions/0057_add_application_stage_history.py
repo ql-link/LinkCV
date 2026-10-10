@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from alembic import op
-from linkresume.core.migration_sql import execute_sql_file
+from drawoffer.core.migration_sql import execute_sql_file
 from sqlalchemy import text
 
 revision: str = "0057"

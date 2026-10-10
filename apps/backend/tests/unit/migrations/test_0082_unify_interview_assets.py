@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from linkresume.modules.datasets.models import UserDataset
+from drawoffer.modules.datasets.models import UserDataset
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
@@ -15,7 +15,7 @@ SQL_PATH = BACKEND_ROOT / "migrations/sql/0082.up.sql"
 
 
 def load_revision():
-    spec = importlib.util.spec_from_file_location("linkresume_revision_0082", REVISION_PATH)
+    spec = importlib.util.spec_from_file_location("drawoffer_revision_0082", REVISION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

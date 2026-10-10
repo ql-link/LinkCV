@@ -18,9 +18,9 @@ from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
-from linkresume.core.migration_sql import execute_sql_file
-from linkresume.domain.resume_document import ResumeDocument, with_default_semantics
-from linkresume.domain.resume_style import (
+from drawoffer.core.migration_sql import execute_sql_file
+from drawoffer.domain.resume_document import ResumeDocument, with_default_semantics
+from drawoffer.domain.resume_style import (
     ResumePresentation,
     default_template_manifest,
 )

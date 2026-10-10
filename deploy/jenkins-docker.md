@@ -1,6 +1,6 @@
 # Jenkins Docker deployment
 
-LinkResume uses separate Jenkins jobs for Development and Production. Both jobs build the application and Pi images, run the guarded Alembic runner before deployment, update the matching Compose services, and wait for `/api/health` and container health. After the base deployment succeeds, they report `/api/agent/readiness` separately; a non-200 response warns that chat is unavailable but does not fail deployment. The Agent readiness probe verifies the FastAPI-to-Pi-to-FastAPI authentication and current Chat model configuration without calling the model provider.
+DrawOffer uses separate Jenkins jobs for Development and Production. Both jobs build the application and Pi images, run the guarded Alembic runner before deployment, update the matching Compose services, and wait for `/api/health` and container health. After the base deployment succeeds, they report `/api/agent/readiness` separately; a non-200 response warns that chat is unavailable but does not fail deployment. The Agent readiness probe verifies the FastAPI-to-Pi-to-FastAPI authentication and current Chat model configuration without calling the model provider.
 
 ## Development
 
@@ -47,23 +47,23 @@ RABBITMQ_URL=<deployment-rabbitmq-url>
 WECHAT_APPID=<wechat-appid>
 WECHAT_SECRET=<wechat-app-secret>
 PI_SERVICE_TOKEN=<at-least-32-random-characters>
-LINKRESUME_INTERNAL_AGENT_TOKEN=<different-at-least-32-random-characters>
+DRAWOFFER_INTERNAL_AGENT_TOKEN=<different-at-least-32-random-characters>
 ```
 
 连接地址和 Bucket 由仓库中的 `.env.production` 管理。私密文件不要设置
 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`，否则会覆盖通过
 `tolink-app-net` 使用的生产 Docker DNS 地址。
 
-Production Cloud 需要 Docker、Docker Compose、`ossutil 2.x`、外部网络 `tolink-app-net` 和至少一个可回滚的上一版本镜像对。远端脚本按同一 `prod-<commit>-b<build>` 标签构建 `linkresume` 与 `linkresume-pi`，先从 Web 镜像提取 `/app/web/assets` 上传到 OSS 的 `LinkResume/assets/` 前缀，并把 `/app/web/favicon.png` 上传到 `LinkResume/favicon.png`；两类对象都通过 OSS 公网 HTTPS 地址验证，成功后才进入迁移和应用切换；部署时同时提供 `TAG` 与 `PI_TAG`：
+Production Cloud 需要 Docker、Docker Compose、`ossutil 2.x`、外部网络 `tolink-app-net` 和至少一个可回滚的上一版本镜像对。远端脚本按同一 `prod-<commit>-b<build>` 标签构建 `linkresume` 与 `drawoffer-pi`，先从 Web 镜像提取 `/app/web/assets` 上传到 OSS 的 `LinkResume/assets/` 前缀，并把 `/app/web/favicon.png` 上传到 `LinkResume/favicon.png`；两类对象都通过 OSS 公网 HTTPS 地址验证，成功后才进入迁移和应用切换；部署时同时提供 `TAG` 与 `PI_TAG`：
 
 ```bash
 export TAG=prod-<commit>-b<build>
 export PI_TAG=prod-<commit>-b<build>
-export LINKRESUME_ENV_FILE=/opt/tolink/LinkResume/.env.production
-export LINKRESUME_SECRET_ENV_FILE=/opt/tolink/LinkResume/.env.production.local
-export LINKRESUME_DOCKER_NETWORK=tolink-app-net
-export LINKRESUME_HTTP_PORT=4174
+export DRAWOFFER_ENV_FILE=/opt/tolink/LinkResume/.env.production
+export DRAWOFFER_SECRET_ENV_FILE=/opt/tolink/LinkResume/.env.production.local
+export DRAWOFFER_DOCKER_NETWORK=tolink-app-net
+export DRAWOFFER_HTTP_PORT=4174
 docker compose -f /opt/tolink/LinkResume/deploy/docker-compose.production.yml up -d --remove-orphans
 ```
 
-受保护的 Production 迁移目标是 `production / tolink-mysql:3306 / linkresume`。镜像构建不连接 MySQL；旧 LinkResume Web、Worker 和 Pi 停止后才运行 forward-only 迁移，迁移成功后才更新 Compose。发布必须同时满足 `linkresume`、`linkresume-pi` 健康，Worker/Promtail 运行，以及 `/api/health` 可用；`/api/agent/readiness` 单独报告，非 200 不阻止基础部署成功。迁移开始后失败会保持旧容器停止；只能前向修复，或先恢复数据库备份再使用备份的上一版 Compose 和成对镜像。Redis 和 MinIO 继续通过同一外部网络访问 `tolink-redis:6379` 与 `http://tolink-minio:9000`。
+受保护的 Production 迁移目标是 `production / tolink-mysql:3306 / linkresume`。镜像构建不连接 MySQL；旧 DrawOffer Web、Worker 和 Pi 停止后才运行 forward-only 迁移，迁移成功后才更新 Compose。发布必须同时满足 `linkresume`、`drawoffer-pi` 健康，Worker/Promtail 运行，以及 `/api/health` 可用；`/api/agent/readiness` 单独报告，非 200 不阻止基础部署成功。迁移开始后失败会保持旧容器停止；只能前向修复，或先恢复数据库备份再使用备份的上一版 Compose 和成对镜像。Redis 和 MinIO 继续通过同一外部网络访问 `tolink-redis:6379` 与 `http://tolink-minio:9000`。

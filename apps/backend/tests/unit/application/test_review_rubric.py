@@ -1,6 +1,6 @@
 import pytest
 
-from linkresume.application.interviews import review_rubric as rubric
+from drawoffer.application.interviews import review_rubric as rubric
 
 
 def test_technical_session_keeps_professional_depth_and_hr_questions_do_not_feed_it():

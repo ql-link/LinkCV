@@ -28,32 +28,32 @@ LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验�
 
 | 位置 | 职责 |
 | --- | --- |
-| `src/linkresume/main.py` | 装配数据库、Redis、MinIO、统一 LLM、导入幂等和 MQ publisher；托管 SPA 静态产物并为哈希资源设置 gzip 与长期 immutable 缓存；测试可注入 Fake |
-| `src/linkresume/core/` | 配置、数据库、错误、安全、Redis 和 MinIO 基础设施 |
-| `src/linkresume/domain/resume/` | 唯一运行时 `CanonicalResumeDocument`、`ResumePresentation`、`TemplateDefinition`、`LayoutPlan`、`SourceGraph`、稀疏模型标注与确定性导入组合；旧快照解析器只供 `0046` 和离线导入脚本使用 |
-| `src/linkresume/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
-| `src/linkresume/application/resumes/` | 统一创建、乐观锁保存、当前内容复制和存量取回、分享链接创建/覆盖/更新与事务规则 |
-| `src/linkresume/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新，以及连同求职进程聚合的永久删除 |
-| `src/linkresume/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
-| `src/linkresume/application/mock_interviews/` | 模拟面试状态机、后台准备与评估任务、面试官回合、评分规则、资料内存检索、语音识别会话、语音表现与识别稿修正 |
-| `src/linkresume/integrations/` | LinkParse PDF/DOCX Adapter、LinkRag 应用 API 客户端、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
-| `src/linkresume/services/resume_import_service.py` | Worker 使用的 Markdown 转换、严格布局损失检查、决策式结构化与规范组合原语，不提交业务事务 |
-| `src/linkresume/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
-| `src/linkresume/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
-| `src/linkresume/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
-| `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、三渠道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
-| `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（自定义头像二进制仅经 `/api/miniprogram/account/avatar` 分发，该接口也支持默认 Logo） |
-| `src/linkresume/modules/resumes/` | ORM、HTTP DTO（用户模板列表与详情按 `resumes.template_id` 实时聚合 `use_count`，无新增列）、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
-| `src/linkresume/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
-| `src/linkresume/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
-| `src/linkresume/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
-| `src/linkresume/modules/mock_interviews/` | 模拟面试与提问 ORM、HTTP DTO、`/api/mock-interviews` 路由与语音 WebSocket |
-| `src/linkresume/modules/speech/` | 语音服务商分派；百炼 DashScope 实时 WebSocket 与 AIHubMix 文件识别、MP3 合成及受限音频下载 |
-| `src/linkresume/modules/llm/` | 接入商连接、逻辑模型、场景线路解析、凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
-| `src/linkresume/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
-| `src/linkresume/modules/announcements/` | 全站应用内公告与每个用户的已读时间点：管理员草稿、发布、下线与状态统计，用户侧生效公告、未读数和全部已读；可见性按状态与生效时段现场计算，没有定时任务 |
-| `src/linkresume/modules/admin_insights/` | 管理台只读统计：用户、模板、插件导入、LLM 用量与健康、Agent 健康、系统日志热力图，以及从现有数据现场推导的总览告警；不写数据、不保存告警状态 |
-| `src/linkresume/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
+| `src/drawoffer/main.py` | 装配数据库、Redis、MinIO、统一 LLM、导入幂等和 MQ publisher；托管 SPA 静态产物并为哈希资源设置 gzip 与长期 immutable 缓存；测试可注入 Fake |
+| `src/drawoffer/core/` | 配置、数据库、错误、安全、Redis 和 MinIO 基础设施 |
+| `src/drawoffer/domain/resume/` | 唯一运行时 `CanonicalResumeDocument`、`ResumePresentation`、`TemplateDefinition`、`LayoutPlan`、`SourceGraph`、稀疏模型标注与确定性导入组合；旧快照解析器只供 `0046` 和离线导入脚本使用 |
+| `src/drawoffer/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
+| `src/drawoffer/application/resumes/` | 统一创建、乐观锁保存、当前内容复制和存量取回、分享链接创建/覆盖/更新与事务规则 |
+| `src/drawoffer/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新，以及连同求职进程聚合的永久删除 |
+| `src/drawoffer/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
+| `src/drawoffer/application/mock_interviews/` | 模拟面试状态机、后台准备与评估任务、面试官回合、评分规则、资料内存检索、语音识别会话、语音表现与识别稿修正 |
+| `src/drawoffer/integrations/` | LinkParse PDF/DOCX Adapter、LinkRag 应用 API 客户端、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
+| `src/drawoffer/services/resume_import_service.py` | Worker 使用的 Markdown 转换、严格布局损失检查、决策式结构化与规范组合原语，不提交业务事务 |
+| `src/drawoffer/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
+| `src/drawoffer/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
+| `src/drawoffer/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
+| `src/drawoffer/modules/identity/` | 用户模型、管理员密码登录、三渠道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
+| `src/drawoffer/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（自定义头像二进制仅经 `/api/miniprogram/account/avatar` 分发，该接口也支持默认 Logo） |
+| `src/drawoffer/modules/resumes/` | ORM、HTTP DTO（用户模板列表与详情按 `resumes.template_id` 实时聚合 `use_count`，无新增列）、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
+| `src/drawoffer/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
+| `src/drawoffer/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
+| `src/drawoffer/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
+| `src/drawoffer/modules/mock_interviews/` | 模拟面试与提问 ORM、HTTP DTO、`/api/mock-interviews` 路由与语音 WebSocket |
+| `src/drawoffer/modules/speech/` | 语音服务商分派；百炼 DashScope 实时 WebSocket 与 AIHubMix 文件识别、MP3 合成及受限音频下载 |
+| `src/drawoffer/modules/llm/` | 接入商连接、逻辑模型、场景线路解析、凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
+| `src/drawoffer/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
+| `src/drawoffer/modules/announcements/` | 全站应用内公告与每个用户的已读时间点：管理员草稿、发布、下线与状态统计，用户侧生效公告、未读数和全部已读；可见性按状态与生效时段现场计算，没有定时任务 |
+| `src/drawoffer/modules/admin_insights/` | 管理台只读统计：用户、模板、插件导入、LLM 用量与健康、Agent 健康、系统日志热力图，以及从现有数据现场推导的总览告警；不写数据、不保存告警状态 |
+| `src/drawoffer/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
 | `migrations/` | SQL-first Alembic revision；仓库 head 见下文迁移链说明 |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
@@ -175,7 +175,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `session_service.py` 统一发放、轮换和撤销 Redis session。`auth:session:{sid}` 保存 `uid/rhash/channel/created_at`，access JWT 也保存 `channel=web|miniprogram`。Web 只从 Cookie 接受 web channel，小程序只从 Bearer 接受 miniprogram channel；Redis uid/channel 必须与 JWT 完全一致。小程序的 login/refresh/logout 返回 JSON token，refresh 每次轮换，旧 secret 重放会删除 session；管理员停用用户时原有用户会话集合仍可撤销两个 channel。
 
-`modules/resumes/pdf_service.py` 是 Web 与小程序共用的 PDF 边界：从快照提取 LinkResume 私有图片引用，按用户/简历对象键读取 PNG/JPEG 并转为内存 data URL，再以有界 stdin/stdout 协议启动一次性 Node/Chromium 进程。Linux root 环境在 `runuser` 和专用 `linkresume-pdf` 账号可用时降权启动；Windows 或缺少 Unix 账号 API 时直接启动 Node，并继续使用相同的输入、输出、并发与超时边界。简历图片上传与 PDF 读取共用 10 MiB 单图上限，当前快照内所有私有图片的原始二进制总量也限制为 10 MiB；更新、模板切换和版本恢复先用对象元数据校验同一导出契约，PDF 渲染再次读取并校验作为纵深防线。渲染 JSON 输入上限为 24 MiB，以容纳 Base64 编码增量和简历快照。渲染器不监听端口、不读取任意对象键、不联网抓取正文资源，也不把快照或输出写入持久临时文件；并发、输入、单图、图片总量、输出、超时和智能页高都有上限。Web `GET /api/resumes/{id}/pdf` 校验当前 Cookie 用户和 `lock_version`，直接渲染 `resumes` 当前快照。
+`modules/resumes/pdf_service.py` 是 Web 与小程序共用的 PDF 边界：从快照提取 DrawOffer 私有图片引用，按用户/简历对象键读取 PNG/JPEG 并转为内存 data URL，再以有界 stdin/stdout 协议启动一次性 Node/Chromium 进程。Linux root 环境在 `runuser` 和专用 `drawoffer-pdf` 账号可用时降权启动；Windows 或缺少 Unix 账号 API 时直接启动 Node，并继续使用相同的输入、输出、并发与超时边界。简历图片上传与 PDF 读取共用 10 MiB 单图上限，当前快照内所有私有图片的原始二进制总量也限制为 10 MiB；更新、模板切换和版本恢复先用对象元数据校验同一导出契约，PDF 渲染再次读取并校验作为纵深防线。渲染 JSON 输入上限为 24 MiB，以容纳 Base64 编码增量和简历快照。渲染器不监听端口、不读取任意对象键、不联网抓取正文资源，也不把快照或输出写入持久临时文件；并发、输入、单图、图片总量、输出、超时和智能页高都有上限。Web `GET /api/resumes/{id}/pdf` 校验当前 Cookie 用户和 `lock_version`，直接渲染 `resumes` 当前快照。
 
 小程序 v2 简历接口读取 resumes 当前已保存正文，PDF/PNG 必须提交匹配的 lock_version；旧协议明确返回 426。PDF/PNG 请求再次核对小程序会话、本人归属和当前版本标识，在请求副本中设置 `style.portable.smart_one_page=true`，并用同一 canonical 正文、模板快照和后端 `LayoutPlan` 渲染，不修改持久版本。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。异常以稳定 4xx/503 错误收口。`core/pdfium_lock.py` 的进程级互斥锁覆盖 PNG 栅格化和岗位资料 PDF 校验的原生调用与资源释放；预览容量限制保留，避免并行调用 PDFium 导致进程崩溃。
 
@@ -234,7 +234,7 @@ FastAPI 的 OpenAI-compatible 请求使用 `LiteLLMGateway` 适配器，LiteLLM 
 
 简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `resume_structuring` 场景。模型只接收稳定源块及必要布局元数据，返回稀疏语义标注；来源文本由确定性组合器保留。带 layout hints 的领域校验失败时最多再尝试一次不带 hints；未配置、超时、上游失败或非法输出均记录脱敏 warning 并返回匹配当前来源图的空标注。
 
-`scripts/db/init_mysql.py` 只允许创建名为 `linkresume` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要，再只读核对 Alembic 当前版本与已知 revision 的表、字段标记。发现版本落后但后续对象已存在，或版本已应用但标记对象缺失时，runner 会在任何 DDL 前停止，要求先人工核实并对齐 schema 与 `alembic_version`。FastAPI 配置支持根 `.env`、显式 `LINKRESUME_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。Web Cookie 和小程序 Bearer 分别要求 `web` 与 `miniprogram` channel；上线前缺少 channel 的旧会话仅兼容为 Web，并在续期时补写 channel。对象存储配置仅使用 `MINIO_*`。
+`scripts/db/init_mysql.py` 只允许创建名为 `linkresume` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要，再只读核对 Alembic 当前版本与已知 revision 的表、字段标记。发现版本落后但后续对象已存在，或版本已应用但标记对象缺失时，runner 会在任何 DDL 前停止，要求先人工核实并对齐 schema 与 `alembic_version`。FastAPI 配置支持根 `.env`、显式 `DRAWOFFER_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。Web Cookie 和小程序 Bearer 分别要求 `web` 与 `miniprogram` channel；上线前缺少 channel 的旧会话仅兼容为 Web，并在续期时补写 channel。对象存储配置仅使用 `MINIO_*`。
 
 编辑器段落精修由 `application/section_review/service.py` 实现，以 `source=section_review` 调用 `section_review` 场景的结构化输出，路由位于 `modules/resumes/section_review_routes.py`。流程分两步：
 1. 在短会话内校验简历归属，组装参照：分析风格取 `WRITING_METHODS`（STAR / XYZ / CAR）或细化后的 `GENERAL_STANDARD`；选填的 `job_id` 校验本人归属后把岗位要求（复用 `job_matches.service.job_text`）叠加在风格之后。旧的 `{kind:"job"}` 参照仍按通用写作标准加岗位处理。
@@ -250,14 +250,14 @@ Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 以固定�
 
 HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。Worker 只有在仍持有本人 `processing` 任务行锁时才上传转换存档并写回引用；删除或终态并发胜出时不会产生新的转换对象。 导入的同步事务及对象写入在工作线程中完整执行，账号行锁不跨越事件循环中的等待。结果事务先锁定账号，再建立配额统计快照；超额任务在同一事务内标记失败并释放占位，避免多个并发任务重复拒绝或突破十份简历的限制。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
 
-Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可用，PDF/DOCX 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。PDF/DOCX 解析日志只记录 LinkResume 调用 LinkParse 的开始、结果、耗时、解析器/页数/OCR 摘要、DOCX Word 元数据和稳定错误码；不读取 LinkParse 内部日志，也不记录正文、Prompt、Cookie、密钥或完整供应商响应。Markdown 本地转换只记录格式、结果和耗时。
+Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可用，PDF/DOCX 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。PDF/DOCX 解析日志只记录 DrawOffer 调用 LinkParse 的开始、结果、耗时、解析器/页数/OCR 摘要、DOCX Word 元数据和稳定错误码；不读取 LinkParse 内部日志，也不记录正文、Prompt、Cookie、密钥或完整供应商响应。Markdown 本地转换只记录格式、结果和耗时。
 
 ## LinkRag 资料索引
 
-LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/apps/*` 服务端 API，以 `Authorization: Bearer <client_id>.<secret>` 和 `X-App-User-Id: <users.id>` 代表用户操作；LinkRag 把每个 LinkResume 用户映射为独立影子用户，数据按该用户隔离。`LINKRAG_ENABLED` 默认开启；凭证缺失时 FastAPI 与 Worker 照常启动，记录 `LINKRAG_NOT_CONFIGURED` 告警并不构建客户端，召回全部回退本地匹配，配置凭证后重启即切换到 LinkRag。显式设为 `false` 时同样不产生任何出站请求。
+LinkRag 是同机部署的独立 RAG 服务。DrawOffer 通过它的 `/api/v1/apps/*` 服务端 API，以 `Authorization: Bearer <client_id>.<secret>` 和 `X-App-User-Id: <users.id>` 代表用户操作；LinkRag 把每个 DrawOffer 用户映射为独立影子用户，数据按该用户隔离。`LINKRAG_ENABLED` 默认开启；凭证缺失时 FastAPI 与 Worker 照常启动，记录 `LINKRAG_NOT_CONFIGURED` 告警并不构建客户端，召回全部回退本地匹配，配置凭证后重启即切换到 LinkRag。显式设为 `false` 时同样不产生任何出站请求。
 
-- **同步**：Worker 进程与消息消费并列运行 `workers/rag_sync_worker.py`，每 `LINKRAG_SYNC_INTERVAL_SECONDS` 在 Redis 锁 `linkresume:linkrag-sync:lock` 下执行一轮 `services/rag_sync_service.py` 对账：为已解析成功的文档资料建立记录，上传 LinkResume 保存的当前 Markdown 正文（去除本地图片引用，文件名 `<dataset_id>.md`），轮询解析，并在资料删除或正文修订变化时先删 LinkRag 旧文件再上传新正文。上传、替换、删除接口本身不调用 LinkRag，行为和失败语义不变。数据库写入均为短事务并以原状态、修订和文件 ID 做条件更新，HTTP 调用不持有事务。失败按指数退避（最长 60 分钟）重试，达到 `LINKRAG_SYNC_MAX_ATTEMPTS` 后标记 `failed`；`scripts/release/sync_datasets_to_linkrag.py [--rounds N] [--reset-failed]` 可手动加速补传或重排失败记录。
-- **召回**：FastAPI 在 `app.state.linkrag_recall` 持有同步客户端（超时 `LINKRAG_RECALL_TIMEOUT_SECONDS`）。`recall_dataset_snippets` 只对"调用方范围 ∩ `ready` 且已同步修订等于当前修订"的资料请求 LinkRag，并按 LinkResume 自己的记录复验每条命中的归属与修订；未就绪资料继续用本地匹配，任何 LinkRag 错误都整体回退本地匹配。
+- **同步**：Worker 进程与消息消费并列运行 `workers/rag_sync_worker.py`，每 `LINKRAG_SYNC_INTERVAL_SECONDS` 在 Redis 锁 `linkresume:linkrag-sync:lock` 下执行一轮 `services/rag_sync_service.py` 对账：为已解析成功的文档资料建立记录，上传 DrawOffer 保存的当前 Markdown 正文（去除本地图片引用，文件名 `<dataset_id>.md`），轮询解析，并在资料删除或正文修订变化时先删 LinkRag 旧文件再上传新正文。上传、替换、删除接口本身不调用 LinkRag，行为和失败语义不变。数据库写入均为短事务并以原状态、修订和文件 ID 做条件更新，HTTP 调用不持有事务。失败按指数退避（最长 60 分钟）重试，达到 `LINKRAG_SYNC_MAX_ATTEMPTS` 后标记 `failed`；`scripts/release/sync_datasets_to_linkrag.py [--rounds N] [--reset-failed]` 可手动加速补传或重排失败记录。
+- **召回**：FastAPI 在 `app.state.linkrag_recall` 持有同步客户端（超时 `LINKRAG_RECALL_TIMEOUT_SECONDS`）。`recall_dataset_snippets` 只对"调用方范围 ∩ `ready` 且已同步修订等于当前修订"的资料请求 LinkRag，并按 DrawOffer 自己的记录复验每条命中的归属与修订；未就绪资料继续用本地匹配，任何 LinkRag 错误都整体回退本地匹配。
 - **安全**：凭证只在 FastAPI 与 Worker 环境中，不下发 Pi 或前端；日志只记录方法、状态码和稳定错误码，不记录凭证、正文或查询原文。外发内容仅为资料正文副本、`dataset:<id>:<revision>` 引用和查询文本。
 
 ## 可观测性与业务审计
@@ -268,7 +268,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 状态变更和安全动作通过 `modules/observability/audit.py` 的固定映射写入审计事件，包括鉴权/会话、账号资料与密码、简历/版本/资源、PDF 导出、JD、管理员用户状态和模型配置。actor 只从已验证会话或登录结果绑定，target 从路由参数、归属校验后的实体或创建结果绑定；成功与受控失败都记录，响应以 `X-Audit-Recorded` 表示本地 sink 是否接受。浏览器单独上报 `resume.pdf_export` 的旧接口继续兼容；新的 Web PDF 路由自动记录该动作。审计不新增 MySQL 表，也不替代既有 `llm_call_logs`。
 
-所有事件由后端白名单生成 `event_version=1` JSON Lines，同时写 stderr 和可选 `LOG_DIRECTORY/linkresume.jsonl`。日志正文会截断并遮盖 URL query、Bearer/JWT、邮箱和常见 secret 赋值；日志文件按 UTC 日期轮转并清理七天以前的缓冲文件。容器将目录挂入命名卷，由 LinkResume 自己的 Promtail 异步推送到共享 Loki。业务请求不直接调用 Loki；管理查询使用固定 `{service="linkresume", environment, log_type}` selector 和允许字段，最多查询七天、单页最多 200 条，并按 `event_id` 去重。Loki 不可用只使管理查询返回 `LOG_QUERY_UNAVAILABLE`，不阻断其他业务。
+所有事件由后端白名单生成 `event_version=1` JSON Lines，同时写 stderr 和可选 `LOG_DIRECTORY/linkresume.jsonl`。日志正文会截断并遮盖 URL query、Bearer/JWT、邮箱和常见 secret 赋值；日志文件按 UTC 日期轮转并清理七天以前的缓冲文件。容器将目录挂入命名卷，由 DrawOffer 自己的 Promtail 异步推送到共享 Loki。业务请求不直接调用 Loki；管理查询使用固定 `{service="linkresume", environment, log_type}` selector 和允许字段，最多查询七天、单页最多 200 条，并按 `event_id` 去重。Loki 不可用只使管理查询返回 `LOG_QUERY_UNAVAILABLE`，不阻断其他业务。
 
 ## 对象存储
 
@@ -299,7 +299,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到当前 head、模板初始化和物理约束验证；GitHub Quality 的 `migrations` job 在迁移相关改动的 PR 和共享分支 push 上以一次性 MySQL 8.4 服务从空库升级到 head，并运行新增 revision 的同名测试。
+- `DRAWOFFER_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到当前 head、模板初始化和物理约束验证；GitHub Quality 的 `migrations` job 在迁移相关改动的 PR 和共享分支 push 上以一次性 MySQL 8.4 服务从空库升级到 head，并运行新增 revision 的同名测试。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 
@@ -389,7 +389,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 `lock_active_user` 以用户行锁和最新状态协调个人写事务与注销受理；长模型调用不持有调用方事务，模型日志和写回分别在有界事务重新验证账号。受理同一事务禁用账号、写注销时间和清理任务，管理员不能重启该账号。公开分享检查所有者状态，刷新与登录均拒绝注销账号。
 
-清理 worker 以可续租的数据库租约领取任务，数据库清理阶段同时持有 RAG 同步的可续租 Redis 锁，按实际 0090 后 schema 的外键顺序清除本人数据，并先将已登记 RAG file ID 存入任务 manifest。对象阶段限定 `users/{uid}/` 和既有录音目录 `mock-interviews/{uid}/`，RAG 阶段只清 manifest 中的文件。Redis 会话撤销、MinIO 或 LinkRag 失败保留任务重试，最多十次转 needs_attention；缺少必须的 RAG 配置直接需人工处理。失去租约后不覆盖新持有者结果，已完成任务清除 manifest 并在七天后删除。`python -m linkresume.workers.account_deletion_worker retry --job-id <public-id>` 仅重排 needs_attention 任务，不恢复账号。
+清理 worker 以可续租的数据库租约领取任务，数据库清理阶段同时持有 RAG 同步的可续租 Redis 锁，按实际 0090 后 schema 的外键顺序清除本人数据，并先将已登记 RAG file ID 存入任务 manifest。对象阶段限定 `users/{uid}/` 和既有录音目录 `mock-interviews/{uid}/`，RAG 阶段只清 manifest 中的文件。Redis 会话撤销、MinIO 或 LinkRag 失败保留任务重试，最多十次转 needs_attention；缺少必须的 RAG 配置直接需人工处理。失去租约后不覆盖新持有者结果，已完成任务清除 manifest 并在七天后删除。`python -m drawoffer.workers.account_deletion_worker retry --job-id <public-id>` 仅重排 needs_attention 任务，不恢复账号。
 
 RAG 上传、轮询、孤儿清理和映射创建重新核对用户注销标记；远程文件变更在用户行锁内与注销协调，上传结果登记前不能受理注销，避免丢失外部清理清单。所有异步个人写回仍须遵守已有任务令牌和版本条件。业务边界见[账号功能](../features/identity-account.md#注销与失败边界)。
 

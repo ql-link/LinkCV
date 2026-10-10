@@ -4,12 +4,12 @@ from uuid import uuid4
 
 import pytest
 
-from linkresume.core.errors import ApiError
-from linkresume.domain.resume import CanonicalResumeDocument
-from linkresume.modules.agent.canonical_targets import (
+from drawoffer.core.errors import ApiError
+from drawoffer.domain.resume import CanonicalResumeDocument
+from drawoffer.modules.agent.canonical_targets import (
     apply_operations, content, digest, nodes, resolve, scoped_blocks,
 )
-from linkresume.modules.agent.schemas import ProposalOperation, ResumeTargetLocator
+from drawoffer.modules.agent.schemas import ProposalOperation, ResumeTargetLocator
 from tests.canonical_resume_fixtures import canonical_resume_payload
 
 

@@ -1,0 +1,9 @@
+<Page
+    x:Class="DrawOffer.App.Views.PlaceholderPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+        <TextBlock x:Name="TitleText" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
+        <TextBlock Text="原生版本待实现" Foreground="{StaticResource DrawOfferMutedBrush}" HorizontalAlignment="Center" />
+    </StackPanel>
+</Page>

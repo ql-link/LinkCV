@@ -59,11 +59,11 @@
 .sf-add { border-radius: 2px; background: linear-gradient(transparent 45%, color-mix(in srgb, var(--sf-hi-green) 80%, transparent) 45%); color: inherit; padding: 0 1px; }
 .sf-add.is-risky { box-shadow: inset 0 -1px 0 var(--sf-orange); }
 .sf-del { color: var(--sf-ink3); text-decoration: line-through; text-decoration-color: var(--sf-ink4); }
-::highlight(linkresume-section-focus-added) { background-color: color-mix(in srgb, #9fd3b2 70%, transparent); }
+::highlight(drawoffer-section-focus-added) { background-color: color-mix(in srgb, #9fd3b2 70%, transparent); }
 
-::highlight(linkresume-section-lens-missing) { background-color: color-mix(in srgb, #f5b860 45%, transparent); }
-::highlight(linkresume-section-lens-wording) { background-color: color-mix(in srgb, #9db8f2 45%, transparent); }
-::highlight(linkresume-section-lens-structure) { background-color: color-mix(in srgb, #c3b0ee 45%, transparent); }
+::highlight(drawoffer-section-lens-missing) { background-color: color-mix(in srgb, #f5b860 45%, transparent); }
+::highlight(drawoffer-section-lens-wording) { background-color: color-mix(in srgb, #9db8f2 45%, transparent); }
+::highlight(drawoffer-section-lens-structure) { background-color: color-mix(in srgb, #c3b0ee 45%, transparent); }
 
 /* ── ① 唤醒：段落虚线框 + 框下的指令条 ─────────────── */
 .sf-bar { position: absolute; box-sizing: border-box; display: flex; height: 40px; align-items: center; gap: 10px; border: 1px solid var(--sf-line2); border-radius: 12px; background: #fff; padding: 5px 10px 5px 5px; box-shadow: 0 8px 24px rgb(0 0 0 / 10%); transform-origin: top left; animation: sf-bar-in 160ms ease-out; }

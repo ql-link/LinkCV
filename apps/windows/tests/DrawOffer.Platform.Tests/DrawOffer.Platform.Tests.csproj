@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <ProjectReference Include="../../src/DrawOffer.Core/DrawOffer.Core.csproj" />
+    <Compile Include="../../src/DrawOffer.App/CredentialLockerTokenStore.cs" Link="CredentialLockerTokenStore.cs" />
+  </ItemGroup>
+</Project>

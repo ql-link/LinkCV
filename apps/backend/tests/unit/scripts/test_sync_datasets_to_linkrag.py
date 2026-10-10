@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.core.config import Settings
+from drawoffer.core.config import Settings
 from tests.unit.workers.test_rag_sync_worker import LockRedis
 
 ROOT = Path(__file__).resolve().parents[3]

@@ -73,7 +73,7 @@ export function HeroDemo() {
   />;
 
   return (
-    <div ref={stage} id="demo" className="fl-hero-stage" aria-label={lt("LinkResume 产品首页演示")} style={{ height: Math.round(height * scale) }}>
+    <div ref={stage} id="demo" className="fl-hero-stage" aria-label={lt("DrawOffer 产品首页演示")} style={{ height: Math.round(height * scale) }}>
       <span className="fl-demo-label">{lt("互动演示 · 示例数据")}</span>
       <div className="fl-demo-viewport" style={{ borderRadius: (cardRadius + cardGap) * scale }}>
         <div className="fl-demo-window" style={{ width, height, transform: `scale(${scale})` }}>

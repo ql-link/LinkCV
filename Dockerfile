@@ -41,8 +41,8 @@ WORKDIR /app/apps/backend
 RUN apt-get update && \
     apt-get install -y --no-install-recommends chromium && \
     rm -rf /var/lib/apt/lists/* && \
-    useradd --system --create-home --home-dir /var/lib/linkresume-pdf --shell /usr/sbin/nologin linkresume-pdf && \
-    install -d -o linkresume-pdf -g linkresume-pdf /tmp/linkresume-pdf
+    useradd --system --create-home --home-dir /var/lib/drawoffer-pdf --shell /usr/sbin/nologin drawoffer-pdf && \
+    install -d -o drawoffer-pdf -g drawoffer-pdf /tmp/drawoffer-pdf
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install --index-url "${UV_INDEX_URL}" "uv==${UV_VERSION}"
 COPY apps/backend/pyproject.toml apps/backend/uv.lock ./
@@ -68,4 +68,4 @@ RUN mkdir -p /app/logs
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python /app/scripts/release/run_alembic.py --expected-app-env \"$APP_ENV\" --expected-host \"$MYSQL_HOST\" --expected-port \"$MYSQL_PORT\" --expected-database \"$MYSQL_DATABASE\" && exec uvicorn linkresume.main:app --host 0.0.0.0 --port 8000 --no-access-log"]
+CMD ["sh", "-c", "python /app/scripts/release/run_alembic.py --expected-app-env \"$APP_ENV\" --expected-host \"$MYSQL_HOST\" --expected-port \"$MYSQL_PORT\" --expected-database \"$MYSQL_DATABASE\" && exec uvicorn drawoffer.main:app --host 0.0.0.0 --port 8000 --no-access-log"]

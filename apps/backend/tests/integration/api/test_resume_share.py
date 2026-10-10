@@ -6,9 +6,9 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.config import Settings
-from linkresume.main import create_app
-from linkresume.modules.resumes.models import Resume, ResumeTemplate
+from drawoffer.core.config import Settings
+from drawoffer.main import create_app
+from drawoffer.modules.resumes.models import Resume, ResumeTemplate
 from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import canonical_template_payload
 
@@ -255,9 +255,10 @@ def test_public_share_pdf_uses_server_renderer_and_a4_pages() -> None:
         assert downloaded.headers["content-type"] == "application/pdf"
         assert downloaded.headers["cache-control"] == "private, no-store"
         assert downloaded.headers["x-content-type-options"] == "nosniff"
-        assert downloaded.headers["x-linkresume-pdf-lock-version"] == str(
+        assert downloaded.headers["x-drawoffer-pdf-lock-version"] == str(
             created["lock_version"]
         )
+        assert downloaded.headers["x-linkresume-pdf-lock-version"] == downloaded.headers["x-drawoffer-pdf-lock-version"]
         assert "%E5%88%86%E4%BA%AB%E6%B5%8B%E8%AF%95%E7%AE%80%E5%8E%86.pdf" in (
             downloaded.headers["content-disposition"]
         )

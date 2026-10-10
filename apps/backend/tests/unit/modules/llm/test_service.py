@@ -11,16 +11,16 @@ from pydantic import BaseModel
 from PIL import Image
 from sqlalchemy import select
 
-import linkresume.models  # noqa: F401
-from linkresume.core.database import Base, build_engine, build_session_factory
-from linkresume.modules.identity.models import User
-from linkresume.modules.llm.crypto import CredentialCipher
-from linkresume.modules.llm.gateway import GatewayError, GatewayResult, GatewayStreamEvent, GatewayUsage
-from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute, get_use_case_route
-from linkresume.modules.llm.resolver import JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION, validation_fingerprint
-from linkresume.modules.llm.schemas import ChatMessage
-from linkresume.modules.llm.service import LLMError, LLMService
-from linkresume.modules.speech.gateway import RecognitionEvent
+import drawoffer.models  # noqa: F401
+from drawoffer.core.database import Base, build_engine, build_session_factory
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.llm.crypto import CredentialCipher
+from drawoffer.modules.llm.gateway import GatewayError, GatewayResult, GatewayStreamEvent, GatewayUsage
+from drawoffer.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute, get_use_case_route
+from drawoffer.modules.llm.resolver import JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION, validation_fingerprint
+from drawoffer.modules.llm.schemas import ChatMessage
+from drawoffer.modules.llm.service import LLMError, LLMService
+from drawoffer.modules.speech.gateway import RecognitionEvent
 
 
 class FakeGateway:
@@ -78,7 +78,7 @@ class Answer(BaseModel):
 
 
 def bind_intent(sessions):
-    from linkresume.modules.llm.resolver import ASSISTANT_INTENT
+    from drawoffer.modules.llm.resolver import ASSISTANT_INTENT
     with sessions() as db:
         route = db.get(LLMModelRoute, 1)
         connection = db.get(LLMProviderConnection, route.connection_id)
@@ -92,9 +92,9 @@ def bind_intent(sessions):
 
 @pytest.mark.parametrize('invalid,expected_error', [(False,None), ('unknown_action','LLM_RESPONSE_INVALID'), ('low_confidence','INTENT_UNCERTAIN')])
 def test_native_intent_service_maps_decisions_and_records_metering(context, invalid, expected_error):
-    from linkresume.modules.agent.intent_schemas import IntentDecision, intent_probe_messages
+    from drawoffer.modules.agent.intent_schemas import IntentDecision, intent_probe_messages
     from tests.unit.modules.agent.test_systemone_intent import probe_answers
-    from linkresume.modules.llm.resolver import ASSISTANT_INTENT
+    from drawoffer.modules.llm.resolver import ASSISTANT_INTENT
     service, gateway, sessions = context
     bind_intent(sessions)
     with sessions() as db:
@@ -131,9 +131,9 @@ def test_native_intent_service_maps_decisions_and_records_metering(context, inva
 
 
 def test_intent_call_uses_independent_scene_and_run_log(context):
-    from linkresume.modules.agent.intent_schemas import IntentDecision
-    from linkresume.modules.agent.models import AgentRun, AgentSession
-    from linkresume.modules.llm.resolver import ASSISTANT_INTENT
+    from drawoffer.modules.agent.intent_schemas import IntentDecision
+    from drawoffer.modules.agent.models import AgentRun, AgentSession
+    from drawoffer.modules.llm.resolver import ASSISTANT_INTENT
     service, gateway, sessions = context
     bind_intent(sessions)
     with sessions() as db:
@@ -165,7 +165,7 @@ def test_intent_call_uses_independent_scene_and_run_log(context):
     ]}), True),
 ])
 def test_intent_probe_checks_multiple_goals(context, content, valid):
-    from linkresume.modules.llm.resolver import ASSISTANT_INTENT
+    from drawoffer.modules.llm.resolver import ASSISTANT_INTENT
     service, gateway, sessions = context
     bind_intent(sessions)
     gateway.result = GatewayResult(content=content, usage=GatewayUsage(100, 20))

@@ -7,10 +7,10 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.modules.interviews.models import InterviewSession
-from linkresume.modules.llm.gateway import GatewayResult
-from linkresume.modules.llm.models import LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
-from linkresume.modules.llm.resolver import MOCK_INTERVIEW, validation_fingerprint
+from drawoffer.modules.interviews.models import InterviewSession
+from drawoffer.modules.llm.gateway import GatewayResult
+from drawoffer.modules.llm.models import LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
+from drawoffer.modules.llm.resolver import MOCK_INTERVIEW, validation_fingerprint
 from tests.integration.api.test_interview_prep import USAGE, build_app, create_session
 from tests.integration.api.test_interviews import register
 
@@ -256,7 +256,7 @@ def test_interrupted_generation_is_reported_on_retry_and_legacy_reports_still_re
             "questions": [],
         }
         request_id = str(uuid4())
-        from linkresume.application.interviews.review_service import source_hash
+        from drawoffer.application.interviews.review_service import source_hash
         with app.state.session_factory() as db:
             row = db.get(InterviewSession, int(session["id"]))
             row.review_report = {**legacy, "request_source_hash": source_hash(TEXT)}

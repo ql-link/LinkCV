@@ -4,10 +4,10 @@ from urllib.parse import unquote
 import pytest
 from fastapi.testclient import TestClient
 
-from linkresume.modules.identity.default_avatar import DEFAULT_AVATAR_KEY, DEFAULT_AVATAR_URL
-from linkresume.modules.identity.models import User
-from linkresume.modules.identity.wechat_routes import resolve_wechat_user
-from linkresume.modules.miniprogram.account_routes import mini_avatar_url
+from drawoffer.modules.identity.default_avatar import DEFAULT_AVATAR_KEY, DEFAULT_AVATAR_URL
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.identity.wechat_routes import resolve_wechat_user
+from drawoffer.modules.miniprogram.account_routes import mini_avatar_url
 from tests.integration.api.test_account_routes import build_test_app, _avatar_data_url
 
 
@@ -17,7 +17,7 @@ def test_registration_profile_and_public_logo_agree_and_upload_replaces_default(
         logo = client.get(DEFAULT_AVATAR_URL)
         assert logo.status_code == 200
         assert logo.headers['content-type'] == 'image/png'
-        source = Path(__file__).resolve().parents[4] / 'web/src/assets/linkresume-mark.png'
+        source = Path(__file__).resolve().parents[4] / 'web/src/assets/drawoffer-mark.png'
         assert logo.content == source.read_bytes()
         response = client.post('/api/auth/register', json={
             'email': 'logo@example.test', 'password': 'password-123',

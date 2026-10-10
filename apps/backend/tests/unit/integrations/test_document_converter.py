@@ -1,12 +1,12 @@
 import asyncio
 from time import monotonic
 
-from linkresume.domain.document_conversion import (
+from drawoffer.domain.document_conversion import (
     DocumentConversionFailure,
     DocumentMarkdownResult,
 )
 import pytest
-from linkresume.integrations.document_converter import DocumentConverter
+from drawoffer.integrations.document_converter import DocumentConverter
 
 
 class FakeLinkParse:
@@ -87,7 +87,7 @@ def test_dispatcher_keeps_markdown_local_and_routes_docx_and_pdf_to_linkparse() 
     pdf = convert(instance, "resume.pdf", b"%PDF-fixture")
 
     assert markdown.markdown == "# Markdown\n\nText"
-    assert markdown.parser == "linkresume-direct-markdown"
+    assert markdown.parser == "drawoffer-direct-markdown"
     assert docx_result.parser == "mammoth_word"
     assert docx_result.parser_version == "linkparse-v0.2.0"
     assert docx_result.page_count == 2
@@ -120,7 +120,7 @@ def test_txt_is_normalized_locally() -> None:
 
     assert result.markdown == "标题\n\n正文"
     assert result.source_format == "txt"
-    assert result.parser == "linkresume-direct-txt"
+    assert result.parser == "drawoffer-direct-txt"
     assert linkparse.docx_calls == 0
     assert linkparse.pdf_calls == 0
 

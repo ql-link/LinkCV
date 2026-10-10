@@ -12,15 +12,20 @@ if (existsSync(target)) {
   }
 }
 
+const legacy = (name) => name.replace(/^DRAWOFFER_/, "LINKRESUME_");
 const value = (name) =>
-  process.env[name]?.trim() || stored[name]?.trim() || randomBytes(32).toString("hex");
+  process.env[name]?.trim() ||
+  stored[name]?.trim() ||
+  process.env[legacy(name)]?.trim() ||
+  stored[legacy(name)]?.trim() ||
+  randomBytes(32).toString("hex");
 const serviceToken = value("PI_SERVICE_TOKEN");
-let internalToken = value("LINKRESUME_INTERNAL_AGENT_TOKEN");
+let internalToken = value("DRAWOFFER_INTERNAL_AGENT_TOKEN");
 if (internalToken === serviceToken) internalToken = randomBytes(32).toString("hex");
 
 writeFileSync(
   target,
-  `PI_SERVICE_TOKEN=${serviceToken}\nLINKRESUME_INTERNAL_AGENT_TOKEN=${internalToken}\n`,
+  `PI_SERVICE_TOKEN=${serviceToken}\nDRAWOFFER_INTERNAL_AGENT_TOKEN=${internalToken}\n`,
   { encoding: "utf8", mode: 0o600 },
 );
 chmodSync(target, 0o600);

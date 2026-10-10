@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from linkresume.domain.resume_document import (
+from drawoffer.domain.resume_document import (
     CustomItem,
     CustomSection,
     ResumeDocument,
@@ -11,11 +11,11 @@ from linkresume.domain.resume_document import (
     RichText,
     with_default_semantics,
 )
-from linkresume.integrations.resume_semantic_classification import (
+from drawoffer.integrations.resume_semantic_classification import (
     classification_payload,
     classify_resume_sections,
 )
-from linkresume.modules.resumes.schemas import (
+from drawoffer.modules.resumes.schemas import (
     SemanticClassificationModelResult,
     SemanticClassificationSuggestion,
 )

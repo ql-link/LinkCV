@@ -3,14 +3,14 @@ from decimal import Decimal
 
 import pytest
 
-from linkresume.application.job_descriptions.ai_import_service import (
+from drawoffer.application.job_descriptions.ai_import_service import (
     draft_warnings,
     parse_image_draft,
     parse_text_draft,
 )
-from linkresume.application.job_descriptions.draft_normalization import normalize_job_draft
-from linkresume.modules.job_descriptions.schemas import JobDescriptionCreateRequest, JobDescriptionDraft
-from linkresume.modules.llm.schemas import ChatUsage, StructuredChatResult
+from drawoffer.application.job_descriptions.draft_normalization import normalize_job_draft
+from drawoffer.modules.job_descriptions.schemas import JobDescriptionCreateRequest, JobDescriptionDraft
+from drawoffer.modules.llm.schemas import ChatUsage, StructuredChatResult
 
 
 def draft(**overrides) -> JobDescriptionDraft:

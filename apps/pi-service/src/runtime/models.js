@@ -23,7 +23,7 @@ export async function configuredModels(modelConfigs) {
     if (!ALLOWED_MODEL_APIS.has(modelConfig.api) || !modelConfig.baseUrl?.startsWith("https://")) {
       throw new Error("AGENT_MODEL_UNSUPPORTED");
     }
-    const provider = `linkresume-${modelConfig.provider}${modelConfig.routeId ? `-${modelConfig.routeId}` : ""}`;
+    const provider = `drawoffer-${modelConfig.provider}${modelConfig.routeId ? `-${modelConfig.routeId}` : ""}`;
     const contextWindow = Number.isSafeInteger(modelConfig.contextWindow) && modelConfig.contextWindow > 0
       ? modelConfig.contextWindow : 128000;
     const maxTokens = Number.isSafeInteger(modelConfig.maxOutputTokens) && modelConfig.maxOutputTokens > 0

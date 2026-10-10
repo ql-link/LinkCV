@@ -7,9 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.modules.agent.intent_schemas import IntentDecision, PLANNING_RULES
-from linkresume.modules.agent.models import AgentMessage, AgentRun
-from linkresume.modules.llm.service import LLMError
+from drawoffer.modules.agent.intent_schemas import IntentDecision, PLANNING_RULES
+from drawoffer.modules.agent.models import AgentMessage, AgentRun
+from drawoffer.modules.llm.service import LLMError
 from tests.integration.api.test_agent_routes import (
     build_app, create_active_run, create_resume, internal_headers, register,
 )
@@ -98,7 +98,7 @@ def test_whole_resume_read_exposes_every_editable_block():
     from copy import deepcopy
     from uuid import uuid4
 
-    from linkresume.modules.agent.canonical_targets import plain_run
+    from drawoffer.modules.agent.canonical_targets import plain_run
 
     app = build_app()
     with TestClient(app) as client:

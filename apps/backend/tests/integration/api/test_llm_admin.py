@@ -6,16 +6,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 import pytest
 
-from linkresume.core.config import Settings
-from linkresume.core.database import utc_now
-from linkresume.main import create_app
-from linkresume.modules.agent.models import AgentRun, AgentSession
-from linkresume.modules.identity.models import User
-from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
-from linkresume.modules.llm.models import (
+from drawoffer.core.config import Settings
+from drawoffer.core.database import utc_now
+from drawoffer.main import create_app
+from drawoffer.modules.agent.models import AgentRun, AgentSession
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.llm.gateway import GatewayResult, GatewayUsage
+from drawoffer.modules.llm.models import (
     LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute,
 )
-from linkresume.modules.llm.resolver import JOB_TEXT_EXTRACTION, resolve, validation_fingerprint
+from drawoffer.modules.llm.resolver import JOB_TEXT_EXTRACTION, resolve, validation_fingerprint
 from tests.fakes import FakeRedis
 
 
@@ -222,7 +222,7 @@ def test_speech_use_cases_bind_only_speech_protocols_and_probe_through_speech_ga
 
 
 def test_aihubmix_speech_models_bind_probe_and_activate_using_controlled_http_targets():
-    from linkresume.modules.speech.gateway import RecognitionEvent
+    from drawoffer.modules.speech.gateway import RecognitionEvent
 
     class CapturingSpeech:
         def __init__(self):
@@ -380,7 +380,7 @@ def test_agent_history_blocks_deleting_its_model_and_route():
 @pytest.mark.parametrize("error_code", ["LLM_TIMEOUT", "LLM_UNAVAILABLE", "LLM_RESPONSE_INVALID", "LLM_CONFIG_CHANGED"])
 @pytest.mark.parametrize("enable_method", ["put", "patch"])
 def test_enabling_binding_probes_and_keeps_disabled_on_failure(error_code, enable_method):
-    from linkresume.modules.llm.gateway import GatewayError
+    from drawoffer.modules.llm.gateway import GatewayError
     app, gateway = build_app()
     async def fail(**kwargs):
         gateway.calls.append(kwargs)

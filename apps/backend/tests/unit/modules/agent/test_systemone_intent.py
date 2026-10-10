@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-from linkresume.modules.agent.intent_schemas import intent_probe_messages
-from linkresume.modules.agent.systemone_intent import IntentDecisionError, decision_from_answers, request_for_intent
-from linkresume.modules.llm.schemas import ChatMessage
+from drawoffer.modules.agent.intent_schemas import intent_probe_messages
+from drawoffer.modules.agent.systemone_intent import IntentDecisionError, decision_from_answers, request_for_intent
+from drawoffer.modules.llm.schemas import ChatMessage
 
 
 def request_with(contexts):
@@ -194,7 +194,7 @@ def test_a_selected_resume_is_not_reopened_by_unnamed_wording_or_history():
 
 
 def test_follow_up_questions_about_a_resume_are_business_tasks_not_chat():
-    from linkresume.modules.agent.intent_schemas import INTENT_ROUTING_RULES, PLANNING_RULES
+    from drawoffer.modules.agent.intent_schemas import INTENT_ROUTING_RULES, PLANNING_RULES
 
     for rules in (INTENT_ROUTING_RULES, PLANNING_RULES):
         assert "询问某份简历正文里的具体内容" in rules

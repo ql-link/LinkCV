@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DrawOffer.Core/DrawOffer.Core.csproj" />
+    <Project Path="src/DrawOffer.App/DrawOffer.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DrawOffer.Core.Tests/DrawOffer.Core.Tests.csproj" />
+    <Project Path="tests/DrawOffer.Platform.Tests/DrawOffer.Platform.Tests.csproj" />
+  </Folder>
+</Solution>

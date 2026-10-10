@@ -1,6 +1,6 @@
 {
-  "description": "LinkResume 微信登录与只读简历小程序",
-  "projectname": "linkresume-miniprogram",
+  "description": "DrawOffer 微信登录与只读简历小程序",
+  "projectname": "drawoffer-miniprogram",
   "appid": "wxa56f4b15231066eb",
   "compileType": "miniprogram",
   "miniprogramRoot": "./",

@@ -7,6 +7,6 @@ export function isResumeEmailLink(value: string) {
   return EMAIL_ADDRESS_PATTERN.test(normalized);
 }
 
-export function shouldAutoLinkResumeValue(value: string) {
+export function shouldAutoDrawOfferValue(value: string) {
   return !isResumeEmailLink(value);
 }

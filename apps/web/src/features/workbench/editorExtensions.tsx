@@ -40,7 +40,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../../api/client";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
-import { isResumeEmailLink, shouldAutoLinkResumeValue } from "../../lib/resumeLink";
+import { isResumeEmailLink, shouldAutoDrawOfferValue } from "../../lib/resumeLink";
 import { useResumeStore } from "../../store/resumeStore";
 import { Select } from "../../v3/primitives";
 import {
@@ -1317,7 +1317,7 @@ export const resumeEditorExtensions: Extensions = [
   Link.configure({
     openOnClick: false,
     autolink: true,
-    shouldAutoLink: shouldAutoLinkResumeValue,
+    shouldAutoLink: shouldAutoDrawOfferValue,
     isAllowedUri: (value, { defaultValidate }) => (
       defaultValidate(value) && !isResumeEmailLink(value)
     ),

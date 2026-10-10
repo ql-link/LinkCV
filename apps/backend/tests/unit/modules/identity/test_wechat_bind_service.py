@@ -1,6 +1,6 @@
 import pytest
 
-from linkresume.modules.identity.wechat_bind_service import (
+from drawoffer.modules.identity.wechat_bind_service import (
     bind_status,
     bind_ticket_user,
     mark_bind_success,

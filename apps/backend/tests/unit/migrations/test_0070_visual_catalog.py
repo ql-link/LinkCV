@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.domain.resume import (
+from drawoffer.domain.resume import (
     CanonicalResumeDocument,
     TemplateDefinition,
     compile_layout_plan,

@@ -1,7 +1,7 @@
 [project]
-name = "linkresume-backend"
+name = "drawoffer-backend"
 version = "0.1.0"
-description = "LinkResume FastAPI backend"
+description = "DrawOffer FastAPI backend"
 requires-python = ">=3.11,<3.14"
 dependencies = [
   "anyio>=4,<5", # Match FastAPI's cancellation scopes for intent requests.
@@ -43,7 +43,7 @@ requires = ["hatchling>=1.27,<2.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/linkresume"]
+packages = ["src/drawoffer"]
 
 [tool.pytest.ini_options]
 addopts = "-q --import-mode=importlib"

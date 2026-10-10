@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.modules.product_events.models import EVENT_NAMES, ProductEvent
+from drawoffer.modules.product_events.models import EVENT_NAMES, ProductEvent
 from tests.migration_naming import current_columns, current_object_names
 
 ROOT = Path(__file__).resolve().parents[5]

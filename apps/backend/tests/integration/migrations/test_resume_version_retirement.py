@@ -6,8 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from linkresume.modules.interviews.models import JobApplication
-from linkresume.modules.resumes.models import Resume
+from drawoffer.modules.interviews.models import JobApplication
+from drawoffer.modules.resumes.models import Resume
 from tests.legacy_models import ResumeVersion
 from tests.integration.api.test_interviews import build_app, register, create_job, create_resume, create_application
 from tests.migration_naming import current_table

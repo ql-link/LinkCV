@@ -1,7 +1,7 @@
 from cryptography.fernet import Fernet
 import pytest
 
-from linkresume.modules.llm.crypto import CredentialCipher, CredentialUnavailableError
+from drawoffer.modules.llm.crypto import CredentialCipher, CredentialUnavailableError
 
 
 def key_ring(*key_ids: str) -> str:

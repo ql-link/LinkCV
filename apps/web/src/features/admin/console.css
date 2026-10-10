@@ -57,7 +57,7 @@
 /* The shell's 16px top/bottom padding frames only the content card; the sidebar spans the full window (brand at y 18). */
 .adm-sidebar { margin: -16px 0; }
 .adm-brand { display: flex; align-items: center; gap: 10px; margin: 0 6px 20px; color: var(--adm-ink); text-decoration: none; }
-/* Full wordmark (pen mark + "LinkResume" in one image); the separate square mark stays hidden. */
+/* Full wordmark (pen mark + "DrawOffer" in one image); the separate square mark stays hidden. */
 .adm-brand { height: 30px; }
 .adm-brand .ui-brand-wordmark { width: 117px; height: 24px; object-fit: contain; object-position: left center; }
 .adm-brand .ui-brand-responsive-mark { display: none; }

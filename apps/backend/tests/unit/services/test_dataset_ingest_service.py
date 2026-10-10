@@ -1,6 +1,6 @@
 import pytest
 
-from linkresume.services.dataset_ingest_service import validate_interview_context
+from drawoffer.services.dataset_ingest_service import validate_interview_context
 
 
 @pytest.mark.parametrize(

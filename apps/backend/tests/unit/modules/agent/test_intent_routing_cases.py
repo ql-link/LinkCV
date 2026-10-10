@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.modules.agent.intent_schemas import INTENT_ROUTING_RULES
-from linkresume.modules.agent.systemone_intent import ACTIONS, decision_from_answers, request_for_intent
-from linkresume.modules.llm.schemas import ChatMessage
+from drawoffer.modules.agent.intent_schemas import INTENT_ROUTING_RULES
+from drawoffer.modules.agent.systemone_intent import ACTIONS, decision_from_answers, request_for_intent
+from drawoffer.modules.llm.schemas import ChatMessage
 from tests.unit.modules.agent.test_systemone_intent import native_answers
 
 CASES = json.loads((Path(__file__).parents[3] / 'fixtures/intent_routing_cases.json').read_text())

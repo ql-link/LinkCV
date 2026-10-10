@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, BrowserWindow, shell } from "electron";
 import {
+  applyLegacyDesktopEnv,
   BuiltInDesktopEnv,
   isExternalHttpUrl,
   resolveDesktopTarget,
@@ -18,16 +19,21 @@ function readBuiltInEnv(): BuiltInDesktopEnv | null {
   }
 }
 
+applyLegacyDesktopEnv(process.env);
+
+// 更名后沿用旧应用名的数据目录，已登录用户升级后不掉登录、不丢本地设置。
+app.setPath("userData", join(app.getPath("appData"), app.getName().replace(/^DrawOffer/, "LinkResume").replace(/^@drawoffer\//, "@linkresume/")));
+
 const target = resolveDesktopTarget(
-  process.env.LINKRESUME_DESKTOP_MODE === "dev" ? "dev" : "package",
+  process.env.DRAWOFFER_DESKTOP_MODE === "dev" ? "dev" : "package",
   process.env,
   readBuiltInEnv(),
 );
 if (target.preset === "development") {
-  console.log(`[linkresume-desktop] 开发版客户端，连接 ${target.origin}`);
+  console.log(`[drawoffer-desktop] 开发版客户端，连接 ${target.origin}`);
 }
 for (const warning of target.warnings) {
-  console.warn(`[linkresume-desktop] ${warning}`);
+  console.warn(`[drawoffer-desktop] ${warning}`);
 }
 
 /** Electron 在导航被取代时上报的 errorCode（ABORTED），不是加载失败。 */
@@ -70,7 +76,7 @@ function createMainWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
     height: 832,
-    title: "LinkResume",
+    title: "DrawOffer",
     autoHideMenuBar: true,
     titleBarStyle: "hiddenInset",
     webPreferences: {

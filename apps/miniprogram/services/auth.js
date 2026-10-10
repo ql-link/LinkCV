@@ -2,7 +2,7 @@ const ACCESS_KEY = "linkresume_access_token";
 const REFRESH_KEY = "linkresume_refresh_token";
 const USER_KEY = "linkresume_user";
 const PRIVACY_AGREEMENT_KEY = "linkresume_privacy_agreement_v1";
-const DEFAULT_PRIVACY_CONTRACT_NAME = "《LinkResume 小程序隐私保护指引》";
+const DEFAULT_PRIVACY_CONTRACT_NAME = "《DrawOffer 小程序隐私保护指引》";
 
 function apiUrl(path) {
   const app = getApp();

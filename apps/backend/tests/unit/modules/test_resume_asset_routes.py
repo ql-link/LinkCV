@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from linkresume.core.errors import ApiError
-from linkresume.modules.resumes import resume_asset_routes
-from linkresume.modules.resumes.image_limits import MAX_RESUME_IMAGE_BYTES
+from drawoffer.core.errors import ApiError
+from drawoffer.modules.resumes import resume_asset_routes
+from drawoffer.modules.resumes.image_limits import MAX_RESUME_IMAGE_BYTES
 
 
 @pytest.fixture(autouse=True)

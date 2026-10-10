@@ -1,6 +1,6 @@
 import pytest
 
-from linkresume.application.interviews.state import (
+from drawoffer.application.interviews.state import (
     ApplicationStateValue,
     InvalidTransition,
     advance_application,

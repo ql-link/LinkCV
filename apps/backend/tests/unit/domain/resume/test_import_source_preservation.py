@@ -1,11 +1,11 @@
 import pytest
 
-from linkresume.domain.resume import (
+from drawoffer.domain.resume import (
     SparseResumeAnnotations,
     build_source_graph_from_layout_ir,
     compose_canonical_resume_document,
 )
-from linkresume.domain.section_ir import build_section_ir
+from drawoffer.domain.section_ir import build_section_ir
 
 
 def source(markdown):

@@ -1416,10 +1416,10 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.click(screen.getByRole("button", { name: "常在招聘网站看岗位？用浏览器插件一键保存" }));
 
     expect(screen.queryByRole("dialog", { name: "导入岗位" })).not.toBeInTheDocument();
-    expect(await screen.findByRole("dialog", { name: "安装 LinkResume 岗位采集插件" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "安装 DrawOffer 岗位采集插件" })).toBeInTheDocument();
     expect(screen.getByText("暂未提供插件安装包。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭插件安装说明" }));
-    expect(screen.queryByRole("dialog", { name: "安装 LinkResume 岗位采集插件" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "安装 DrawOffer 岗位采集插件" })).not.toBeInTheDocument();
   });
 
   it("在求职记录页内切换手工导入并关闭，不改变 URL 或列表背景", async () => {
@@ -3716,9 +3716,9 @@ describe("InterviewCenterPage API projections", () => {
     const dataTransfer = {
       effectAllowed: "",
       dropEffect: "",
-      types: ["application/x-linkresume-board-column"],
+      types: ["application/x-drawoffer-board-column"],
       setData: vi.fn(),
-      getData: vi.fn((type: string) => type === "application/x-linkresume-board-column" ? "screening" : ""),
+      getData: vi.fn((type: string) => type === "application/x-drawoffer-board-column" ? "screening" : ""),
     } as unknown as DataTransfer;
 
     fireEvent.dragStart(sourceHeading, { dataTransfer });

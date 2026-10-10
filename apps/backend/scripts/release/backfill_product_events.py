@@ -17,15 +17,15 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-import linkresume.models  # noqa: F401  (register every table for foreign keys)
-from linkresume.core.config import load_settings
-from linkresume.core.database import build_engine
-from linkresume.modules.agent.models import ResumeChangeProposal
-from linkresume.modules.identity.models import User
-from linkresume.modules.mock_interviews.models import MockInterview
-from linkresume.modules.product_events.models import ProductEvent
-from linkresume.modules.product_events.service import build_event
-from linkresume.modules.resumes.models import Resume
+import drawoffer.models  # noqa: F401  (register every table for foreign keys)
+from drawoffer.core.config import load_settings
+from drawoffer.core.database import build_engine
+from drawoffer.modules.agent.models import ResumeChangeProposal
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.mock_interviews.models import MockInterview
+from drawoffer.modules.product_events.models import ProductEvent
+from drawoffer.modules.product_events.service import build_event
+from drawoffer.modules.resumes.models import Resume
 
 
 @dataclass(frozen=True)

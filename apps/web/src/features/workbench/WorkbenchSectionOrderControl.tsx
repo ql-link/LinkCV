@@ -24,7 +24,7 @@ import {
   type ResumeSectionOrderGroup,
 } from "./resumeSectionOrder";
 
-const SECTION_ORDER_DRAG_TYPE = "application/x-linkresume-section-index";
+const SECTION_ORDER_DRAG_TYPE = "application/x-drawoffer-section-index";
 
 type DragOrigin = { side: ResumeColumnSide | null; index: number };
 type DropRegion = { side: ResumeColumnSide | null; index: number; edge: "before" | "after" };

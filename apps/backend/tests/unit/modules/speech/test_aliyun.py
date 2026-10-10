@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-from linkresume.modules.speech.aliyun import AliyunSpeechGateway
-from linkresume.modules.speech.gateway import SpeechProviderError, SpeechTarget
+from drawoffer.modules.speech.aliyun import AliyunSpeechGateway
+from drawoffer.modules.speech.gateway import SpeechProviderError, SpeechTarget
 
 TARGET = SpeechTarget(ws_url="wss://example.invalid/ws", api_key="fictional-key", model="fun-asr-realtime", workspace_id="ws-1")
 

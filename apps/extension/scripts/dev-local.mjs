@@ -26,8 +26,8 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 // Bind both the API client and manifest to the same local Web instance.
 process.env.WXT_RELEASE_BUILD = "1";
-process.env.WXT_PUBLIC_LINKRESUME_CHANNEL = "development";
-process.env.WXT_PUBLIC_LINKRESUME_ORIGIN = origin.origin;
+process.env.WXT_PUBLIC_DRAWOFFER_CHANNEL = "development";
+process.env.WXT_PUBLIC_DRAWOFFER_ORIGIN = origin.origin;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = values["output-dir"]
   ? resolve(values["output-dir"])

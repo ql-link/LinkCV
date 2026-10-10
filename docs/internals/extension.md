@@ -2,7 +2,7 @@
 
 ## 职责与边界
 
-`apps/extension` 是以 LinkResume 为用户可见品牌的 WXT + React + TypeScript Chrome Manifest V3 插件。它只处理用户主动打开的 BOSS 直聘岗位详情：既支持独立岗位详情页，也支持职位列表页右侧当前选中的详情面板。用户点击插件后，内容脚本读取当前 DOM，弹窗展示可编辑预览，确认后由弹窗调用 `POST /api/job-descriptions/import`。弹窗沿用 Web 的白色表面、近黑主操作与蓝色文本入口，固定宽度 420px。预览、编辑和完整描述页高度 600px；成功页由岗位摘要和技能标签撑高，内容较多时允许增长至 600px 并滚动。默认预览岗位摘要、公司图标、薪资、城市、经验、学历和技能；“编辑”位于岗位信息右上方，“查看全部”位于描述标题右侧，两者右对齐。编辑页只展示岗位、公司、薪资、城市和描述，其他采集字段继续随请求提交；“完成编辑”和“返回预览”校验并应用修改，“取消”丢弃本轮修改。完整描述仅滚动正文，顶部收起入口和底部保存按钮固定。只对原文中明确的段落标题增加层级，不生成或改写岗位正文。采集时可选字段缺失不额外提示，保存失败才展示可恢复错误。登录与旧服务重复来源分支保留必要操作。插件保持独立构建，不直接依赖 Web 组件包。
+`apps/extension` 是以 DrawOffer 为用户可见品牌的 WXT + React + TypeScript Chrome Manifest V3 插件。它只处理用户主动打开的 BOSS 直聘岗位详情：既支持独立岗位详情页，也支持职位列表页右侧当前选中的详情面板。用户点击插件后，内容脚本读取当前 DOM，弹窗展示可编辑预览，确认后由弹窗调用 `POST /api/job-descriptions/import`。弹窗沿用 Web 的白色表面、近黑主操作与蓝色文本入口，固定宽度 420px。预览、编辑和完整描述页高度 600px；成功页由岗位摘要和技能标签撑高，内容较多时允许增长至 600px 并滚动。默认预览岗位摘要、公司图标、薪资、城市、经验、学历和技能；“编辑”位于岗位信息右上方，“查看全部”位于描述标题右侧，两者右对齐。编辑页只展示岗位、公司、薪资、城市和描述，其他采集字段继续随请求提交；“完成编辑”和“返回预览”校验并应用修改，“取消”丢弃本轮修改。完整描述仅滚动正文，顶部收起入口和底部保存按钮固定。只对原文中明确的段落标题增加层级，不生成或改写岗位正文。采集时可选字段缺失不额外提示，保存失败才展示可恢复错误。登录与旧服务重复来源分支保留必要操作。插件保持独立构建，不直接依赖 Web 组件包。
 
 插件不做岗位分析、简历匹配、自动投递、批量抓取、后台轮询或反爬绕过。页面采集字段只保存在当前弹窗内存中；插件不使用 `storage` 权限，不保存 Cookie、密码、API Key 或原始页面。后端执行确定性清洗、来源规范化、去重和最终结构化入库，原始抓取内容不落库。当前后端导入会创建或复用岗位及求职记录；来源重复默认复用已有内容。插件成功页保留公司图标、岗位摘要和一个主入口：优先打开响应 `application.id` 对应的求职记录；兼容旧服务缺少或返回空 `application` 时，标题为“岗位已保存”，主入口回退为岗位详情。成功页不显示返回预览、额外跳转或图标保存成功提示。旧服务返回重复来源冲突时仍保留用本次内容更新、打开已有 JD 和返回预览操作。
 
@@ -10,13 +10,13 @@
 
 | 位置 | 职责 |
 | --- | --- |
-| `wxt.config.ts` | MV3 Manifest、BOSS 与 LinkResume 精确站点权限 |
+| `wxt.config.ts` | MV3 Manifest、BOSS 与 DrawOffer 精确站点权限 |
 | `entrypoints/boss.content.ts` | 只响应弹窗消息的 BOSS 内容脚本 |
 | `src/extractor/boss.ts` | 多选择器详情识别、列表卡片排除和页面字段提取 |
 | `entrypoints/popup/` | 登录状态、可编辑预览、提交、重复来源和结果反馈 |
-| `src/api/linkresume.ts` | 本地 LinkResume 源站探测、Cookie 会话刷新和导入客户端 |
+| `src/api/drawoffer.ts` | 本地 DrawOffer 源站探测、Cookie 会话刷新和导入客户端 |
 
-内容脚本和 API 客户端分开：BOSS 页面上下文只返回采集字段，带 LinkResume `host_permissions` 的扩展弹窗才发送受保护 API 请求。普通本地构建使用“LinkResume 岗位采集（开发版）”名称，保留 `127.0.0.1:5173` 和 `localhost:5173` 候选，并优先选择已有登录态的源站。发布脚本设置 `WXT_RELEASE_BUILD=1`，并分别注入 `development` 或 `production` 渠道及唯一 `WXT_PUBLIC_LINKRESUME_ORIGIN`；发布包运行时不回退到其他环境，Manifest 也只包含对应 LinkResume Origin 与受控 BOSS Origin。Development 包保留“开发版”名称，Production 包使用“LinkResume 岗位采集”。
+内容脚本和 API 客户端分开：BOSS 页面上下文只返回采集字段，带 DrawOffer `host_permissions` 的扩展弹窗才发送受保护 API 请求。普通本地构建使用“DrawOffer 岗位采集（开发版）”名称，保留 `127.0.0.1:5173` 和 `localhost:5173` 候选，并优先选择已有登录态的源站。发布脚本设置 `WXT_RELEASE_BUILD=1`，并分别注入 `development` 或 `production` 渠道及唯一 `WXT_PUBLIC_DRAWOFFER_ORIGIN`；发布包运行时不回退到其他环境，Manifest 也只包含对应 DrawOffer Origin 与受控 BOSS Origin。Development 包保留“开发版”名称，Production 包使用“DrawOffer 岗位采集”。
 
 ## 提取与失败策略
 
@@ -35,7 +35,7 @@ BOSS DOM 不是稳定公共契约。站点结构变化时优先新增最窄的�
 ```bash
 uv run --directory apps/backend python ../../scripts/release/build_extension_release.py \
   --development-origin http://127.0.0.1:5173 \
-  --production-origin https://linkresume.example.test \
+  --production-origin https://drawoffer.example.test \
   --output-dir ../../.tmp/plugin-release
 ```
 

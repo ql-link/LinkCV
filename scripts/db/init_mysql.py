@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the isolated LinkResume database without exposing credentials."""
+"""Create the isolated DrawOffer database without exposing credentials."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import OperationalError
 
-from linkresume.core.config import load_settings
+from drawoffer.core.config import load_settings
 
 EXPECTED_DATABASE = "linkresume"
 
@@ -88,10 +88,10 @@ def main() -> int:
         summary = create_database(settings.sqlalchemy_url)
     except Exception as exc:
         raise RuntimeError(
-            "LinkResume database initialization failed: "
+            "DrawOffer database initialization failed: "
             f"stage=create_database {safe_failure_reason(exc)}"
         ) from None
-    print(f"LinkResume database ready: {summary}", flush=True)
+    print(f"DrawOffer database ready: {summary}", flush=True)
     return 0
 
 

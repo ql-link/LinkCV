@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.modules.llm.models import LLMModel
+from drawoffer.modules.llm.models import LLMModel
 
 ROOT = Path(__file__).resolve().parents[5]
 MIGRATIONS = ROOT / "apps/backend/migrations"

@@ -1,1 +1,0 @@
-"""LinkResume backend package."""

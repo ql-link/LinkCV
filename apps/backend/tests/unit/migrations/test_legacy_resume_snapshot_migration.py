@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.domain.resume_snapshot import parse_resume_snapshot
+from drawoffer.domain.resume_snapshot import parse_resume_snapshot
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 REVISION_PATH = (
@@ -23,7 +23,7 @@ CANONICAL_REVISION_PATH = (
 
 
 def load_revision():
-    spec = importlib.util.spec_from_file_location("linkresume_revision_0005", REVISION_PATH)
+    spec = importlib.util.spec_from_file_location("drawoffer_revision_0005", REVISION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -32,7 +32,7 @@ def load_revision():
 
 def load_canonical_revision():
     spec = importlib.util.spec_from_file_location(
-        "linkresume_revision_0036", CANONICAL_REVISION_PATH
+        "drawoffer_revision_0036", CANONICAL_REVISION_PATH
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

@@ -1,7 +1,7 @@
 import { t, useLocale, getLocale } from "@/i18n";
 import { MotionPresence } from "@/components/ui/motion";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import brandWordmark from "@/assets/linkresume-wordmark.png";
+import brandWordmark from "@/assets/drawoffer-wordmark.png";
 import { PageLoading } from "@/components/ui";
 import { api, ApiRequestError, type PublicSharePayload } from "../../api/client";
 import { copyText } from "../../utils/clipboard";
@@ -50,7 +50,7 @@ function ShareFrame({ note, children }: { note: string; children: ReactNode }) {
     <main className="v3 share-page" data-ui-theme="light">
       <div className="share-v3-card">
         <header className="share-v3-head">
-          <a className="share-v3-brand" href="/" aria-label="linkresume" title={t("访问 LinkResume")}>
+          <a className="share-v3-brand" href="/" aria-label="DrawOffer" title={t("访问 DrawOffer")}>
             <img src={brandWordmark} alt="" aria-hidden="true" />
           </a>
           <span className="share-v3-divider" aria-hidden="true" />
@@ -293,7 +293,7 @@ export function SharePage({ token }: { token: string }) {
   const documentHtml = useMemo(
     () => payload
       ? renderResumePrintDocument({
-        title: resumeDocumentTitle(payload.data) || "LinkResume Resume",
+        title: resumeDocumentTitle(payload.data) || "DrawOffer Resume",
         data: payload.data,
         style: {
           ...payload.style,
@@ -453,7 +453,7 @@ export function SharePage({ token }: { token: string }) {
 
           <section className="share-v3-pcard share-v3-promo">
             <div className="v3-stage"><PromoArt /></div>
-            <h2>{t("这份简历由 LinkResume 制作")}</h2>
+            <h2>{t("这份简历由 DrawOffer 制作")}</h2>
             <p>{t("AI 帮你写、帮你改，还能追踪每一次投递。")}</p>
             <a className="v3-link" href="/">{t("免费试试")}<Icon name="arrow" size={12} /></a>
           </section>

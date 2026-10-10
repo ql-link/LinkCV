@@ -20,8 +20,8 @@ from typing import Any
 import sqlalchemy as sa
 from alembic import op
 
-from linkresume.core.migration_sql import execute_sql_file
-from linkresume.domain.resume import CanonicalResumeDocument
+from drawoffer.core.migration_sql import execute_sql_file
+from drawoffer.domain.resume import CanonicalResumeDocument
 
 revision: str = "0050"
 down_revision: str | None = "0049"

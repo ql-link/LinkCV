@@ -1,8 +1,8 @@
 import bcrypt
 import jwt
 
-from linkresume.core.config import Settings
-from linkresume.core.security import (
+from drawoffer.core.config import Settings
+from drawoffer.core.security import (
     create_access_token,
     decode_access_token,
     hash_password,

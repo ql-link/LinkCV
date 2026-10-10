@@ -17,7 +17,7 @@ import {
   sharePath,
 } from "./routing";
 
-describe("LinkResume routes", () => {
+describe("DrawOffer routes", () => {
   it("parses landing, auth, admin, resume, template, and editor routes", () => {
     expect(parseAppRoute("/")).toEqual({ kind: "landing" });
     expect(parseAppRoute("/home")).toEqual({ kind: "landing" });

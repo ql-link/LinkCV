@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.modules.mock_interviews.models import MockInterview
+from drawoffer.modules.mock_interviews.models import MockInterview
 from tests.integration.api.test_mock_interviews import seed_dataset
 from tests.integration.api.test_mock_interview_voice import (
     CorrectingGateway, FakeStorage, voice_app, recognize, run_voice_interview,

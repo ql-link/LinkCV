@@ -8,39 +8,39 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 
-from linkresume.application.resumes.commands import CreateResumeCommand
-from linkresume.application.resumes.service import (
+from drawoffer.application.resumes.commands import CreateResumeCommand
+from drawoffer.application.resumes.service import (
     persist_resume,
     resume_slot_count,
 )
-from linkresume.core.config import Settings
-from linkresume.core.database import Base, utc_now
-from linkresume.domain.resume import (
+from drawoffer.core.config import Settings
+from drawoffer.core.database import Base, utc_now
+from drawoffer.domain.resume import (
     CanonicalResumeDocument,
     ResumePresentation,
     SourceGraph,
     SparseResumeAnnotations,
 )
-from linkresume.domain.resume.models import SparseAnnotation
-from linkresume.domain.document_conversion import (
+from drawoffer.domain.resume.models import SparseAnnotation
+from drawoffer.domain.document_conversion import (
     DocumentConversionFailure,
     DocumentMarkdownResult,
 )
-from linkresume.domain.resume_style import default_resume_style, default_template_manifest
-from linkresume.main import create_app
-from linkresume.modules.identity.models import User
-from linkresume.modules.product_events.models import ProductEvent
-from linkresume.modules.resumes.models import (
+from drawoffer.domain.resume_style import default_resume_style, default_template_manifest
+from drawoffer.main import create_app
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.product_events.models import ProductEvent
+from drawoffer.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
     Resume,
     ResumeTemplate,
 )
-from linkresume.services.resume_import_service import (
+from drawoffer.services.resume_import_service import (
     ParsedImportResult,
     ResumeImportService,
 )
-from linkresume.workers.resume_import_worker import (
+from drawoffer.workers.resume_import_worker import (
     FAILURE_REASON_BY_CODE,
     ResumeImportProcessor,
     WorkerDependencyUnavailable,

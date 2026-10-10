@@ -33,7 +33,7 @@
 .adm-login-stack { display: flex; width: min(100%, 400px); flex-direction: column; align-items: center; gap: 20px; }
 .adm-login-card { display: flex; width: 100%; flex-direction: column; gap: 22px; border: 1px solid #e3e3df; border-radius: 18px; background: #fff; padding: 36px; box-shadow: 0 8px 24px rgba(0, 0, 0, .05); }
 .adm-login-brand { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
-/* Full wordmark image (pen mark + "LinkResume"), same as the console sidebar. */
+/* Full wordmark image (pen mark + "DrawOffer"), same as the console sidebar. */
 .adm-login-brand { align-self: flex-start; height: 30px; }
 .adm-login-brand .ui-brand-wordmark { display: block; width: 146px; height: 30px; object-fit: contain; object-position: left center; }
 .adm-login-brand .ui-brand-responsive-mark { display: none; }

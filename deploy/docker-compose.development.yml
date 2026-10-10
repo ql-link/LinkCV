@@ -1,24 +1,27 @@
 services:
-  linkresume-pi:
-    image: linkresume-pi:${PI_TAG:?PI_TAG is required}
-    container_name: linkresume-pi-dev
+  drawoffer-pi:
+    image: drawoffer-pi:${PI_TAG:?PI_TAG is required}
+    container_name: drawoffer-pi-dev
     restart: always
     env_file:
-      - ${LINKRESUME_ENV_FILE:-../.env.development}
-      - ${LINKRESUME_SECRET_ENV_FILE:-../.env.development.local}
+      - ${DRAWOFFER_ENV_FILE:-${LINKRESUME_ENV_FILE:-../.env.development}}
+      - ${DRAWOFFER_SECRET_ENV_FILE:-${LINKRESUME_SECRET_ENV_FILE:-../.env.development.local}}
     environment:
       APP_ENV: development
-      LINKRESUME_BASE_URL: http://linkresume:8000
+      DRAWOFFER_BASE_URL: http://drawoffer:8000
       PI_SERVICE_HOST: 0.0.0.0
       PI_SERVICE_PORT: 8010
       TZ: Asia/Shanghai
     networks:
-      - linkresume-runtime
+      drawoffer-runtime:
+        aliases:
+          - linkresume-pi
+          - linkresume-pi-dev
     labels:
       com.linkresume.environment: development
       com.linkresume.role: pi-agent
     depends_on:
-      linkresume:
+      drawoffer:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8010/health').then(r=>{if(!r.ok)process.exit(1)})"]
@@ -27,13 +30,13 @@ services:
       retries: 5
       start_period: 20s
 
-  linkresume:
-    image: linkresume:${TAG:?TAG is required}
-    container_name: linkresume-dev
+  drawoffer:
+    image: drawoffer:${TAG:?TAG is required}
+    container_name: drawoffer-dev
     restart: always
     env_file:
-      - ${LINKRESUME_ENV_FILE:-../.env.development}
-      - ${LINKRESUME_SECRET_ENV_FILE:-../.env.development.local}
+      - ${DRAWOFFER_ENV_FILE:-${LINKRESUME_ENV_FILE:-../.env.development}}
+      - ${DRAWOFFER_SECRET_ENV_FILE:-${LINKRESUME_SECRET_ENV_FILE:-../.env.development.local}}
     environment:
       APP_ENV: development
       BACKEND_HOST: 0.0.0.0
@@ -41,11 +44,14 @@ services:
       WEB_DIST_DIR: /app/web
       TZ: Asia/Shanghai
     ports:
-      - "${LINKRESUME_DEV_HTTP_PORT:-18002}:8000"
+      - "${DRAWOFFER_DEV_HTTP_PORT:-${LINKRESUME_DEV_HTTP_PORT:-18002}}:8000"
     volumes:
       - linkresume-dev-logs:/app/logs
     networks:
-      - linkresume-runtime
+      drawoffer-runtime:
+        aliases:
+          - linkresume
+          - linkresume-dev
     labels:
       com.linkresume.environment: development
     healthcheck:
@@ -63,33 +69,33 @@ services:
 
   promtail:
     image: grafana/promtail:2.9.8
-    container_name: linkresume-dev-promtail
+    container_name: drawoffer-dev-promtail
     restart: always
     command:
       - -config.file=/etc/promtail/promtail-config.yml
       - -config.expand-env=true
     env_file:
-      - ${LINKRESUME_ENV_FILE:-../.env.development}
+      - ${DRAWOFFER_ENV_FILE:-${LINKRESUME_ENV_FILE:-../.env.development}}
     volumes:
       - ./observability/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
       - linkresume-dev-logs:/var/log/linkresume:ro
       - linkresume-dev-promtail-positions:/tmp
     networks:
-      - linkresume-runtime
+      - drawoffer-runtime
     depends_on:
-      linkresume:
+      drawoffer:
         condition: service_started
-      linkresume-worker:
+      drawoffer-worker:
         condition: service_started
 
-  linkresume-worker:
-    image: linkresume:${TAG:?TAG is required}
-    container_name: linkresume-worker-dev
-    command: ["python", "-m", "linkresume.workers"]
+  drawoffer-worker:
+    image: drawoffer:${TAG:?TAG is required}
+    container_name: drawoffer-worker-dev
+    command: ["python", "-m", "drawoffer.workers"]
     restart: always
     env_file:
-      - ${LINKRESUME_ENV_FILE:-../.env.development}
-      - ${LINKRESUME_SECRET_ENV_FILE:-../.env.development.local}
+      - ${DRAWOFFER_ENV_FILE:-${LINKRESUME_ENV_FILE:-../.env.development}}
+      - ${DRAWOFFER_SECRET_ENV_FILE:-${LINKRESUME_SECRET_ENV_FILE:-../.env.development.local}}
     environment:
       APP_ENV: development
       LOG_DIRECTORY: /app/logs/worker
@@ -97,15 +103,15 @@ services:
     volumes:
       - linkresume-dev-logs:/app/logs
     networks:
-      - linkresume-runtime
+      - drawoffer-runtime
     labels:
       com.linkresume.environment: development
       com.linkresume.role: resume-import-worker
 
 networks:
-  linkresume-runtime:
+  drawoffer-runtime:
     external: true
-    name: ${LINKRESUME_DOCKER_NETWORK:-tolink-dev-net}
+    name: ${DRAWOFFER_DOCKER_NETWORK:-${LINKRESUME_DOCKER_NETWORK:-tolink-dev-net}}
 
 volumes:
   linkresume-dev-logs:

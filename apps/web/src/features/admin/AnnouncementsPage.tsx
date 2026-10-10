@@ -268,7 +268,7 @@ function AnnouncementEditor({ item, onClose, onSaved }: { item: AdminAnnouncemen
           <Segmented label="公告级别" value={level} onChange={setLevel} options={[{ value: "normal", label: "普通" }, { value: "important", label: "重要" }]} />
         </Field>
         <Field label="标题" htmlFor="announcement-title" hint={`${title.length} / ${TITLE_MAX}`}>
-          <input id="announcement-title" className="adm-input" value={title} maxLength={TITLE_MAX} onChange={(event) => setTitle(event.target.value)} placeholder="例如：LinkResume 新版本上线" />
+          <input id="announcement-title" className="adm-input" value={title} maxLength={TITLE_MAX} onChange={(event) => setTitle(event.target.value)} placeholder="例如：DrawOffer 新版本上线" />
         </Field>
         <Field label="正文" htmlFor="announcement-body" hint={`${body.length} / ${BODY_MAX} · 纯文本，支持换行`}>
           <textarea id="announcement-body" className="adm-input adm-textarea" value={body} maxLength={BODY_MAX} rows={6} onChange={(event) => setBody(event.target.value)} />

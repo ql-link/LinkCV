@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 function loadPage(response = { statusCode: 200, data: { ok: true } }) {
   const storage = new Map();
   const calls = [];
-  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkresume.example.test" } });
+  global.getApp = () => ({ globalData: { apiBaseUrl: "https://drawoffer.example.test" } });
   global.wx = {
     getStorageSync: (key) => storage.get(key), setStorageSync: (key, value) => storage.set(key, value),
     getWindowInfo: () => ({ statusBarHeight: 24 }),
@@ -27,7 +27,7 @@ test("scan does not log in or register; confirmation requires a deliberate user 
   page.handleAgreementChange({ detail: { value: ["accepted"] } });
   await page.handleConfirm();
   assert.equal(calls[0], "wx.login");
-  assert.equal(calls[1].url, "https://linkresume.example.test/api/account/wechat/verification-confirm");
+  assert.equal(calls[1].url, "https://drawoffer.example.test/api/account/wechat/verification-confirm");
   assert.deepEqual(calls[1].data, { scene: "del:" + "a".repeat(24), code: "fictional-code" });
   assert.equal(calls.length, 2);
   assert.equal(page.data.phase, "confirmed");

@@ -10,16 +10,16 @@ from types import ModuleType
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
-import linkresume.models  # noqa: F401
+import drawoffer.models  # noqa: F401
 from tests.legacy_models import InterviewAsset
-from linkresume.core.database import Base
-from linkresume.modules.datasets.models import UserDataset
-from linkresume.modules.identity.models import User
-from linkresume.modules.interviews.models import (
+from drawoffer.core.database import Base
+from drawoffer.modules.datasets.models import UserDataset
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.interviews.models import (
     InterviewSession,
     JobApplication,
 )
-from linkresume.modules.resumes.models import DocumentParseTask
+from drawoffer.modules.resumes.models import DocumentParseTask
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 
@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 def load_migrator() -> ModuleType:
     path = REPO_ROOT / "apps/backend/scripts/release/migrate_interview_assets.py"
     spec = importlib.util.spec_from_file_location(
-        "linkresume_migrate_interview_assets_test", path
+        "drawoffer_migrate_interview_assets_test", path
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

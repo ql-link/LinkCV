@@ -20,14 +20,14 @@ from typing import Any
 import sqlalchemy as sa
 from alembic import op
 
-from linkresume.core.migration_sql import execute_sql_file
-from linkresume.domain.resume import (
+from drawoffer.core.migration_sql import execute_sql_file
+from drawoffer.domain.resume import (
     CanonicalResumeDocument,
     ResumePresentation,
     TemplateAvatar,
     TemplateDefinition,
 )
-from linkresume.domain.resume.legacy_cutover import recompose_flattened_rows
+from drawoffer.domain.resume.legacy_cutover import recompose_flattened_rows
 
 revision: str = "0048"
 down_revision: str | None = "0047"

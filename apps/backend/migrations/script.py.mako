@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from alembic import op
-from linkresume.core.migration_sql import execute_sql_file
+from drawoffer.core.migration_sql import execute_sql_file
 
 revision: str = ${repr(up_revision)}
 down_revision: str | None = ${repr(down_revision)}
@@ -24,5 +24,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     raise RuntimeError(
-        "LinkResume database migrations are forward-only; restore a backup or create a new forward revision"
+        "DrawOffer database migrations are forward-only; restore a backup or create a new forward revision"
     )

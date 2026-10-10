@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
-from linkresume.modules.llm.pricing import calculate_cost, catalog_pricing, normalize_usage, route_pricing
+from drawoffer.modules.llm.pricing import calculate_cost, catalog_pricing, normalize_usage, route_pricing
 
 
 def rules(*lines):

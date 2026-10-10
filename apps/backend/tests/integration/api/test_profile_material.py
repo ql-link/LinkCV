@@ -3,10 +3,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.errors import ApiError
-from linkresume.modules.agent.context_service import list_contexts, resolve_contexts
-from linkresume.modules.agent.schemas import AgentContextRef
-from linkresume.modules.identity.models import UserProfile
+from drawoffer.core.errors import ApiError
+from drawoffer.modules.agent.context_service import list_contexts, resolve_contexts
+from drawoffer.modules.agent.schemas import AgentContextRef
+from drawoffer.modules.identity.models import UserProfile
 from tests.integration.api.test_account_routes import build_test_app, _valid_profile_payload
 from tests.integration.api.test_account_completion import register
 

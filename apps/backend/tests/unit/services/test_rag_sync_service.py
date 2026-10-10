@@ -8,12 +8,12 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import linkresume.models  # noqa: F401
-from linkresume.core.database import Base
-from linkresume.modules.datasets.models import UserDataset, UserDatasetRagSync
-from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
-from linkresume.services.rag_sync_service import (
+import drawoffer.models  # noqa: F401
+from drawoffer.core.database import Base
+from drawoffer.modules.datasets.models import UserDataset, UserDatasetRagSync
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
+from drawoffer.services.rag_sync_service import (
     RagSyncService,
     ready_files,
     recall_dataset_snippets,

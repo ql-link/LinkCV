@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
-from linkresume.core.database import Base
-import linkresume.models  # noqa: F401
+from drawoffer.core.database import Base
+import drawoffer.models  # noqa: F401
 
 ROOT = Path(__file__).resolve().parents[5]
 spec = importlib.util.spec_from_file_location("retire_0090", next((ROOT / "apps/backend/migrations/versions").glob("0090_*.py")))

@@ -2,17 +2,17 @@ import pytest
 from markdown_it import MarkdownIt
 from pydantic import ValidationError
 
-from linkresume.domain.resume_extraction import (
+from drawoffer.domain.resume_extraction import (
     LayoutGroup,
     ResumeExtractionDraft,
     StructureDecision,
 )
-from linkresume.domain.resume_import_composition import (
+from drawoffer.domain.resume_import_composition import (
     ImportLayoutRecipe,
     ResumeImportCompositionError,
     compose_canonical_resume,
 )
-from linkresume.domain.section_ir import build_section_ir, clean_source_markdown
+from drawoffer.domain.section_ir import build_section_ir, clean_source_markdown
 
 
 def _decisions(ir, roles: dict[int, tuple[str, str]]) -> list[StructureDecision]:

@@ -69,8 +69,8 @@ export function AuthPage(props: {
   return (
     <V3Shell active="none" bare contentClassName="auth-page">
       <select className="v3-input auth-language" aria-label={t("界面语言")} value={locale} onChange={(event) => setLocale(event.target.value as Locale)}><option value="zh-CN">简体中文</option><option value="en-US">English</option></select>
-      <div className="auth-brand" aria-label={t("LinkResume 求职工作台")}>
-        <strong>LinkResume</strong>
+      <div className="auth-brand" aria-label={t("DrawOffer 求职工作台")}>
+        <strong>DrawOffer</strong>
         <span>{t("求职工作台")}</span>
       </div>
 
@@ -85,7 +85,7 @@ export function AuthPage(props: {
         {showPasswordForm && (
           <>
             <span className="auth-dev-tag">{t("仅开发环境")}</span>
-            <h1 className="auth-title">{isRegister ? t("注册 LinkResume。") : t("登录 LinkResume。")}</h1>
+            <h1 className="auth-title">{isRegister ? t("注册 DrawOffer。") : t("登录 DrawOffer。")}</h1>
             <p className="auth-sub">
               {isRegister ? t("创建仅用于本地或开发环境调试的邮箱账号。") : t("开发环境支持使用邮箱和密码进入工作台。")}
             </p>
@@ -144,7 +144,7 @@ export function AuthPage(props: {
         {showWechatLogin && (
           <>
             <p className="auth-eyebrow">{t("微信登录")}</p>
-            <h1 className="auth-title">{t("微信扫码登录 LinkResume。")}</h1>
+            <h1 className="auth-title">{t("微信扫码登录 DrawOffer。")}</h1>
             <p className="auth-sub">{t("普通账号由微信身份自动创建，无需填写注册或登录表单。")}</p>
             <WechatQrLogin onSuccess={(user) => void handleWechatSuccess(user)} />
             <p className="auth-agree">{t("登录即表示同意《用户协议》与《隐私政策》")}</p>
@@ -152,7 +152,7 @@ export function AuthPage(props: {
         )}
       </section>
 
-      <p className="auth-foot">{t("© 2026 LinkResume · 让每一份简历都被认真对待")}</p>
+      <p className="auth-foot">{t("© 2026 DrawOffer · 让每一份简历都被认真对待")}</p>
     </V3Shell>
   );
 }

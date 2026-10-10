@@ -5,9 +5,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.modules.datasets.models import UserDataset
-from linkresume.modules.resumes.models import DocumentParseTask
-from linkresume.workers.dataset_parse_worker import DatasetParseProcessor
+from drawoffer.modules.datasets.models import UserDataset
+from drawoffer.modules.resumes.models import DocumentParseTask
+from drawoffer.workers.dataset_parse_worker import DatasetParseProcessor
 from tests.integration.api.test_user_datasets import (
     build_test_app, register, upload_file, mark_dataset_succeeded,
 )
@@ -159,8 +159,8 @@ def test_cross_user_content_and_replacement_are_hidden():
 
 
 def test_agent_reads_new_content_and_rejects_previous_reference():
-    from linkresume.core.errors import ApiError
-    from linkresume.modules.agent.resume_tools import search_materials, validate_source_ids
+    from drawoffer.core.errors import ApiError
+    from drawoffer.modules.agent.resume_tools import search_materials, validate_source_ids
     app = build_test_app()
     with TestClient(app) as client:
         register(client)

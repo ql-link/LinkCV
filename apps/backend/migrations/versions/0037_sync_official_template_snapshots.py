@@ -25,9 +25,9 @@ from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
-from linkresume.core.migration_sql import execute_sql_file
-from linkresume.domain.resume_document import ResumeDocument
-from linkresume.domain.resume_style import ResumePresentation
+from drawoffer.core.migration_sql import execute_sql_file
+from drawoffer.domain.resume_document import ResumeDocument
+from drawoffer.domain.resume_style import ResumePresentation
 
 revision: str = "0037"
 down_revision: str | None = "0036"

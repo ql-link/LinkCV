@@ -28,13 +28,13 @@ if [[ "${import_legacy_sqlite}" != "true" && "${import_legacy_sqlite}" != "false
   exit 6
 fi
 
-image="linkresume"
-pi_image="linkresume-pi"
+image="drawoffer"
+pi_image="drawoffer-pi"
 tag="prod-${commit_short}-b${build_number}"
 prod_root="/opt/tolink/LinkResume"
 deploy_dir="${prod_root}"
 work_root="${prod_root}/jenkins/workspaces"
-build_dir="${work_root}/linkresume-${build_number}"
+build_dir="${work_root}/drawoffer-${build_number}"
 base_env="${deploy_dir}/.env.production"
 secret_env="${deploy_dir}/.env.production.local"
 oss_secret_env="${deploy_dir}/.env.oss-cdn.local"
@@ -56,7 +56,7 @@ cleanup() {
   if [[ -n "${asset_container}" ]]; then
     docker rm -f "${asset_container}" >/dev/null 2>&1 || true
   fi
-  if [[ "${build_dir}" == "${work_root}/linkresume-${build_number}" ]]; then
+  if [[ "${build_dir}" == "${work_root}/drawoffer-${build_number}" ]]; then
     rm -rf -- "${build_dir}"
   fi
 }
@@ -120,7 +120,6 @@ required_secret_keys=(
   WECHAT_APPID
   WECHAT_SECRET
   PI_SERVICE_TOKEN
-  LINKRESUME_INTERNAL_AGENT_TOKEN
 )
 for required_key in "${required_secret_keys[@]}"; do
   if ! grep -Eq "^${required_key}=.+$" "${secret_env}"; then
@@ -129,9 +128,20 @@ for required_key in "${required_secret_keys[@]}"; do
   fi
 done
 pi_service_token="$(grep -E '^PI_SERVICE_TOKEN=.+' "${secret_env}" | tail -n 1 | cut -d= -f2-)"
-internal_agent_token="$(grep -E '^LINKRESUME_INTERNAL_AGENT_TOKEN=.+' "${secret_env}" | tail -n 1 | cut -d= -f2-)"
+# DRAWOFFER_INTERNAL_AGENT_TOKEN wins; the pre-rename name is accepted until the secret file is renamed.
+internal_agent_token="$(grep -E '^DRAWOFFER_INTERNAL_AGENT_TOKEN=.+' "${secret_env}" | tail -n 1 | cut -d= -f2- || true)"
+if [[ -z "${internal_agent_token}" ]]; then
+  internal_agent_token="$(grep -E '^LINKRESUME_INTERNAL_AGENT_TOKEN=.+' "${secret_env}" | tail -n 1 | cut -d= -f2- || true)"
+  if [[ -n "${internal_agent_token}" ]]; then
+    echo "LINKRESUME_INTERNAL_AGENT_TOKEN is deprecated; rename it to DRAWOFFER_INTERNAL_AGENT_TOKEN in ${secret_env}" >&2
+  fi
+fi
+if [[ -z "${internal_agent_token}" ]]; then
+  echo "Missing required Production secret setting: DRAWOFFER_INTERNAL_AGENT_TOKEN" >&2
+  exit 12
+fi
 if [[ "${pi_service_token}" == "${internal_agent_token}" ]]; then
-  echo "PI_SERVICE_TOKEN and LINKRESUME_INTERNAL_AGENT_TOKEN must be different" >&2
+  echo "PI_SERVICE_TOKEN and DRAWOFFER_INTERNAL_AGENT_TOKEN must be different" >&2
   exit 12
 fi
 for forbidden_key in DATABASE_URL REDIS_URL MINIO_ENDPOINT; do
@@ -144,6 +154,7 @@ done
 docker network inspect "${docker_network}" >/dev/null
 port_owners="$(docker ps --filter "publish=${http_port}" --format '{{.Names}}')"
 if [[ -n "${port_owners}" && \
+  "${port_owners}" != "drawoffer" && \
   "${port_owners}" != "linkresume" && \
   "${port_owners}" != "linkcv" ]]; then
   echo "Production port ${http_port} is owned by another container" >&2
@@ -223,9 +234,17 @@ for deployed_file in \
   fi
 done
 
-old_container="linkresume"
-old_image="$(docker inspect --format='{{.Config.Image}}' linkresume 2>/dev/null || true)"
-old_pi_image="$(docker inspect --format='{{.Config.Image}}' linkresume-pi 2>/dev/null || true)"
+# The previous application stack is DrawOffer, the pre-rename LinkResume stack,
+# or the one-time legacy LinkCV stack. DrawOffer and LinkResume share the same
+# compose layout, database, volumes and rollback rules; only names differ.
+old_container="drawoffer"
+old_image="$(docker inspect --format='{{.Config.Image}}' drawoffer 2>/dev/null || true)"
+old_pi_image="$(docker inspect --format='{{.Config.Image}}' drawoffer-pi 2>/dev/null || true)"
+if [[ -z "${old_image}" ]]; then
+  old_container="linkresume"
+  old_image="$(docker inspect --format='{{.Config.Image}}' linkresume 2>/dev/null || true)"
+  old_pi_image="$(docker inspect --format='{{.Config.Image}}' linkresume-pi 2>/dev/null || true)"
+fi
 if [[ -z "${old_image}" ]]; then
   old_container="linkcv"
   old_image="$(docker inspect --format='{{.Config.Image}}' linkcv 2>/dev/null || true)"
@@ -245,14 +264,15 @@ report_agent_readiness() {
 }
 
 backup_compose_file="${backup_dir}/docker-compose.production.yml"
-if [[ "${old_image}" == linkresume:prod-* ]]; then
+old_app="${old_container}"
+if [[ "${old_app}" != "linkcv" && "${old_image}" == "${old_app}":prod-* ]]; then
   if [[ ! -f "${backup_compose_file}" || ! -f "${backup_dir}/.env.production" ]]; then
     echo "Previous Production configuration is unavailable for rollback" >&2
     exit 20
   fi
-  if grep -q 'linkresume-pi:' "${backup_compose_file}"; then
-    if [[ "${old_pi_image}" != linkresume-pi:prod-* ]] || \
-      [[ "${old_pi_image#linkresume-pi:}" != "${old_image#linkresume:}" ]]; then
+  if grep -q "${old_app}-pi:" "${backup_compose_file}"; then
+    if [[ "${old_pi_image}" != "${old_app}"-pi:prod-* ]] || \
+      [[ "${old_pi_image#"${old_app}"-pi:}" != "${old_image#"${old_app}":}" ]]; then
       echo "Previous Production application and Pi images are not a matching rollback pair" >&2
       exit 20
     fi
@@ -290,21 +310,25 @@ rollback_old_application() {
     return 1
   fi
 
-  if [[ "${old_image}" != linkresume:* ]]; then
+  if [[ "${old_image}" != "${old_app}":* ]]; then
     echo "Automatic application rollback is unavailable" >&2
     return 1
   fi
-  old_tag="${old_image#linkresume:}"
+  old_tag="${old_image#"${old_app}":}"
   rollback_has_pi="false"
-  if [[ "${old_image}" == linkresume:prod-* ]]; then
-    if grep -q 'linkresume-pi:' "${backup_compose_file}"; then
-      if [[ "${old_pi_image}" != linkresume-pi:prod-* ]]; then
+  if [[ "${old_image}" == "${old_app}":prod-* ]]; then
+    if grep -q "${old_app}-pi:" "${backup_compose_file}"; then
+      if [[ "${old_pi_image}" != "${old_app}"-pi:prod-* ]]; then
         echo "Previous Pi image is unavailable for paired rollback" >&2
         return 1
       fi
       rollback_has_pi="true"
       TAG="${old_tag}" \
       PI_TAG="${old_tag}" \
+      DRAWOFFER_ENV_FILE="${backup_dir}/.env.production" \
+      DRAWOFFER_SECRET_ENV_FILE="${secret_env}" \
+      DRAWOFFER_DOCKER_NETWORK="${docker_network}" \
+      DRAWOFFER_HTTP_PORT="${http_port}" \
       LINKRESUME_ENV_FILE="${backup_dir}/.env.production" \
       LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
       LINKRESUME_DOCKER_NETWORK="${docker_network}" \
@@ -312,6 +336,10 @@ rollback_old_application() {
         docker compose -f "${backup_compose_file}" up -d --remove-orphans
     else
       TAG="${old_tag}" \
+      DRAWOFFER_ENV_FILE="${backup_dir}/.env.production" \
+      DRAWOFFER_SECRET_ENV_FILE="${secret_env}" \
+      DRAWOFFER_DOCKER_NETWORK="${docker_network}" \
+      DRAWOFFER_HTTP_PORT="${http_port}" \
       LINKRESUME_ENV_FILE="${backup_dir}/.env.production" \
       LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
       LINKRESUME_DOCKER_NETWORK="${docker_network}" \
@@ -320,6 +348,7 @@ rollback_old_application() {
     fi
   elif [[ -f "${old_compose_file}" ]]; then
     TAG="${old_tag}" \
+    DRAWOFFER_ENV_FILE="${deploy_dir}/.env" \
     LINKRESUME_ENV_FILE="${deploy_dir}/.env" \
       docker compose -f "${old_compose_file}" up -d --remove-orphans
   else
@@ -327,7 +356,7 @@ rollback_old_application() {
     return 1
   fi
   for _ in $(seq 1 30); do
-    rollback_pi_health="$(docker inspect --format='{{.State.Health.Status}}' linkresume-pi 2>/dev/null || true)"
+    rollback_pi_health="$(docker inspect --format='{{.State.Health.Status}}' "${old_app}-pi" 2>/dev/null || true)"
     if curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null && \
       { [[ "${rollback_has_pi}" != "true" ]] || \
         [[ "${rollback_pi_health}" == "healthy" ]]; }; then
@@ -357,13 +386,13 @@ docker run --rm \
   "${image}:${tag}" \
   python /app/scripts/db/init_mysql.py
 
-# Forward-only migrations may remove columns used by the previous LinkResume
-# image. Stop its readers and writers before migration, and never auto-restore
+# Forward-only migrations may remove columns used by the previous DrawOffer
+# (or pre-rename LinkResume) image. Stop its readers and writers before migration, and never auto-restore
 # it afterward unless the database is restored as well. The one-time legacy
 # LinkCV stack uses SQLite and remains online until its separate import window.
-if [[ "${old_container}" == "linkresume" ]]; then
+if [[ "${old_container}" == "drawoffer" || "${old_container}" == "linkresume" ]]; then
   cutover_started="true"
-  for runtime_container in linkresume linkresume-worker linkresume-pi; do
+  for runtime_container in "${old_container}" "${old_container}-worker" "${old_container}-pi"; do
     if docker inspect "${runtime_container}" >/dev/null 2>&1; then
       docker stop "${runtime_container}" >/dev/null
     fi
@@ -426,17 +455,17 @@ fi
 
 TAG="${tag}" \
 PI_TAG="${tag}" \
-LINKRESUME_ENV_FILE="${base_env}" \
-LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
-LINKRESUME_DOCKER_NETWORK="${docker_network}" \
-LINKRESUME_HTTP_PORT="${http_port}" \
+DRAWOFFER_ENV_FILE="${base_env}" \
+DRAWOFFER_SECRET_ENV_FILE="${secret_env}" \
+DRAWOFFER_DOCKER_NETWORK="${docker_network}" \
+DRAWOFFER_HTTP_PORT="${http_port}" \
   docker compose -f "${compose_file}" up -d --remove-orphans
 
 for _ in $(seq 1 30); do
-  health_status="$(docker inspect --format='{{.State.Health.Status}}' linkresume 2>/dev/null || true)"
-  pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkresume-pi 2>/dev/null || true)"
-  worker_status="$(docker inspect --format='{{.State.Status}}' linkresume-worker 2>/dev/null || true)"
-  promtail_status="$(docker inspect --format='{{.State.Status}}' linkresume-promtail 2>/dev/null || true)"
+  health_status="$(docker inspect --format='{{.State.Health.Status}}' drawoffer 2>/dev/null || true)"
+  pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' drawoffer-pi 2>/dev/null || true)"
+  worker_status="$(docker inspect --format='{{.State.Status}}' drawoffer-worker 2>/dev/null || true)"
+  promtail_status="$(docker inspect --format='{{.State.Status}}' drawoffer-promtail 2>/dev/null || true)"
   if [[ "${health_status}" == "healthy" ]] && \
     [[ "${pi_health_status}" == "healthy" ]] && \
     [[ "${worker_status}" == "running" ]] && \
@@ -457,11 +486,11 @@ done
 
 TAG="${tag}" \
 PI_TAG="${tag}" \
-LINKRESUME_ENV_FILE="${base_env}" \
-LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
-LINKRESUME_DOCKER_NETWORK="${docker_network}" \
-LINKRESUME_HTTP_PORT="${http_port}" \
-  docker compose -f "${compose_file}" logs --tail=100 linkresume linkresume-pi linkresume-worker promtail || true
+DRAWOFFER_ENV_FILE="${base_env}" \
+DRAWOFFER_SECRET_ENV_FILE="${secret_env}" \
+DRAWOFFER_DOCKER_NETWORK="${docker_network}" \
+DRAWOFFER_HTTP_PORT="${http_port}" \
+  docker compose -f "${compose_file}" logs --tail=100 drawoffer drawoffer-pi drawoffer-worker promtail || true
 if [[ "${schema_migration_started}" == "true" ]]; then
   echo "Production health check timed out; previous application was not restored because a forward-only schema migration started. Restore the database backup before using an older image." >&2
 else

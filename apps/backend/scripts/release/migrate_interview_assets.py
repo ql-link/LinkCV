@@ -26,9 +26,9 @@ from pathlib import Path
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
-from linkresume.core.config import load_settings
-from linkresume.core.database import build_engine
-from linkresume.core.storage import AssetStorage
+from drawoffer.core.config import load_settings
+from drawoffer.core.database import build_engine
+from drawoffer.core.storage import AssetStorage
 
 LIST_SQL = text(
     """

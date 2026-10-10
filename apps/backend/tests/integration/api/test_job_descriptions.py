@@ -12,17 +12,17 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import func, select
 
-from linkresume.application.job_descriptions.ai_import_service import draft_warnings
-from linkresume.core.config import Settings
-from linkresume.main import create_app
-from linkresume.modules.interviews.models import JobApplication
-from linkresume.modules.job_descriptions import routes as job_description_routes
-from linkresume.modules.job_descriptions.models import JobDescription
-from linkresume.modules.job_descriptions.schemas import JobDescriptionDraft
-from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
-from linkresume.modules.llm.models import LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
-from linkresume.modules.llm.resolver import JOB_TEXT_EXTRACTION, JOB_IMAGE_EXTRACTION, validation_fingerprint
-from linkresume.core.database import utc_now
+from drawoffer.application.job_descriptions.ai_import_service import draft_warnings
+from drawoffer.core.config import Settings
+from drawoffer.main import create_app
+from drawoffer.modules.interviews.models import JobApplication
+from drawoffer.modules.job_descriptions import routes as job_description_routes
+from drawoffer.modules.job_descriptions.models import JobDescription
+from drawoffer.modules.job_descriptions.schemas import JobDescriptionDraft
+from drawoffer.modules.llm.gateway import GatewayResult, GatewayUsage
+from drawoffer.modules.llm.models import LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
+from drawoffer.modules.llm.resolver import JOB_TEXT_EXTRACTION, JOB_IMAGE_EXTRACTION, validation_fingerprint
+from drawoffer.core.database import utc_now
 from tests.fakes import FakeRedis
 
 
@@ -839,7 +839,7 @@ def test_delete_reports_not_found_if_target_disappears_during_atomic_delete(
         register(client)
         job = create_job(client)
         monkeypatch.setattr(
-            "linkresume.modules.job_descriptions.routes.hard_delete_owned_job",
+            "drawoffer.modules.job_descriptions.routes.hard_delete_owned_job",
             lambda _db, _job_id, _user_id, **_kwargs: False,
         )
 

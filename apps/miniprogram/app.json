@@ -14,7 +14,7 @@
     "pages/account-confirm/index"
   ],
   "window": {
-    "navigationBarTitleText": "LinkResume",
+    "navigationBarTitleText": "DrawOffer",
     "navigationBarBackgroundColor": "#f4f6f8",
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f4f6f8",

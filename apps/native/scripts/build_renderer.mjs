@@ -38,11 +38,11 @@ const result = await build({
 
 const script = result.outputFiles[0].text.replace(/<\/script/giu, "<\\/script");
 const html = `<!doctype html>
-<html lang="zh-CN" data-linkresume-native-renderer>
+<html lang="zh-CN" data-drawoffer-native-renderer>
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'">
-<title>LinkResume Paper</title>
+<title>DrawOffer Paper</title>
 </head>
 <body><div id="paper-root"></div><script>${script}</script></body>
 </html>
@@ -53,8 +53,8 @@ mkdirSync(dirname(outFile), { recursive: true });
 writeFileSync(outFile, html);
 
 const targets = [
-  resolve(appsRoot, "mac/Sources/LinkResumeRender/Resources/paper.html"),
-  resolve(appsRoot, "windows/src/LinkResume.App/Assets/Renderer/paper.html"),
+  resolve(appsRoot, "mac/Sources/DrawOfferRender/Resources/paper.html"),
+  resolve(appsRoot, "windows/src/DrawOffer.App/Assets/Renderer/paper.html"),
 ];
 for (const target of targets) {
   mkdirSync(dirname(target), { recursive: true });
@@ -64,14 +64,14 @@ console.log(`paper.html ${(html.length / 1024).toFixed(0)} KiB -> ${targets.leng
 
 // The native shell uses the exact Web brand asset; regenerate with every paper build.
 for (const directory of [
-  resolve(appsRoot, 'mac/Sources/LinkResumeApp/Resources/Branding'),
-  resolve(appsRoot, 'windows/src/LinkResume.App/Assets/Branding'),
+  resolve(appsRoot, 'mac/Sources/DrawOfferApp/Resources/Branding'),
+  resolve(appsRoot, 'windows/src/DrawOffer.App/Assets/Branding'),
 ]) {
   mkdirSync(directory, { recursive: true });
-  copyFileSync(resolve(appsRoot, 'web/src/assets/linkresume-wordmark.png'), resolve(directory, 'wordmark.png'));
+  copyFileSync(resolve(appsRoot, 'web/src/assets/drawoffer-wordmark.png'), resolve(directory, 'wordmark.png'));
 }
 
-for (const directory of [resolve(appsRoot, 'mac/Sources/LinkResumeApp/Resources/Home'), resolve(appsRoot, 'windows/src/LinkResume.App/Assets/Home')]) {
+for (const directory of [resolve(appsRoot, 'mac/Sources/DrawOfferApp/Resources/Home'), resolve(appsRoot, 'windows/src/DrawOffer.App/Assets/Home')]) {
   mkdirSync(directory, { recursive: true });
   for (const filename of ['content.json', 'firstResume.png', 'target.png', 'plugin.png'])
     copyFileSync(resolve(nativeRoot, 'shared/home', filename), resolve(directory, filename));

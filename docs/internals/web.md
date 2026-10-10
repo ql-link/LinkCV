@@ -131,7 +131,7 @@ React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器�
 
 - 公共动效由 `src/components/ui/motion.tsx` 与 `motion.css` 管理，复用运行时的 100/180/260ms Token。工作区切换模块时保留当前内容直到目标模块就绪，白色外壳保持不透明；首页助手与普通工作区页面共用外层加载边界，首次打开首页模块不会卸载当前侧栏并露出整页加载图，直接打开这些路由时加载占位也保留工作区外壳。页面只轻微淡入一次，数据返回不重新播放。页内视图在原有 DOM 上切换，不重建表单或重置滚动；V3 与 Radix 弹窗、菜单、日期浮层提供进入和退出，预览抽屉从右侧进入，分段按钮平移选中背景。条件浮层使用 `MotionPresence` 保留退出画面，关闭立即移出可访问和交互范围，快速重新打开使用新的表单实例，退出清理有定时兜底。系统减少动态效果时，页面直接切换，浮层仅保留不超过 100ms 的淡入淡出。
 - 登录后功能区的运行时 Token 位于 `src/design-system/tokens.css`，Settings Pattern 的 Token 契约由 `scripts/quality/check_design_system.py` 校验；`tailwind.config.cjs` 提供语义 utility 映射，`src/design-system/utilities.css` 是 Tailwind utilities 的全局入口；保持 `preflight: false`。
-- shadcn primitive 与 LinkResume 通用组合组件只放在 `src/components/ui/`，页面统一从 `@/components/ui` 导入；`components.json` 保存 shadcn CLI 与 Registry 配置，MCP 连接由 Codex 配置管理。UI 目录不保存 API、权限和页面状态，也不另建 `components/product`。
+- shadcn primitive 与 DrawOffer 通用组合组件只放在 `src/components/ui/`，页面统一从 `@/components/ui` 导入；`components.json` 保存 shadcn CLI 与 Registry 配置，MCP 连接由 Codex 配置管理。UI 目录不保存 API、权限和页面状态，也不另建 `components/product`。
 - 用户侧页面首次加载使用 `src/components/ui/page-loading.tsx` 或页面已有骨架：应用级状态占满视口，工作区模块在页面标题下方使用居中占位，弹窗与侧栏使用紧凑面板高度。公共加载图及简历、资料库、求职中心的加载占位在挂载 180ms 后才开始显示，快速请求不闪现加载图；数据就绪立即展示，没有强制最短停留。分页、上传、保存和删除等局部进行中状态仍留在对应操作附近。管理后台保持独立视觉边界。
 - 简历、资料、模板 JSON 和插件 ZIP 等文件导入入口统一使用 `src/components/ui/file-upload.tsx`：保留各业务自己的格式、大小和提交规则，共享点击选择、拖放、焦点、禁用与响应式上传区视觉；头像和编辑器正文图片等媒体编辑操作不使用该组件。
 - 普通工作区在 `WorkspaceLayout` 上显式使用 `data-ui-theme="light"`，保持既有浅色行为；入口层和管理端沿用各自主题。新增主题必须在 Token 层定义，不能在页面重复声明整套颜色。

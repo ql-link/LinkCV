@@ -6,9 +6,9 @@ import wave
 import httpx
 import pytest
 
-from linkresume.modules.speech.aihubmix import AIHubMixSpeechGateway, MAX_PCM_BYTES, MAX_RESPONSE_BYTES
-from linkresume.modules.speech.gateway import RecognitionEvent, SpeechProviderError, SpeechTarget
-from linkresume.modules.speech.router import ProviderSpeechGateway
+from drawoffer.modules.speech.aihubmix import AIHubMixSpeechGateway, MAX_PCM_BYTES, MAX_RESPONSE_BYTES
+from drawoffer.modules.speech.gateway import RecognitionEvent, SpeechProviderError, SpeechTarget
+from drawoffer.modules.speech.router import ProviderSpeechGateway
 
 TARGET = SpeechTarget("", "fictional-key", "whisper-large-v3", provider_code="aihubmix", api_base="https://api.inferera.com/v1")
 MP3 = b"ID3" + b"fictional audio"

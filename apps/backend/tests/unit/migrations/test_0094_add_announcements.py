@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.modules.announcements.models import Announcement, AnnouncementReadCursor
+from drawoffer.modules.announcements.models import Announcement, AnnouncementReadCursor
 from tests.migration_naming import current_columns, current_object_names
 
 ROOT = Path(__file__).resolve().parents[5]

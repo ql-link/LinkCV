@@ -5,15 +5,15 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.application.interviews.transcription_service import TranscriptionRunner
-from linkresume.modules.interviews.models import InterviewRecordingTranscription
-from linkresume.modules.llm.service import LLMError
-from linkresume.modules.speech.file_transcription import (
+from drawoffer.application.interviews.transcription_service import TranscriptionRunner
+from drawoffer.modules.interviews.models import InterviewRecordingTranscription
+from drawoffer.modules.llm.service import LLMError
+from drawoffer.modules.speech.file_transcription import (
     TaskStatus,
     Transcript,
     TranscriptionProviderError,
 )
-from linkresume.modules.speech.gateway import SpeechTarget
+from drawoffer.modules.speech.gateway import SpeechTarget
 from tests.integration.api.test_interviews import (
     FakeStorage,
     asset_headers,

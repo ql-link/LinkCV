@@ -446,7 +446,7 @@ class FakeLinkRag:
     """
 
     def __init__(self) -> None:
-        from linkresume.integrations.linkrag_client import LinkRagError
+        from drawoffer.integrations.linkrag_client import LinkRagError
 
         self._error = LinkRagError
         self.files: dict[int, dict[str, object]] = {}
@@ -475,7 +475,7 @@ class FakeLinkRag:
         return self._next
 
     def file_status(self, user_id, file_id):
-        from linkresume.integrations.linkrag_client import RagFileStatus
+        from drawoffer.integrations.linkrag_client import RagFileStatus
 
         self._check("file_status")
         entry = self.files.get(file_id)
@@ -491,7 +491,7 @@ class FakeLinkRag:
             self.deleted.append(file_id)
 
     def recall(self, user_id, *, query, file_ids, top_k):
-        from linkresume.integrations.linkrag_client import RagHit
+        from drawoffer.integrations.linkrag_client import RagHit
 
         self._check("recall")
         self.recall_calls.append({"user_id": user_id, "query": query, "file_ids": list(file_ids), "top_k": top_k})

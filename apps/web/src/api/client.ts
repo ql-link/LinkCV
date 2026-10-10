@@ -1426,7 +1426,7 @@ async function refreshSession(): Promise<boolean> {
     // token, otherwise replay protection can revoke the shared session.
     const locks = globalThis.navigator?.locks;
     refreshInFlight = (locks
-      ? locks.request("linkresume-session-refresh", async () => {
+      ? locks.request("drawoffer-session-refresh", async () => {
         const current = await request<{ user: User | null }>("/api/auth/me", {}, false);
         return current.user ? true : refresh();
       })

@@ -6,33 +6,42 @@ Vite 与根级 Docker Web 构建仅使用 `index.html` 作为 HTML 入口；落�
 
 Web 构建会把统一打印文档、页面现有主题 CSS、固定字体文件和一次性 Chromium 驱动 CLI 输出到 `dist-server`，FastAPI 生产镜像复制为 `/app/pdf`。Web 当前快照与小程序正式版本都通过有界 stdin 传入该脚本并从 stdout 接收完整 PDF；小程序 PNG 再由 Python 进程内的 PDFium 临时栅格化。进程完成即退出，快照、PDF 和 PNG 都不写入服务端持久存储。FastAPI 镜像中的 Node 22 只承载该脚本，不新增常驻 PDF 服务。
 
-根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境，并把 Node 22、锁定的 `playwright-core` 运行库和 Debian Chromium 复制/安装到运行镜像。PDF 子进程以专用非登录用户 `linkresume-pdf` 运行，保留 Chromium 沙箱；固定路径为 `/usr/bin/chromium`，智能一页默认上限为 2000mm。独立的 `deploy/Dockerfile.pi` 构建无头 Pi Service 镜像。Web 构建阶段会把 `postcss.config.cjs`、`tailwind.config.cjs`、PDF CLI 与应用源码一起复制到 `/app/apps/web`；Pi 构建阶段安装 vendored workspace 的锁定依赖并校验仓库中版本化的模型目录快照。常规 Docker 构建不访问 `models.dev`、OpenRouter、NVIDIA NIM 或 Vercel AI Gateway，只有维护者主动执行 `npm run refresh:pi-model-data` 时才联网刷新模型快照。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI；Production Cloud 还通过 `DEBIAN_MIRROR` build arg 使用阿里云 Debian 镜像，apt 继续校验 Debian 仓库签名，本地及其他构建默认使用官方 `deb.debian.org`。构建过程从 `uv.lock` 导出带哈希的 requirements。镜像构建不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段、`0032` 结构化澄清消息字段、`0033` 面试中心三张表等已知 schema 标记；任一对象提前存在、缺失或部分应用都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
+根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境，并把 Node 22、锁定的 `playwright-core` 运行库和 Debian Chromium 复制/安装到运行镜像。PDF 子进程以专用非登录用户 `drawoffer-pdf` 运行，保留 Chromium 沙箱；固定路径为 `/usr/bin/chromium`，智能一页默认上限为 2000mm。独立的 `deploy/Dockerfile.pi` 构建无头 Pi Service 镜像。Web 构建阶段会把 `postcss.config.cjs`、`tailwind.config.cjs`、PDF CLI 与应用源码一起复制到 `/app/apps/web`；Pi 构建阶段安装 vendored workspace 的锁定依赖并校验仓库中版本化的模型目录快照。常规 Docker 构建不访问 `models.dev`、OpenRouter、NVIDIA NIM 或 Vercel AI Gateway，只有维护者主动执行 `npm run refresh:pi-model-data` 时才联网刷新模型快照。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI；Production Cloud 还通过 `DEBIAN_MIRROR` build arg 使用阿里云 Debian 镜像，apt 继续校验 Debian 仓库签名，本地及其他构建默认使用官方 `deb.debian.org`。构建过程从 `uv.lock` 导出带哈希的 requirements。镜像构建不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段、`0032` 结构化澄清消息字段、`0033` 面试中心三张表等已知 schema 标记；任一对象提前存在、缺失或部分应用都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
 
 其中 `0051` 的发布门禁还核对 `user_profiles` 的画像目标列和已删除旧列。未应用但已经是完整目标结构时允许 migration 自身做 no-op；已应用后若目标列缺失或旧列残留，runner 会在任何后续 DDL 前停止。`0065` 门禁同样会拦截提前删除或在 revision 已应用后仍残留的 `agent_sessions.resume_id`。
 
-仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都关闭 Declarative Pipeline 的隐式 Checkout，只对显式 `checkout scm` 最多尝试三次，避免同一构建重复拉取仓库并缓解短暂 GitHub 连接中断。随后以同一 commit/build 标识生成不可变 `linkresume` 与 `linkresume-pi` 镜像，先停止会读写旧 schema 的当前 LinkResume Web、Worker 和 Pi，再用新 `linkresume` 镜像以显式目标参数运行迁移 runner、更新 Compose，最后等待 FastAPI `/api/health`、Pi 容器健康状态和本环境 Promtail 正常；构建镜像阶段不连接数据库。发布成功时单独检查 FastAPI `/api/agent/readiness` 并报告非 200 状态，不以模型尚未配置或探测过期阻止部署。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `assistant_conversation` 用例存在可用的 Pi 对话线路，但不发起供应商模型调用；非 200 表示对话能力不可用，仍需配置或排障，不代表基础服务部署失败。首次从 SQLite `linkcv` 切换是例外：旧栈在独立导入窗口前保持服务。
+仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都关闭 Declarative Pipeline 的隐式 Checkout，只对显式 `checkout scm` 最多尝试三次，避免同一构建重复拉取仓库并缓解短暂 GitHub 连接中断。随后以同一 commit/build 标识生成不可变 `linkresume` 与 `drawoffer-pi` 镜像，先停止会读写旧 schema 的当前 DrawOffer Web、Worker 和 Pi，再用新 `linkresume` 镜像以显式目标参数运行迁移 runner、更新 Compose，最后等待 FastAPI `/api/health`、Pi 容器健康状态和本环境 Promtail 正常；构建镜像阶段不连接数据库。发布成功时单独检查 FastAPI `/api/agent/readiness` 并报告非 200 状态，不以模型尚未配置或探测过期阻止部署。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `assistant_conversation` 用例存在可用的 Pi 对话线路，但不发起供应商模型调用；非 200 表示对话能力不可用，仍需配置或排障，不代表基础服务部署失败。首次从 SQLite `linkcv` 切换是例外：旧栈在独立导入窗口前保持服务。
 
-Dev 与 Production Compose 各自部署一个 `grafana/promtail:2.9.8`，读取 LinkResume 应用挂载的环境独立日志命名卷，并把 positions 保存到另一个独立命名卷。Promtail 只提升 `service`、`environment`、`log_type`、`level` 四个低基数字段为 Loki labels；request/user/target/operation 等高基数字段保留在 JSON body。Dev 推送并查询 `http://tolink-dev-loki:3100`，Production 使用 `http://tolink-loki:3100`；两者都是 LinkRag 已有、保留七天的共享实例，本仓库不创建或修改 Loki。应用写本地 JSONL，Promtail 异步采集，因此 Loki 暂时不可用不会阻断业务请求。
+Dev 与 Production Compose 各自部署一个 `grafana/promtail:2.9.8`，读取 DrawOffer 应用挂载的环境独立日志命名卷，并把 positions 保存到另一个独立命名卷。Promtail 只提升 `service`、`environment`、`log_type`、`level` 四个低基数字段为 Loki labels；request/user/target/operation 等高基数字段保留在 JSON body。Dev 推送并查询 `http://tolink-dev-loki:3100`，Production 使用 `http://tolink-loki:3100`；两者都是 LinkRag 已有、保留七天的共享实例，本仓库不创建或修改 Loki。应用写本地 JSONL，Promtail 异步采集，因此 Loki 暂时不可用不会阻断业务请求。
 
-`deploy/docker-compose.yml` 只用于本地启动 MySQL 8.4、Redis、MinIO 和 RabbitMQ。Dev 与 Production Compose 使用 `linkresume` 镜像分别启动包含静态 Web 与 FastAPI 的容器及执行 `python -m linkresume.workers` 的 Worker，并使用 `linkresume-pi` 镜像启动独立无头 Agent 服务。Pi 只加入环境内网，不映射宿主机端口；FastAPI 是浏览器唯一业务入口。两套远端环境复用平台 RabbitMQ，不在应用 Compose 内创建 Broker。
-Worker 将结构化日志写入共享日志卷的独立子目录，Promtail 同时采集 Web/FastAPI 与 Worker，避免多个进程并发轮转同一个文件。本机日志联调另使用 `deploy/docker-compose.observability.local.yml` 启动 LinkResume 自己的 Promtail，并复用 LinkRag 本地 Compose 已部署的 Loki；它不创建第二个 Loki，也不停止 LinkRag 的采集器。
+`deploy/docker-compose.yml` 只用于本地启动 MySQL 8.4、Redis、MinIO 和 RabbitMQ。Dev 与 Production Compose 使用 `linkresume` 镜像分别启动包含静态 Web 与 FastAPI 的容器及执行 `python -m drawoffer.workers` 的 Worker，并使用 `drawoffer-pi` 镜像启动独立无头 Agent 服务。Pi 只加入环境内网，不映射宿主机端口；FastAPI 是浏览器唯一业务入口。两套远端环境复用平台 RabbitMQ，不在应用 Compose 内创建 Broker。
+Worker 将结构化日志写入共享日志卷的独立子目录，Promtail 同时采集 Web/FastAPI 与 Worker，避免多个进程并发轮转同一个文件。本机日志联调另使用 `deploy/docker-compose.observability.local.yml` 启动 DrawOffer 自己的 Promtail，并复用 LinkRag 本地 Compose 已部署的 Loki；它不创建第二个 Loki，也不停止 LinkRag 的采集器。
+
+## DrawOffer 更名兼容
+
+产品已从 LinkResume 更名为 DrawOffer。镜像、容器和 Compose 服务改用 `drawoffer` 系列名称；数据库名与账号、MinIO bucket、RabbitMQ 队列与消费组、Redis key、Loki `service`/`job` 标签、日志与 Promtail 数据卷、OSS `LinkResume/` 前缀、服务器部署目录、Jenkins Job 与凭据 ID 保持原名，避免停机迁移和历史数据断档。
+
+- 环境变量：所有 `LINKRESUME_*` 都有对应的 `DRAWOFFER_*`。新名非空时优先；只有旧名时继续生效，并在启动日志或发布输出中提示改名。Compose 以 `${DRAWOFFER_X:-${LINKRESUME_X:-默认值}}` 解析，发布脚本同时接受私密文件中的 `DRAWOFFER_INTERNAL_AGENT_TOKEN` 或旧名 `LINKRESUME_INTERNAL_AGENT_TOKEN`。仓库基础 env 不再放空的 Agent token 占位行，避免空的新名遮住私密文件里的旧名。
+- 容器切换：发布脚本按 `drawoffer` → `linkresume` → `linkcv` 识别上一版应用栈。上一版是 `linkresume` 时，迁移前停止 `linkresume`、`linkresume-worker`、`linkresume-pi`，新 Compose 以 `--remove-orphans` 清理同一项目的旧服务；健康检查失败且尚未开始迁移时，用备份的旧 Compose 和旧镜像恢复。
+- 网络别名：`drawoffer` 与 `drawoffer-pi` 在共享 Docker 网络上保留 `linkresume`、`linkresume-pi`（Dev 另加 `linkresume-dev`、`linkresume-pi-dev`）别名，外部 Nginx 或其他服务仍按旧容器名访问时不受影响。
+- 运维待办：在 Dev 与 Production 的私密 env 中把 `LINKRESUME_*` 改为 `DRAWOFFER_*`，确认外部 Nginx 上游与 Grafana 查询不依赖旧容器名后，再另起任务移除旧名兼容与网络别名。
 
 ## Dev Pipeline
 
 Dev Jenkins Job 使用 `deploy/jenkins/Jenkinsfile.development`。Jenkins 将当前 checkout 通过 `git archive` 打包并上传 Primary `100.86.10.52`，由 `deploy/scripts/build-development-on-primary.sh` 在 `/opt/tolink/dev` 内完成构建和部署，因此远端构建内容与 Jenkins 当前 commit 一致。
 
-- 镜像：`linkresume:dev-<commit>-b<build-number>`、`linkresume-pi:dev-<commit>-b<build-number>`
+- 镜像：`drawoffer:dev-<commit>-b<build-number>`、`drawoffer-pi:dev-<commit>-b<build-number>`
 - 部署目录：`/opt/tolink/dev/linkresume`
 - Compose：`deploy/docker-compose.development.yml`
-- 容器：`linkresume-dev`、`linkresume-worker-dev`、`linkresume-pi-dev`、`linkresume-dev-promtail`
+- 容器：`drawoffer-dev`、`drawoffer-worker-dev`、`drawoffer-pi-dev`、`drawoffer-dev-promtail`
 - 网络：外部网络 `tolink-dev-net`
 - 宿主机端口：`18002`
 - 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`；开发环境不要求微信凭据
 - 迁移门禁：`APP_ENV=development`、MySQL `100.86.10.52:13306/linkresume`
 
-共享 Dev 的 `18002` 直接映射到 FastAPI `8000`，没有 LinkResume 专用 Nginx；`/api/mock-interviews/{id}/speech` 的 WebSocket 握手由 FastAPI 直接处理。用本地 Vite 页面联调时，通过其同源 WebSocket 代理转发，见 [Web 模块](../internals/web.md#api-调用)。
+共享 Dev 的 `18002` 直接映射到 FastAPI `8000`，没有 DrawOffer 专用 Nginx；`/api/mock-interviews/{id}/speech` 的 WebSocket 握手由 FastAPI 直接处理。用本地 Vite 页面联调时，通过其同源 WebSocket 代理转发，见 [Web 模块](../internals/web.md#api-调用)。
 
-Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。发布脚本在迁移与容器替换前检查私密文件权限，并通过 FastAPI `Settings` 校验必需的中间件与服务配置；开发环境仅开放邮箱密码认证。LinkResume Dev 使用独立 `linkresume` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
+Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。发布脚本在迁移与容器替换前检查私密文件权限，并通过 FastAPI `Settings` 校验必需的中间件与服务配置；开发环境仅开放邮箱密码认证。DrawOffer Dev 使用独立 `linkresume` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
 
 `linkresume-dev` 的 Generic Webhook Trigger 只接受 `refs/heads/dev`。token 通过 Jenkins Secret Text 凭据 `linkresume-dev-webhook-token` 注入，仓库不保存 token；GitHub 仓库 webhook 只订阅 push 事件。
 
@@ -40,16 +49,16 @@ Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `ro
 
 Production Jenkins Job 使用根目录 `Jenkinsfile`。Jenkins 位于 Primary，只负责 checkout、可选质量检查和 `git archive`；随后通过专用 SSH 密钥把当前提交归档上传到 Cloud `100.77.31.79`，由 `deploy/scripts/build-production-on-cloud.sh` 在真实生产主机本地构建、发布 Web 静态资源、迁移和部署。Production 不再使用 Primary 的 Docker socket 创建生产镜像或容器。
 
-- 镜像：`linkresume:prod-<commit>-b<build-number>`、`linkresume-pi:prod-<commit>-b<build-number>`
+- 镜像：`drawoffer:prod-<commit>-b<build-number>`、`drawoffer-pi:prod-<commit>-b<build-number>`
 - 部署目录：`/opt/tolink/LinkResume`
 - Compose：`deploy/docker-compose.production.yml`
-- 容器：`linkresume`、`linkresume-worker`、`linkresume-pi`、`linkresume-promtail`
+- 容器：`drawoffer`、`drawoffer-worker`、`drawoffer-pi`、`drawoffer-promtail`
 - 网络：外部网络 `tolink-app-net`
 - 宿主机端口：`4174`（容器内 FastAPI 仍监听 `8000`，保持现有生产反向代理上游）
 - 配置：`.env.production` + 权限为 `600` 的 `.env.production.local`
 - 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkresume`
 
-生产公网入口由 Cloud 上的 `linkrag-web` Nginx 容器承载，LinkResume 虚拟主机配置从宿主机 `/opt/tolink/LinkRag-Web/nginx/linkresume.conf` 单文件挂载。`/api/mock-interviews/{id}/speech` 的独立代理规则转发到 `172.20.0.1:4174`，使用 HTTP/1.1，传递 `Host`、`X-Forwarded-Proto`、`Upgrade` 和 `Connection`，读写超时均为 600 秒；普通 `/api` 请求仍走既有根路径代理。变更该外部配置后，在 `linkrag-web` 容器内执行 `nginx -t` 并核对已加载配置；如果宿主机文件被原子替换，须重启容器以重新挂载，单纯热重载仍会读取旧 inode。语音 WebSocket 必须由页面同源发起，后端还会校验 `Origin` 与 `Host`；代理配置生效不代表未部署语音后端的环境已经通过语音联调。
+生产公网入口由 Cloud 上的 `linkrag-web` Nginx 容器承载，DrawOffer 虚拟主机配置从宿主机 `/opt/tolink/LinkRag-Web/nginx/linkresume.conf` 单文件挂载。`/api/mock-interviews/{id}/speech` 的独立代理规则转发到 `172.20.0.1:4174`，使用 HTTP/1.1，传递 `Host`、`X-Forwarded-Proto`、`Upgrade` 和 `Connection`，读写超时均为 600 秒；普通 `/api` 请求仍走既有根路径代理。变更该外部配置后，在 `linkrag-web` 容器内执行 `nginx -t` 并核对已加载配置；如果宿主机文件被原子替换，须重启容器以重新挂载，单纯热重载仍会读取旧 inode。语音 WebSocket 必须由页面同源发起，后端还会校验 `Origin` 与 `Host`；代理配置生效不代表未部署语音后端的环境已经通过语音联调。
 
 Production Web 只把 Vite 生成的哈希 `/assets/*` 发布到阿里云 OSS Bucket 的 `LinkResume/assets/` 前缀，并把入口 favicon 发布到 `LinkResume/favicon.png`，由浏览器直接通过 `https://qingluo-public.oss-cn-shanghai.aliyuncs.com/LinkResume/` 读取；不使用 CDN、自定义静态域名或独立证书。`index.html`、SPA 路由和 `/api/*` 仍由 `https://linkresume.cn` 的公网 Nginx 与 FastAPI 提供。根 `Dockerfile` 通过 `VITE_ASSET_BASE_URL` 把 OSS 地址写进生产 HTML，同时继续在镜像 `/app/web/assets` 保留哈希资源和在 `/app/web/favicon.png` 保留入口图标。发布脚本从即将部署的不可变镜像提取这些文件，使用生产已验证兼容的 `ossutil 2.4.0` 上传哈希资源到 `LinkResume/assets/` 并设置一年 `immutable`，上传 favicon 到 `LinkResume/favicon.png` 并设置短缓存，随后逐项以兼容生产 `curl 7.29.0` 的 `--retry 2`、连接超时和总超时设置，通过 OSS HTTPS HEAD 检查状态；哈希 JavaScript/字体还检查缓存头和跨域响应，favicon 检查 `image/png`；全部成功后才允许初始化数据库、迁移和切换应用。上传或 OSS 验证失败发生在切换前，旧生产版本继续服务。
 
@@ -61,7 +70,7 @@ webhook 因此会分别把 `dev` 推送交给 Dev Job、把 PR 合并产生的 `
 Production Job。首次加入触发器后需手动运行一次 `linkresume-prod`，让 Jenkins 从根
 `Jenkinsfile` 加载并注册触发器；后续 `master` push 自动构建。
 
-Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；应用私密覆盖必须由部署密钥存储预先提供到 `.env.production.local` 且权限为 `600`。OSS 发布凭据使用另一个不进入 Compose 的 `/opt/tolink/LinkResume/.env.oss-cdn.local`，格式见 `deploy/oss-cdn.env.example`；文件必须为 `600`，包含目标 Bucket、OSS Region 和专用最小权限 RAM 凭据，可选设置 OSS Endpoint。发布脚本通过 ossutil 官方环境变量读取凭据，不把 AccessKey 放入命令参数、镜像、应用进程或日志。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET` 与两枚不同的 `PI_SERVICE_TOKEN`/`LINKRESUME_INTERNAL_AGENT_TOKEN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
+Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；应用私密覆盖必须由部署密钥存储预先提供到 `.env.production.local` 且权限为 `600`。OSS 发布凭据使用另一个不进入 Compose 的 `/opt/tolink/LinkResume/.env.oss-cdn.local`，格式见 `deploy/oss-cdn.env.example`；文件必须为 `600`，包含目标 Bucket、OSS Region 和专用最小权限 RAM 凭据，可选设置 OSS Endpoint。发布脚本通过 ossutil 官方环境变量读取凭据，不把 AccessKey 放入命令参数、镜像、应用进程或日志。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET` 与两枚不同的 `PI_SERVICE_TOKEN`/`DRAWOFFER_INTERNAL_AGENT_TOKEN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
 首次从旧 `linkcv` 生产栈切换到 `linkresume` 时，发布前必须为新资源完成数据库与对象存储的一致性迁移，并保留旧 `/opt/tolink/LinkCV` 配置、数据库、bucket 和镜像。Cloud 发布脚本允许仍由 `linkcv` 独占 4174 的受控首次切换：新镜像构建和迁移完成后才停止旧 Web、Worker、Pi 与 Promtail，再整体启动 `linkresume`；新栈健康检查失败时先撤下新 Compose，再用旧目录、旧配置和原镜像标签恢复 `linkcv`。首次切换验证完成前不得删除任何旧资源。
 
 首次从旧 `linkcv` 生产栈切换到 `linkresume` 时，发布前必须为新资源完成数据库与对象存储的一致性迁移，并保留旧 `/opt/tolink/LinkCV` 配置、数据库、bucket 和镜像。Cloud 发布脚本允许仍由 `linkcv` 独占 4174 的受控首次切换：新镜像构建和迁移完成后才停止旧 Web、Worker、Pi 与 Promtail，再整体启动 `linkresume`；新栈健康检查失败时先撤下新 Compose，再用旧目录、旧配置和原镜像标签恢复 `linkcv`。首次切换验证完成前不得删除任何旧资源。
@@ -120,7 +129,7 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 只有首次 Production 切换会通过受控工具把旧 Express/SQLite 的账号和简历导入 MySQL；本地原型 SQLite 不进入远端数据库。旧 SQLite 只作为切换前应用的短时回退依据，不能接收或合并新 MySQL 写入。
 - 新增环境配置的回滚只恢复应用与 Compose；不得自动删除已有 `linkresume` 数据库或 Redis volume。
 - 静态资源回滚不删除 OSS 中的新旧哈希对象；应用回到上一镜像后，其 `index.html` 会重新引用仍然保留的旧对象。OSS 上传或公网验证故障发生在发布验证阶段时不得继续数据库迁移或应用切换；已上传但未引用的新对象可以保留。
-- 日志链路回滚可恢复上一版应用与 Compose，并让 `--remove-orphans` 停止 LinkResume Promtail；不得删除日志或 positions 命名卷，也不得修改共享 Loki。重新启用采集器后可能至少一次重复投递，管理查询会按 `event_id` 去重。
+- 日志链路回滚可恢复上一版应用与 Compose，并让 `--remove-orphans` 停止 DrawOffer Promtail；不得删除日志或 positions 命名卷，也不得修改共享 Loki。重新启用采集器后可能至少一次重复投递，管理查询会按 `event_id` 去重。
 - 简历导入回滚采用上一版 Web 与 FastAPI 整体镜像；不删除新简历、MinIO 原件或 Redis 幂等 key，也不静默切回未验收的旧转换服务。
 - 进入新契约后应用替换必须同时覆盖 Web、FastAPI 与 Worker，避免页面、任务状态和消费者契约错配。
 - 插件发布失败不覆盖 `current.json` 时继续使用上一版本；应用镜像回滚不删除 `system/plugin-releases/` 对象。当前版本内容有误时发布更高补丁版本，不覆盖同版本 ZIP。
@@ -136,12 +145,12 @@ Dev 发布脚本在停止旧容器前使用新镜像运行只读 Alembic 预检�
 
 `0089` 删除旧的 `dataset_replacements` 和 `dataset_object_cleanup`，需要 API、Web 和 Worker 同批切换。先备份数据库及对象存储，停止旧 API 写入与全部解析 Worker，并等待在途上传/解析退出。不要在旧进程仍写入时清空或删除表。
 
-使用目标环境的同一配置先只读检查，再执行一次性收尾。例如共享 Dev 显式设置 `LINKRESUME_ENV_FILE=.env.development`：
+使用目标环境的同一配置先只读检查，再执行一次性收尾。例如共享 Dev 显式设置 `DRAWOFFER_ENV_FILE=.env.development`：
 
 ```bash
-LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/release/retire_dataset_operations.py
-LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/release/retire_dataset_operations.py --execute
-LINKRESUME_ENV_FILE=.env.development npm run db:migrate
+DRAWOFFER_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/release/retire_dataset_operations.py
+DRAWOFFER_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/release/retire_dataset_operations.py --execute
+DRAWOFFER_ENV_FILE=.env.development npm run db:migrate
 ```
 
 收尾命令保留当前资料及正在引用的源文件/正文，放弃尚未采用的旧候选，同步删除无引用对象及候选任务，最后清空两张旧操作表。默认只打印数量，不修改数据；删除失败会中止数据库事务，可在 MinIO 恢复后重跑。它只用于这次升级，不作为定时任务运行。`0089` 在任何 DROP 前检查两张表必须为空；空库升级无需收尾。MySQL 若只提交了首条 DROP，可重跑该迁移完成第二张表删除。
@@ -168,4 +177,4 @@ uv run --directory apps/backend python scripts/release/migrate_interview_assets.
 
 ACCOUNT_DELETION_ENABLED 默认 false；ACCOUNT_DELETION_POLL_SECONDS 默认 10，ACCOUNT_DELETION_LEASE_SECONDS 默认 60。关闭受理开关不停止已受理任务的清理。部署前先查询目标真实 Alembic current 并备份，按既有升级流程应用 0106；必须在独立目标测试账号确认同身份真机扫码、租约恢复、MinIO 私有前缀及真实 LinkRag 文件清理，再决定开启受理。不能将 SQLite、假对象存储和替身微信测试视作上述验收。
 
-需要人工处理的任务可在配置或外部故障修复后运行 `uv run --directory apps/backend python -m linkresume.workers.account_deletion_worker retry --job-id <public-id>` 重排，不能恢复账号。完成回执仅保留七天。租约、重试与 schema 事实源见[Backend](../internals/backend.md#账号偏好联系邮箱与持久注销)。
+需要人工处理的任务可在配置或外部故障修复后运行 `uv run --directory apps/backend python -m drawoffer.workers.account_deletion_worker retry --job-id <public-id>` 重排，不能恢复账号。完成回执仅保留七天。租约、重试与 schema 事实源见[Backend](../internals/backend.md#账号偏好联系邮箱与持久注销)。

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from linkresume.modules.resumes.pdf_service import clone_resume_private_assets
+from drawoffer.modules.resumes.pdf_service import clone_resume_private_assets
 
 
 class CopyingStorage:

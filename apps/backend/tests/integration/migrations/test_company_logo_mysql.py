@@ -11,10 +11,10 @@ from time import sleep
 from sqlalchemy import MetaData, Table, create_engine, inspect, select, text
 from sqlalchemy.orm import sessionmaker
 
-import linkresume.models  # noqa: F401
-from linkresume.application.job_descriptions.logo_service import attach_logo
-from linkresume.core.database import Base
-from linkresume.modules.job_descriptions.models import JobDescription
+import drawoffer.models  # noqa: F401
+from drawoffer.application.job_descriptions.logo_service import attach_logo
+from drawoffer.core.database import Base
+from drawoffer.modules.job_descriptions.models import JobDescription
 from tests.integration.api.test_company_logos import LogoStorage, picture
 from tests.integration.migrations.test_mysql_migrations import (
     invoke_alembic,

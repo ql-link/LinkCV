@@ -1,5 +1,5 @@
 import type { JobRecord } from "../contracts";
-import { uploadCompanyLogo } from "./linkresume";
+import { uploadCompanyLogo } from "./drawoffer";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 const BOSS_IMAGE_HOSTS = new Set(["img.bosszhipin.com", "img2.bosszhipin.com"]);

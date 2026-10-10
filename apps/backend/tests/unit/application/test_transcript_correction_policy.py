@@ -1,8 +1,8 @@
 import pytest
 
-from linkresume.application.mock_interviews.outputs import TranscriptChange
-from linkresume.application.mock_interviews.transcript_correction_policy import rejection_reason
-from linkresume.application.mock_interviews.transcripts import MAX_CHANGE_RATIO, change_ratio
+from drawoffer.application.mock_interviews.outputs import TranscriptChange
+from drawoffer.application.mock_interviews.transcript_correction_policy import rejection_reason
+from drawoffer.application.mock_interviews.transcripts import MAX_CHANGE_RATIO, change_ratio
 
 
 def check(original, corrected, pairs, *, glossary=None, context=""):

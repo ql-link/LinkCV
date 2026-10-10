@@ -19,7 +19,7 @@ describe("applyRouteSeo", () => {
   it("keeps user workspace routes out of search results", () => {
     applyRouteSeo({ kind: "resumes" });
 
-    expect(document.title).toBe("我的简历 | LinkResume");
+    expect(document.title).toBe("我的简历 | DrawOffer");
     expect(document.head.querySelector('meta[name="robots"]')).toHaveAttribute("content", "noindex, nofollow, noarchive");
     expect(document.head.querySelector('link[rel="canonical"]')).not.toBeInTheDocument();
     expect(document.head.querySelector('meta[property="og:title"]')).not.toBeInTheDocument();
@@ -28,7 +28,7 @@ describe("applyRouteSeo", () => {
   it("does not expose public resume share links to discovery by default", () => {
     applyRouteSeo({ kind: "share", token: "private-token" });
 
-    expect(document.title).toBe("公开简历 | LinkResume");
+    expect(document.title).toBe("公开简历 | DrawOffer");
     expect(document.head.querySelector('meta[name="robots"]')).toHaveAttribute("content", "noindex, nofollow, noarchive");
   });
 });

@@ -11,7 +11,7 @@ Page({
   data: {
     statusBarHeight: getStatusBarHeight(), scene: "", phase: "pending", submitting: false,
     agreementAccepted: false, privacyReady: false, privacySupported: false,
-    privacyAuthorizationRequired: false, privacyContractName: "《LinkResume 小程序隐私保护指引》",
+    privacyAuthorizationRequired: false, privacyContractName: "《DrawOffer 小程序隐私保护指引》",
     message: "确认当前微信身份后，请返回网页继续注销。此操作不会登录或创建账号。",
   },
   async onLoad(options) {

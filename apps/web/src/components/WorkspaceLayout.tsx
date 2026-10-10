@@ -100,9 +100,9 @@ export function WorkspaceNavigation({
           event.preventDefault();
           navigateTo("/resumes");
         }}
-        aria-label={t("LinkResume 首页")}
+        aria-label={t("DrawOffer 首页")}
       >
-        <Brand className="dashboard-brand" label="LinkResume" name="LinkResume" />
+        <Brand className="dashboard-brand" label="DrawOffer" name="DrawOffer" />
       </a>
       <div className="dashboard-nav-scroll">
         <nav aria-label={t("工作区导航")} title={t("当前账号：{value0}", { value0: displayName })}>

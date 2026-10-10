@@ -3,7 +3,7 @@ import logging
 import os
 import time
 
-from linkresume.modules.observability.logging import (
+from drawoffer.modules.observability.logging import (
     JsonlFileWriter,
     StructuredLogEmitter,
     StructuredLoggingHandler,
@@ -90,7 +90,7 @@ def test_structured_handler_preserves_bounded_v2_message_context(capsys) -> None
     emitter = StructuredLogEmitter(environment="test")
     handler = StructuredLoggingHandler(emitter)
     record = logging.LogRecord(
-        name="linkresume.workers.document_parse_consumer",
+        name="drawoffer.workers.document_parse_consumer",
         level=logging.WARNING,
         pathname=__file__,
         lineno=1,

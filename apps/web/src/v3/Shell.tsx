@@ -1,7 +1,7 @@
 import { t, useLocale } from "@/i18n";
 import { MotionPresence } from "@/components/ui/motion";
 import { useCallback, useEffect, useLayoutEffect, useId, useRef, useState, type ReactNode } from "react";
-import brandWordmark from "@/assets/linkresume-wordmark.png";
+import brandWordmark from "@/assets/drawoffer-wordmark.png";
 import { api, type AgentSession } from "../api/client";
 import { assistantPath, navigateTo, rememberAssistantSession } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
@@ -85,7 +85,7 @@ export function V3Sidebar({
 
   return (
     <aside className="v3-sidebar" aria-label={t("工作区侧栏")}>
-      <a className="v3-sidebar-brand" href="/assistant" aria-label={t("LinkResume 首页")} onClick={(event) => go(event, "/assistant", onNavigate)}>
+      <a className="v3-sidebar-brand" href="/assistant" aria-label={t("DrawOffer 首页")} onClick={(event) => go(event, "/assistant", onNavigate)}>
         <img src={brandWordmark} alt="" width={146} height={30} />
       </a>
       <div className="v3-side-body" data-locale-scroll>

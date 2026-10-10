@@ -35,7 +35,7 @@ const o=[];dump(await figma.getNodeByIdAsync('NODE_ID'),0,o);return o.join('\n')
 ```
 - 只读，绝对不要修改 Figma 文件。
 - 需要看图：`mcp__plugin_figma_figma__get_screenshot`（你可能看不到图片，那就按坐标核对）。
-- 设计稿脚本（坐标和文案的原始来源，很有用）：`/Users/fang/Downloads/linkresume-figma/`，公共库 `lib.js`～`lib12.js`，页面 `pNN.js`；对照表见同目录 `HANDOFF.md`。
+- 设计稿脚本（坐标和文案的原始来源，很有用）：`/Users/fang/Downloads/drawoffer-figma/`，公共库 `lib.js`～`lib12.js`，页面 `pNN.js`；对照表见同目录 `HANDOFF.md`。
 
 ## 验证
 - 本地 dev server：`http://127.0.0.1:5174`（已登录测试账号 v3-preview@example.com / Preview12345）。浏览器工具：`mcp__Claude_Browser__preview_*`，serverId `304f4bc8-171a-4488-80c5-463bfdca7e1d`；用 `preview_resize` 设 1440×1024 对照 Figma（画板窗口 1392×976，内容卡从 (229,12) 开始）。浏览器是共享的，多个代理同时在用：每次操作前先 `location.href=` 到自己的页面。

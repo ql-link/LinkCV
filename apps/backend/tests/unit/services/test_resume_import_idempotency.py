@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from linkresume.services.resume_import_idempotency import (
+from drawoffer.services.resume_import_idempotency import (
     IdempotencyBindingLostError,
     IdempotencyUnavailableError,
     ResumeImportIdempotency,

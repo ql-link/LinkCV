@@ -4,10 +4,10 @@ import base64
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.config import Settings
-from linkresume.main import create_app
-from linkresume.modules.identity.models import User
-from linkresume.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
+from drawoffer.core.config import Settings
+from drawoffer.main import create_app
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
 from tests.fakes import FakeRedis
 
 

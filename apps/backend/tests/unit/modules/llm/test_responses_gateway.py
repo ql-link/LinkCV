@@ -8,8 +8,8 @@ import pytest
 from litellm.llms.custom_httpx import llm_http_handler
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 
-from linkresume.modules.llm.gateway import GatewayError, LiteLLMGateway
-from linkresume.modules.llm.schemas import ChatMessage
+from drawoffer.modules.llm.gateway import GatewayError, LiteLLMGateway
+from drawoffer.modules.llm.schemas import ChatMessage
 
 
 def response_payload(status="completed"):

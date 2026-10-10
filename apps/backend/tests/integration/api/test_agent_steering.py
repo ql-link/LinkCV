@@ -2,14 +2,14 @@ from sqlalchemy import select, func
 from fastapi.testclient import TestClient
 import pytest
 
-from linkresume.core.database import utc_now
-from linkresume.modules.identity.models import User
+from drawoffer.core.database import utc_now
+from drawoffer.modules.identity.models import User
 
 from tests.integration.api.test_agent_routes import build_app, register, create_resume, create_active_run, internal_headers
-from linkresume.modules.agent.models import AgentMessage, AgentRun, ResumeChangeProposal
-from linkresume.modules.resumes.models import Resume
-from linkresume.modules.agent.message_scope import request_hash
-from linkresume.modules.agent.schemas import SteeringRequest, MessageCreateRequest
+from drawoffer.modules.agent.models import AgentMessage, AgentRun, ResumeChangeProposal
+from drawoffer.modules.resumes.models import Resume
+from drawoffer.modules.agent.message_scope import request_hash
+from drawoffer.modules.agent.schemas import SteeringRequest, MessageCreateRequest
 
 
 @pytest.mark.parametrize("account_state", ["disabled", "deleting"])
@@ -113,7 +113,7 @@ def test_waiting_input_is_not_a_database_message_and_private_run_is_hidden(monke
         run_id = create_active_run(app, session_id)
         async def admit(_app, _run, *, payload=None, key=None):
             return {"run_id": run_id, "submission_key": payload["idempotency_key"] if payload else key, "state": "waiting"}
-        monkeypatch.setattr("linkresume.modules.agent.routes.pi_steering_request", admit)
+        monkeypatch.setattr("drawoffer.modules.agent.routes.pi_steering_request", admit)
         payload = {"content": "等待插入", "idempotency_key": "waiting_input_1",
                    "contexts": [{"type": "resume", "id": resume["id"], "version": str(resume["lock_version"])}]}
         admitted = owner.post(f"/api/agent/runs/{run_id}/steer", json=payload)
@@ -145,7 +145,7 @@ def test_waiting_replay_keeps_admission_after_reference_changes(monkeypatch):
                 received[key] = {"run_id": run_id, "submission_key": key, "state": "waiting",
                                  "request_hash": request_hash(SteeringRequest.model_validate(payload))}
             return received.get(key, {"run_id": run_id, "submission_key": key, "state": "unknown"})
-        monkeypatch.setattr("linkresume.modules.agent.routes.pi_steering_request", admit)
+        monkeypatch.setattr("drawoffer.modules.agent.routes.pi_steering_request", admit)
         payload = {"content": "等待插入", "idempotency_key": "waiting_replay_1",
                    "contexts": [{"type": "resume", "id": resume["id"], "version": str(resume["lock_version"])}]}
         assert client.post(f"/api/agent/runs/{run_id}/steer", json=payload).status_code == 202
@@ -192,9 +192,9 @@ def test_ordinary_submission_receipt_and_body_conflict_are_owner_scoped():
 def test_inserted_proposal_revision_keeps_prior_proposal_until_replacement():
     from datetime import timedelta
     from uuid import uuid4
-    from linkresume.core.database import utc_now
-    from linkresume.modules.agent.message_scope import register_proposal, source_sequence_no
-    from linkresume.modules.agent.service import supersede_revision_source
+    from drawoffer.core.database import utc_now
+    from drawoffer.modules.agent.message_scope import register_proposal, source_sequence_no
+    from drawoffer.modules.agent.service import supersede_revision_source
 
     app = build_app()
     with TestClient(app) as client:

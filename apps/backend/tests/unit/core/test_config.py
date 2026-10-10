@@ -4,8 +4,8 @@ from cryptography.fernet import Fernet
 import pytest
 from pydantic import ValidationError
 
-from linkresume.core import config
-from linkresume.core.config import Settings, settings_env_files
+from drawoffer.core import config
+from drawoffer.core.config import Settings, settings_env_files
 
 
 def test_settings_env_files_are_stable_and_include_local_override(
@@ -15,7 +15,7 @@ def test_settings_env_files_are_stable_and_include_local_override(
     local = tmp_path / ".env.development.local"
     base.write_text("APP_ENV=development\nMYSQL_USER=shared\n", encoding="utf-8")
     local.write_text("MYSQL_USER=local-secret-user\n", encoding="utf-8")
-    monkeypatch.setenv("LINKRESUME_ENV_FILE", str(base))
+    monkeypatch.setenv("DRAWOFFER_ENV_FILE", str(base))
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.delenv("MYSQL_USER", raising=False)
 
@@ -34,7 +34,7 @@ def test_process_environment_has_highest_priority(
     local = tmp_path / ".env.local"
     base.write_text("MYSQL_USER=base\n", encoding="utf-8")
     local.write_text("MYSQL_USER=local\n", encoding="utf-8")
-    monkeypatch.setenv("LINKRESUME_ENV_FILE", str(base))
+    monkeypatch.setenv("DRAWOFFER_ENV_FILE", str(base))
     monkeypatch.setenv("MYSQL_USER", "process")
 
     assert Settings(_env_file=settings_env_files()).mysql_user == "process"
@@ -54,8 +54,8 @@ def test_linked_worktree_defaults_to_main_worktree_secret_overlay(
     base.write_text("MYSQL_USER=base\n", encoding="utf-8")
     shared.write_text("MYSQL_USER=shared-secret\n", encoding="utf-8")
     monkeypatch.setattr(config, "REPO_ROOT", worktree)
-    monkeypatch.setenv("LINKRESUME_ENV_FILE", str(base))
-    monkeypatch.delenv("LINKRESUME_SECRET_ENV_FILE", raising=False)
+    monkeypatch.setenv("DRAWOFFER_ENV_FILE", str(base))
+    monkeypatch.delenv("DRAWOFFER_SECRET_ENV_FILE", raising=False)
     monkeypatch.delenv("MYSQL_USER", raising=False)
 
     files = settings_env_files()
@@ -71,8 +71,8 @@ def test_explicit_secret_env_file_has_priority(
     secret = tmp_path / "explicit.local"
     base.write_text("MYSQL_USER=base\n", encoding="utf-8")
     secret.write_text("MYSQL_USER=explicit\n", encoding="utf-8")
-    monkeypatch.setenv("LINKRESUME_ENV_FILE", str(base))
-    monkeypatch.setenv("LINKRESUME_SECRET_ENV_FILE", str(secret))
+    monkeypatch.setenv("DRAWOFFER_ENV_FILE", str(base))
+    monkeypatch.setenv("DRAWOFFER_SECRET_ENV_FILE", str(secret))
     monkeypatch.delenv("MYSQL_USER", raising=False)
 
     files = settings_env_files()
@@ -266,7 +266,7 @@ def test_production_rejects_reused_agent_service_token() -> None:
             app_environment="production",
             agent_enabled=True,
             pi_service_token=shared_token,
-            linkresume_internal_agent_token=shared_token,
+            drawoffer_internal_agent_token=shared_token,
             jwt_secret="a-production-jwt-secret-with-more-than-32-characters",
             mysql_password="production-db-secret",
             minio_access_key="production-minio-access",
@@ -280,7 +280,7 @@ def test_production_rejects_reused_agent_service_token() -> None:
 
 
 def test_linkrag_is_on_by_default_and_degrades_without_credentials(caplog) -> None:
-    from linkresume.integrations.linkrag_client import LinkRagClient, build_linkrag_client
+    from drawoffer.integrations.linkrag_client import LinkRagClient, build_linkrag_client
 
     default = Settings()
     assert default.linkrag_enabled is True

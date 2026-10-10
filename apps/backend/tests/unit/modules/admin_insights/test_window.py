@@ -3,8 +3,8 @@ from decimal import Decimal
 
 import pytest
 
-from linkresume.core.errors import ApiError
-from linkresume.modules.admin_insights.window import (
+from drawoffer.core.errors import ApiError
+from drawoffer.modules.admin_insights.window import (
     costs,
     day_series,
     delta,

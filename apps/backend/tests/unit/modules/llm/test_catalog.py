@@ -3,8 +3,8 @@ import asyncio
 import httpx
 import pytest
 
-from linkresume.modules.llm.catalog import fetch_catalog
-from linkresume.modules.llm.providers import inference_base_url, validate_settings
+from drawoffer.modules.llm.catalog import fetch_catalog
+from drawoffer.modules.llm.providers import inference_base_url, validate_settings
 
 
 def test_aihubmix_catalog_uses_provider_ids_and_simple_price():
@@ -63,10 +63,10 @@ def test_aihubmix_endpoint_rejects_arbitrary_destinations(settings):
 def test_aihubmix_responses_runtime_preserves_endpoint_and_credentials(endpoint, base_url):
     import json
     from cryptography.fernet import Fernet
-    from linkresume.modules.llm.crypto import CredentialCipher
-    from linkresume.modules.llm.providers import pi_api, validate_route, validate_use_case_protocol
-    from linkresume.modules.llm.resolver import RoutePlan
-    from linkresume.modules.llm.service import LLMService
+    from drawoffer.modules.llm.crypto import CredentialCipher
+    from drawoffer.modules.llm.providers import pi_api, validate_route, validate_use_case_protocol
+    from drawoffer.modules.llm.resolver import RoutePlan
+    from drawoffer.modules.llm.service import LLMService
 
     cipher = CredentialCipher(f"test:{Fernet.generate_key().decode('ascii')}")
     service = LLMService(None, None, cipher)

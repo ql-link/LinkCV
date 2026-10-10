@@ -25,7 +25,7 @@
       </view>
       <view class="state-card" wx:elif="{{!guest && items.length === 0}}">
         <text class="state-title">这里还没有简历</text>
-        <text class="state-copy">前往 LinkResume 网页端自由编辑与排版，多端实时同步查阅。</text>
+        <text class="state-copy">前往 DrawOffer 网页端自由编辑与排版，多端实时同步查阅。</text>
       </view>
       <view class="resume-grid" wx:elif="{{items.length > 0}}">
         <navigator

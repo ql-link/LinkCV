@@ -2,9 +2,9 @@ from uuid import uuid4
 from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
-from linkresume.modules.agent.models import AgentRun, AgentSession
-from linkresume.modules.agent.trace import begin_operation, finish_preflight
-from linkresume.modules.identity.models import User
+from drawoffer.modules.agent.models import AgentRun, AgentSession
+from drawoffer.modules.agent.trace import begin_operation, finish_preflight
+from drawoffer.modules.identity.models import User
 from sqlalchemy import select
 from tests.integration.api.test_admin_users import build_app, promote_admin, register
 

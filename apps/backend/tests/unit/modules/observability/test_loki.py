@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from linkresume.modules.observability.loki import (
+from drawoffer.modules.observability.loki import (
     InvalidLogCursorError,
     LokiClient,
     decode_cursor,
@@ -158,7 +158,7 @@ def request_path_is_range(params: dict[str, str]) -> bool:
 
 
 def test_level_buckets_reject_malformed_items() -> None:
-    from linkresume.modules.observability.loki import LokiUnavailableError
+    from drawoffer.modules.observability.loki import LokiUnavailableError
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"status": "success", "data": {"result": [

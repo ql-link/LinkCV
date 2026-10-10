@@ -1,1 +1,0 @@
-"""LinkResume application services."""

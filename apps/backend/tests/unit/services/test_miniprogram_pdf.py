@@ -5,9 +5,9 @@ import pypdfium2 as pdfium
 import pytest
 from PIL import Image
 
-from linkresume.core.config import Settings
-from linkresume.core.errors import ApiError
-from linkresume.modules.miniprogram.pdf_service import ResumePdfRenderer, ResumePreviewRenderer
+from drawoffer.core.config import Settings
+from drawoffer.core.errors import ApiError
+from drawoffer.modules.miniprogram.pdf_service import ResumePdfRenderer, ResumePreviewRenderer
 
 
 def renderer(tmp_path: Path, source: str, *, timeout: float = 1) -> ResumePdfRenderer:
@@ -107,7 +107,7 @@ def test_preview_and_upload_serialize_native_pdfium_calls(monkeypatch) -> None:
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier, Lock
     from time import sleep
-    from linkresume.services.dataset_upload_service import _validate_pdf
+    from drawoffer.services.dataset_upload_service import _validate_pdf
 
     document = pdfium.PdfDocument.new()
     page = document.new_page(100, 100)

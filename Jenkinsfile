@@ -68,7 +68,7 @@ pipeline {
       steps {
         sh '''
           set -eu
-          git archive --format=tar.gz --output=linkresume-source.tar.gz HEAD
+          git archive --format=tar.gz --output=drawoffer-source.tar.gz HEAD
         '''
       }
     }
@@ -85,7 +85,7 @@ pipeline {
             exit 21
           }
 
-          remote_dir="/tmp/linkresume-prod-jenkins-${BUILD_NUMBER}"
+          remote_dir="/tmp/drawoffer-prod-jenkins-${BUILD_NUMBER}"
           ssh_opts="-i ${CLOUD_SSH_KEY} -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
           effective_import="${IMPORT_LEGACY_SQLITE}"
           if [ -n "${ref:-}" ] && [ "${effective_import}" = 'true' ]; then
@@ -96,11 +96,11 @@ pipeline {
           ssh ${ssh_opts} "${CLOUD_USER}@${CLOUD_HOST}" \
             "mkdir -p '${remote_dir}'"
           scp ${ssh_opts} \
-            linkresume-source.tar.gz \
+            drawoffer-source.tar.gz \
             deploy/scripts/build-production-on-cloud.sh \
             "${CLOUD_USER}@${CLOUD_HOST}:${remote_dir}/"
           ssh ${ssh_opts} "${CLOUD_USER}@${CLOUD_HOST}" \
-            "bash '${remote_dir}/build-production-on-cloud.sh' '${BUILD_NUMBER}' '${COMMIT_SHORT}' '${remote_dir}/linkresume-source.tar.gz' '${effective_import}'"
+            "bash '${remote_dir}/build-production-on-cloud.sh' '${BUILD_NUMBER}' '${COMMIT_SHORT}' '${remote_dir}/drawoffer-source.tar.gz' '${effective_import}'"
         '''
       }
     }
@@ -118,9 +118,9 @@ pipeline {
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=accept-new \
             "${CLOUD_USER}@${CLOUD_HOST}" \
-            "rm -rf '/tmp/linkresume-prod-jenkins-${BUILD_NUMBER}'" || true
+            "rm -rf '/tmp/drawoffer-prod-jenkins-${BUILD_NUMBER}'" || true
         fi
-        rm -f linkresume-source.tar.gz
+        rm -f drawoffer-source.tar.gz
       '''
     }
     success { echo "Production deployed from commit ${env.COMMIT_SHORT}" }

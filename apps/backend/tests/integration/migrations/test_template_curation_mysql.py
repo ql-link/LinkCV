@@ -11,13 +11,13 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from linkresume.application.resumes.service import ResumeTemplateUnavailable, create_resume_from_template
-from linkresume.core.errors import ApiError
-from linkresume.core.migration_sql import execute_sql_file
-from linkresume.domain.resume import CanonicalResumeDocument, ResumePresentation, compile_layout_plan
-from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import ResumeTemplate
-from linkresume.modules.resumes.template_routes import get_template, list_templates
+from drawoffer.application.resumes.service import ResumeTemplateUnavailable, create_resume_from_template
+from drawoffer.core.errors import ApiError
+from drawoffer.core.migration_sql import execute_sql_file
+from drawoffer.domain.resume import CanonicalResumeDocument, ResumePresentation, compile_layout_plan
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.resumes.models import ResumeTemplate
+from drawoffer.modules.resumes.template_routes import get_template, list_templates
 
 SQL = Path(__file__).resolve().parents[3] / "migrations/sql/0104.up.sql"
 value = re.search(r"SET @muse_curation = CAST\('((?:[^']|'')*)' AS JSON\)", SQL.read_text()).group(1)
@@ -27,11 +27,11 @@ RETIRED = {item["key"] for item in ENTRIES if not item["rank"]}
 
 @pytest.fixture
 def db():
-    raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
+    raw = os.environ.get("DRAWOFFER_TEST_MYSQL_URL")
     if not raw:
-        pytest.skip("Set LINKRESUME_TEST_MYSQL_URL to a disposable local MySQL at head")
+        pytest.skip("Set DRAWOFFER_TEST_MYSQL_URL to a disposable local MySQL at head")
     url = make_url(raw)
-    assert url.database == "linkresume_curation_0104" and url.host in {"localhost", "127.0.0.1"}
+    assert url.database == "drawoffer_curation_0104" and url.host in {"localhost", "127.0.0.1"}
     engine = create_engine(raw)
     with engine.connect() as connection:
         transaction = connection.begin()

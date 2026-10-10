@@ -10,17 +10,17 @@ import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
-import linkresume.models  # noqa: F401
-from linkresume.core.database import Base
-from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import Resume, ResumeTemplate
+import drawoffer.models  # noqa: F401
+from drawoffer.core.database import Base
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.resumes.models import Resume, ResumeTemplate
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 
 
 def load_importer() -> ModuleType:
     path = REPO_ROOT / "apps/backend/scripts/release/import_legacy_sqlite.py"
-    spec = importlib.util.spec_from_file_location("linkresume_legacy_sqlite_import_test", path)
+    spec = importlib.util.spec_from_file_location("drawoffer_legacy_sqlite_import_test", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

@@ -11,18 +11,18 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
-from linkresume.core.migration_sql import execute_sql_file
+from drawoffer.core.migration_sql import execute_sql_file
 
 SQL = Path(__file__).resolve().parents[3] / "migrations/sql/0100.up.sql"
 
 
 @pytest.fixture
 def db():
-    raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
+    raw = os.environ.get("DRAWOFFER_TEST_MYSQL_URL")
     if not raw:
-        pytest.skip("Set LINKRESUME_TEST_MYSQL_URL to a disposable MySQL at head")
+        pytest.skip("Set DRAWOFFER_TEST_MYSQL_URL to a disposable MySQL at head")
     url = make_url(raw)
-    assert url.database in {"linkresume", "linkresume_sample_fit_0103", "linkresume_curation_0104"} and url.host in {"localhost", "127.0.0.1"}
+    assert url.database in {"linkresume", "drawoffer_sample_fit_0103", "drawoffer_curation_0104"} and url.host in {"localhost", "127.0.0.1"}
     engine = create_engine(raw)
     with engine.connect() as connection:
         transaction = connection.begin()

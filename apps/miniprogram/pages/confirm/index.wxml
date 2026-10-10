@@ -8,7 +8,7 @@
       <text class="title" wx:elif="{{phase === 'expired'}}">登录请求已过期</text>
       <text class="title" wx:elif="{{phase === 'error'}}">暂时无法确认</text>
       <text class="title" wx:else>正在检查登录请求</text>
-      <text class="subtitle" wx:if="{{phase === 'pending' && !submitting}}">{{loginTarget === 'desktop' ? '确认后，请返回桌面客户端完成登录；当前手机不会领取桌面会话' : '确认后，当前浏览器将登录你的 LinkResume 账号'}}</text>
+      <text class="subtitle" wx:if="{{phase === 'pending' && !submitting}}">{{loginTarget === 'desktop' ? '确认后，请返回桌面客户端完成登录；当前手机不会领取桌面会话' : '确认后，当前浏览器将登录你的 DrawOffer 账号'}}</text>
       <text class="subtitle" wx:else>{{message}}</text>
       <view class="inline-status" wx:if="{{loading || submitting}}"><view class="spinner"></view></view>
     </view>

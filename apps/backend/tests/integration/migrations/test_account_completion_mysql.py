@@ -15,15 +15,15 @@ from sqlalchemy import create_engine, event, inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
-from linkresume.core.config import Settings, load_settings
-from linkresume.core.database import utc_now
-from linkresume.core.errors import ApiError
-from linkresume.core.security import hash_password
-from linkresume.modules.identity.account_deletion_service import request_deletion
-from linkresume.modules.identity.dependencies import lock_active_user
-from linkresume.modules.identity.models import AccountDeletionJob, AccountPreference, User
-from linkresume.modules.identity.schemas import PasswordDeletionRequest
-from linkresume.workers.account_deletion_worker import AccountDeletionProcessor
+from drawoffer.core.config import Settings, load_settings
+from drawoffer.core.database import utc_now
+from drawoffer.core.errors import ApiError
+from drawoffer.core.security import hash_password
+from drawoffer.modules.identity.account_deletion_service import request_deletion
+from drawoffer.modules.identity.dependencies import lock_active_user
+from drawoffer.modules.identity.models import AccountDeletionJob, AccountPreference, User
+from drawoffer.modules.identity.schemas import PasswordDeletionRequest
+from drawoffer.workers.account_deletion_worker import AccountDeletionProcessor
 from tests.fakes import FakeRedis
 from tests.integration.api.test_identity_resumes_assets import FakeStorage
 
@@ -35,14 +35,14 @@ BACKEND = Path(__file__).resolve().parents[3]
 
 @pytest.fixture(scope="module")
 def mysql():
-    raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
+    raw = os.environ.get("DRAWOFFER_TEST_MYSQL_URL")
     if not raw:
         pytest.skip("Explicit disposable MySQL is required")
     url = make_url(raw)
     if url.host not in {"127.0.0.1", "localhost"} or url.database != "linkresume":
         pytest.fail("Account tests require a disposable local database named linkresume")
     admin = create_engine(url)
-    name = "linkresume_account_test_" + uuid4().hex[:12]
+    name = "drawoffer_account_test_" + uuid4().hex[:12]
     with admin.connect() as db:
         assert str(db.scalar(text("SELECT VERSION()"))).startswith("8.4.")
         db.execute(text(f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"))
@@ -166,16 +166,16 @@ def test_cleanup_respects_real_foreign_keys_and_other_users(mysql):
 
 
 def test_cleanup_deletes_personal_resource_graph_and_preserves_other_graph(mysql):
-    from linkresume.modules.agent.models import (
+    from drawoffer.modules.agent.models import (
         AgentSession, AgentRun, AgentMessage, AgentToolCall, AgentOperation,
         AgentStageEvent, ResumeChangeProposal,
     )
-    from linkresume.modules.datasets.models import UserDataset, UserDatasetFolder, UserDatasetRagSync
-    from linkresume.modules.identity.models import UserProfile
-    from linkresume.modules.interviews.models import JobApplication, JobApplicationStage, InterviewSession
-    from linkresume.modules.job_descriptions.models import JobDescription
-    from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
-    from linkresume.modules.resumes.models import Resume, ResumeTemplate, DocumentParseTask
+    from drawoffer.modules.datasets.models import UserDataset, UserDatasetFolder, UserDatasetRagSync
+    from drawoffer.modules.identity.models import UserProfile
+    from drawoffer.modules.interviews.models import JobApplication, JobApplicationStage, InterviewSession
+    from drawoffer.modules.job_descriptions.models import JobDescription
+    from drawoffer.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
+    from drawoffer.modules.resumes.models import Resume, ResumeTemplate, DocumentParseTask
     from tests.canonical_resume_fixtures import canonical_resume_payload
     factory = sessionmaker(mysql, expire_on_commit=False)
     uid, other = seed(factory), seed(factory)
@@ -243,7 +243,7 @@ def test_cleanup_deletes_personal_resource_graph_and_preserves_other_graph(mysql
 
 
 def test_busy_check_uses_current_read_after_a_writer_commits(mysql):
-    from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
+    from drawoffer.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
     factory = sessionmaker(mysql, expire_on_commit=False)
     uid = seed(factory)
     held, snapshot, release = Event(), Event(), Event()
@@ -277,7 +277,7 @@ def test_busy_check_uses_current_read_after_a_writer_commits(mysql):
 
 
 def test_inflight_rag_upload_is_recorded_before_deletion_and_then_removed(mysql):
-    from linkresume.services.rag_sync_service import RagSyncService
+    from drawoffer.services.rag_sync_service import RagSyncService
     from tests.unit.services.test_rag_sync_service import add_dataset
     from tests.fakes import FakeLinkRag
     factory = sessionmaker(mysql, expire_on_commit=False)
@@ -321,7 +321,7 @@ def test_imports_keep_event_loop_live_and_respect_owner_capacity(mysql):
         assert_concurrent_finalization_at_capacity,
         build_processor,
     )
-    from linkresume.modules.resumes.models import DocumentParseTask
+    from drawoffer.modules.resumes.models import DocumentParseTask
 
     factory = sessionmaker(mysql, autoflush=False, expire_on_commit=False)
     built = build_processor(session_factory=factory, template_key="worker-concurrency-ci")

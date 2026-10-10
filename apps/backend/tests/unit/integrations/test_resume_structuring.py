@@ -3,21 +3,21 @@ import json
 
 import pytest
 
-from linkresume.domain.document_conversion import PdfLayoutBlock
-from linkresume.domain.resume import (
+from drawoffer.domain.document_conversion import PdfLayoutBlock
+from drawoffer.domain.resume import (
     ParsedSourceBlock,
     build_source_graph,
     compose_canonical_resume_document,
     validate_sparse_annotations,
     validate_source_closure,
 )
-from linkresume.integrations.resume_structuring import (
+from drawoffer.integrations.resume_structuring import (
     LLMResumeStructuringClient,
     structuring_payload,
 )
-from linkresume.modules.llm.resolver import RESUME_STRUCTURING
-from linkresume.modules.llm.schemas import StructuredChatResult
-from linkresume.modules.llm.service import LLMError
+from drawoffer.modules.llm.resolver import RESUME_STRUCTURING
+from drawoffer.modules.llm.schemas import StructuredChatResult
+from drawoffer.modules.llm.service import LLMError
 
 
 class FakeLLMService:

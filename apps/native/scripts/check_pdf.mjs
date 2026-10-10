@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const { templates } = JSON.parse(readFileSync(resolve(root, 'apps/native/shared/fixtures/resume-templates.json'), 'utf8'));
 const validation = JSON.parse(readFileSync(resolve(root, 'apps/native/shared/fixtures/paper-validation.json'), 'utf8'));
-const directory = process.env.LINKRESUME_PDF_ARTIFACTS || mkdtempSync(resolve(tmpdir(), 'linkresume-paper-pdf-'));
+const directory = process.env.DRAWOFFER_PDF_ARTIFACTS || mkdtempSync(resolve(tmpdir(), 'drawoffer-paper-pdf-'));
 mkdirSync(directory, { recursive: true });
 try {
   const manifest = [];
@@ -29,4 +29,4 @@ try {
     execFileSync('swiftc', [resolve(root, 'apps/native/scripts/check_pdf.swift'), '-o', executable]);
     console.log(execFileSync(executable, [manifestPath], { encoding: 'utf8' }));
   } else console.log('PDF text/page checks require macOS PDFKit; only binary generation verified here.');
-} finally { if (!process.env.LINKRESUME_PDF_ARTIFACTS) rmSync(directory, { recursive: true, force: true }); }
+} finally { if (!process.env.DRAWOFFER_PDF_ARTIFACTS) rmSync(directory, { recursive: true, force: true }); }

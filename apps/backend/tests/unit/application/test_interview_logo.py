@@ -1,6 +1,6 @@
-from linkresume.application.interviews.service import application_logo_url
-from linkresume.domain.company_logo import company_logo_url
-from linkresume.modules.interviews.models import JobApplication
+from drawoffer.application.interviews.service import application_logo_url
+from drawoffer.domain.company_logo import company_logo_url
+from drawoffer.modules.interviews.models import JobApplication
 
 
 def application_with(logo: object, job_id: int | None = None) -> JobApplication:

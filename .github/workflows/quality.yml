@@ -43,7 +43,7 @@ jobs:
           # 共享分支 push 总是兜底跑一次完整迁移
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             echo "migrations=true" >> "$GITHUB_OUTPUT"
-          elif printf '%s\n' "$changed" | grep -Eq '^(apps/backend/migrations/|apps/backend/tests/integration/migrations/|apps/backend/src/linkresume/core/migration_sql\.py$|apps/backend/src/linkresume/.*/models\.py$|apps/backend/alembic\.ini$|apps/backend/uv\.lock$|\.github/workflows/quality\.yml$)'; then
+          elif printf '%s\n' "$changed" | grep -Eq '^(apps/backend/migrations/|apps/backend/tests/integration/migrations/|apps/backend/src/drawoffer/core/migration_sql\.py$|apps/backend/src/drawoffer/.*/models\.py$|apps/backend/alembic\.ini$|apps/backend/uv\.lock$|\.github/workflows/quality\.yml$)'; then
             echo "migrations=true" >> "$GITHUB_OUTPUT"
           else
             echo "migrations=false" >> "$GITHUB_OUTPUT"
@@ -110,7 +110,7 @@ jobs:
         env:
           APP_ENV: development
           DATABASE_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
-          LINKRESUME_ENV_FILE: ${{ github.workspace }}/.env.nonexistent-migration-test
+          DRAWOFFER_ENV_FILE: ${{ github.workspace }}/.env.nonexistent-migration-test
         run: |
           uv run alembic upgrade head
           # 重跑验证幂等
@@ -119,7 +119,7 @@ jobs:
       - name: Verify MySQL tests for new revisions
         if: needs.changes.outputs.revisions != ''
         env:
-          LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
+          DRAWOFFER_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
           REVISIONS: ${{ needs.changes.outputs.revisions }}
         run: |
           selector=""
@@ -139,9 +139,9 @@ jobs:
       - name: Verify account lifecycle and import concurrency on MySQL
         env:
           APP_ENV: development
-          LINKRESUME_ENV_FILE: ${{ github.workspace }}/.env.nonexistent-migration-test
+          DRAWOFFER_ENV_FILE: ${{ github.workspace }}/.env.nonexistent-migration-test
           # The suite creates and drops its own randomly named schema.
-          LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://root:linkresume-root-test@127.0.0.1:3306/linkresume
+          DRAWOFFER_TEST_MYSQL_URL: mysql+pymysql://root:linkresume-root-test@127.0.0.1:3306/linkresume
         run: uv run --directory apps/backend pytest tests/integration/migrations/test_account_completion_mysql.py -q
 
   # 规则与文档同步检查只依赖 git 和 Python，不等待 Node 依赖安装，失败时约半分钟内给出结果。

@@ -6,7 +6,7 @@ from jsonschema import Draft202012Validator
 import pytest
 from pydantic import ValidationError
 
-from linkresume.domain.resume.models import Contact, TextValue
+from drawoffer.domain.resume.models import Contact, TextValue
 
 
 def styled_run(text="张", size=18):
@@ -49,7 +49,7 @@ def test_contact_still_rejects_empty_content_without_an_image():
 
 
 def test_agent_text_edit_preserves_inline_images_in_structured_fields():
-    from linkresume.modules.agent.canonical_targets import replace_runs
+    from drawoffer.modules.agent.canonical_targets import replace_runs
 
     image = inline_image()
     runs = [styled_run("张"), image, styled_run("三")]
@@ -122,7 +122,7 @@ def test_alignment_ignores_explicit_null_like_unset():
 
 
 def test_paragraph_block_alignment_round_trips_and_omits_when_unset():
-    from linkresume.domain.resume.models import ParagraphBlock
+    from drawoffer.domain.resume.models import ParagraphBlock
 
     payload = {
         "node_id": "node_bbbbbbbbbbbbbbbb", "source_refs": [],
@@ -134,7 +134,7 @@ def test_paragraph_block_alignment_round_trips_and_omits_when_unset():
 
 
 def test_paragraph_block_rejects_media_only_alignment():
-    from linkresume.domain.resume.models import ParagraphBlock
+    from drawoffer.domain.resume.models import ParagraphBlock
 
     with pytest.raises(ValidationError):
         ParagraphBlock.model_validate({
@@ -144,7 +144,7 @@ def test_paragraph_block_rejects_media_only_alignment():
 
 
 def test_unset_alignment_keeps_historical_document_dump_and_digest_stable():
-    from linkresume.domain.resume.models import CanonicalResumeDocument
+    from drawoffer.domain.resume.models import CanonicalResumeDocument
     from tests.canonical_resume_fixtures import canonical_resume_payload
 
     payload, _ = canonical_resume_payload()
@@ -170,7 +170,7 @@ def test_static_schema_accepts_alignment_and_rejects_media_only_value():
 
 
 def test_alignment_does_not_change_node_ids_order_or_sources():
-    from linkresume.domain.resume.models import CanonicalResumeDocument
+    from drawoffer.domain.resume.models import CanonicalResumeDocument
 
     def document(align):
         name = {"node_id": "node_bbbbbbbbbbbbbbbb", "source_refs": ["src_name000000000001"], "value": "张三"}
@@ -218,10 +218,10 @@ def test_alignment_does_not_change_node_ids_order_or_sources():
 
 
 def test_agent_native_replacement_preserves_field_styles():
-    from linkresume.domain.resume.models import CanonicalResumeDocument
+    from drawoffer.domain.resume.models import CanonicalResumeDocument
     from types import SimpleNamespace
-    from linkresume.modules.agent.canonical_targets import resolve, apply_operations
-    from linkresume.modules.agent.schemas import ResumeTargetLocator, ProposalOperation
+    from drawoffer.modules.agent.canonical_targets import resolve, apply_operations
+    from drawoffer.modules.agent.schemas import ResumeTargetLocator, ProposalOperation
     from tests.canonical_resume_fixtures import canonical_resume_payload
 
     payload, _ = canonical_resume_payload()
@@ -246,7 +246,7 @@ def test_agent_native_replacement_preserves_field_styles():
 
 @pytest.mark.parametrize("align", [None, "left", "center", "right"])
 def test_list_item_alignment_matches_static_schema_and_round_trips(align):
-    from linkresume.domain.resume.models import ListItem
+    from drawoffer.domain.resume.models import ListItem
 
     payload = {"node_id": "node_aaaaaaaaaaaaaaaa", "source_refs": [], "runs": [styled_run()]}
     expected = dict(payload)

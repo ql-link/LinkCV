@@ -1,6 +1,6 @@
 import asyncio
 
-from linkresume.modules.agent.run_stream import AgentRunStreamHub
+from drawoffer.modules.agent.run_stream import AgentRunStreamHub
 
 
 def test_subscriber_disconnect_does_not_cancel_run_and_reconnect_replays_events() -> (

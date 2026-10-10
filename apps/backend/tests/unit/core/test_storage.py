@@ -3,8 +3,8 @@ from io import BytesIO
 
 import pytest
 
-from linkresume.core.config import Settings
-from linkresume.core.storage import (
+from drawoffer.core.config import Settings
+from drawoffer.core.storage import (
     AssetStorage,
     UploadTooLarge,
     build_asset_object_name,

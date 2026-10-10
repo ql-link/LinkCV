@@ -5,9 +5,9 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
-from linkresume.core.config import Settings
-from linkresume.core.storage import AssetStorage
-from linkresume.modules.speech.file_transcription import (
+from drawoffer.core.config import Settings
+from drawoffer.core.storage import AssetStorage
+from drawoffer.modules.speech.file_transcription import (
     DashScopeFileTranscriber,
     Sentence,
     TranscriptionProviderError,
@@ -15,7 +15,7 @@ from linkresume.modules.speech.file_transcription import (
     parse_result,
     render_markdown,
 )
-from linkresume.modules.speech.gateway import SpeechTarget
+from drawoffer.modules.speech.gateway import SpeechTarget
 
 TARGET = SpeechTarget(
     ws_url="wss://dashscope.aliyuncs.com/api-ws/v1/inference/",

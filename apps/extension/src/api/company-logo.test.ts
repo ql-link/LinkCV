@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readBossLogo, saveCapturedCompanyLogo } from "./company-logo";
-import { uploadCompanyLogo } from "./linkresume";
+import { uploadCompanyLogo } from "./drawoffer";
 import type { JobRecord } from "../contracts";
 
-vi.mock("./linkresume", () => ({ uploadCompanyLogo: vi.fn() }));
+vi.mock("./drawoffer", () => ({ uploadCompanyLogo: vi.fn() }));
 const url = "https://img.bosszhipin.com/beijin/upload/com/logo/example.png";
 const job = { id: "42", job_title: "工程师" } as JobRecord;
 afterEach(() => { vi.unstubAllGlobals(); vi.clearAllMocks(); vi.useRealTimers(); });
@@ -32,7 +32,7 @@ describe("company logo acquisition", () => {
   });
   it.each([403, 500])("reports HTTP %i without affecting job success", async (status) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("error", { status })));
-    expect(await saveCapturedCompanyLogo("https://linkresume.example.test", job, url)).toContain("岗位已保存");
+    expect(await saveCapturedCompanyLogo("https://drawoffer.example.test", job, url)).toContain("岗位已保存");
     expect(uploadCompanyLogo).not.toHaveBeenCalled();
   });
   it("enforces the actual streamed byte limit even without Content-Length", async () => {
@@ -51,18 +51,18 @@ describe("company logo acquisition", () => {
     vi.stubGlobal("fetch", vi.fn((_url, options) => new Promise((_resolve, reject) => {
       options.signal.addEventListener("abort", () => reject(new Error("aborted")));
     })));
-    const result = saveCapturedCompanyLogo("https://linkresume.example.test", job, url);
+    const result = saveCapturedCompanyLogo("https://drawoffer.example.test", job, url);
     await vi.advanceTimersByTimeAsync(8_000);
     expect(await result).toContain("岗位已保存");
   });
   it("does not download again for an already hosted job", async () => {
     const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
-    expect(await saveCapturedCompanyLogo("https://linkresume.example.test", { ...job, logo_revision: "a".repeat(64) }, url)).toBe("");
+    expect(await saveCapturedCompanyLogo("https://drawoffer.example.test", { ...job, logo_revision: "a".repeat(64) }, url)).toBe("");
     expect(fetcher).not.toHaveBeenCalled();
   });
   it("treats upload rejection or an old backend as partial success", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(new Uint8Array([1]))));
     vi.mocked(uploadCompanyLogo).mockRejectedValueOnce(new Error("HTTP_404"));
-    expect(await saveCapturedCompanyLogo("https://linkresume.example.test", job, url)).toContain("公司图标未保存");
+    expect(await saveCapturedCompanyLogo("https://drawoffer.example.test", job, url)).toContain("公司图标未保存");
   });
 });

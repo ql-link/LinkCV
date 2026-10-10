@@ -9,11 +9,11 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 
-from linkresume.core.config import Settings
-from linkresume.main import create_app
-from linkresume.modules.identity.models import User
-from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
-from linkresume.modules.observability.audit import AUDIT_ACTIONS
+from drawoffer.core.config import Settings
+from drawoffer.main import create_app
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.llm.gateway import GatewayResult, GatewayUsage
+from drawoffer.modules.observability.audit import AUDIT_ACTIONS
 from tests.fakes import FakeRedis
 from tests.plugin_release_fakes import FakePluginStorage, build_plugin_zip
 

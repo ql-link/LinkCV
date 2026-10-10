@@ -70,10 +70,10 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `GET` | `/api/miniprogram/v2/resumes/:id/pdf?lock_version=...` | 当前已保存内容的文字 PDF，响应 X-LinkResume-Lock-Version 与 private, no-store |
+| `GET` | `/api/miniprogram/v2/resumes/:id/pdf?lock_version=...` | 当前已保存内容的文字 PDF，响应 X-DrawOffer-Lock-Version（兼容期同时返回旧名 X-LinkResume-Lock-Version） 与 private, no-store |
 | `GET` | `/api/miniprogram/v2/resumes/:id` | `{resume}` 当前正文及内部 lock_version；越权或不存在返回 404 |
-| `GET` | `/api/miniprogram/v2/resumes/:id/pdf?lock_version=...` | 当前已保存内容的文字 PDF，响应 X-LinkResume-Lock-Version 与 private, no-store |
-| `GET` | `/api/miniprogram/v2/resumes/:id/preview.png?lock_version=...` | 当前已保存内容的智能一页 PNG，响应 X-LinkResume-Lock-Version 与 private, no-store |
+| `GET` | `/api/miniprogram/v2/resumes/:id/pdf?lock_version=...` | 当前已保存内容的文字 PDF，响应 X-DrawOffer-Lock-Version（兼容期同时返回旧名 X-LinkResume-Lock-Version） 与 private, no-store |
+| `GET` | `/api/miniprogram/v2/resumes/:id/preview.png?lock_version=...` | 当前已保存内容的智能一页 PNG，响应 X-DrawOffer-Lock-Version（兼容期同时返回旧名 X-LinkResume-Lock-Version） 与 private, no-store |
 | `GET` | `/api/miniprogram/account/profile` | `{nickname, avatar_url}`；本人资料，`avatar_url` 恒为 `/api/miniprogram/account/avatar` 或 `null` |
 | `PATCH` | `/api/miniprogram/account/profile` | 同上；JSON `{nickname}`，去空白后非空且不超过 50 字，否则 `400 INVALID_NICKNAME` |
 | `PUT` | `/api/miniprogram/account/avatar` | `{url}`；JSON `{dataUrl, fileName?}`，复用 `/api/account/avatar` 的解码、10MB 上限与 MinIO 归属键规则，替换后删除旧头像对象 |
@@ -125,7 +125,7 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 
 语义分类请求携带当前规范 `data` 的 `sha256:` 内容哈希和可选章节 ID 列表。分类器只接收自定义章节的标题、正文和相邻标题，必须综合上下文，不在模板切换时调用，也不改写正文或持久化建议；相同用户、简历、内容哈希和章节集合的成功结果在 Redis 缓存 1 小时，重复请求不重复调用模型；响应包含稳定章节 ID、建议类型、置信度和依据。内容已变化返回 `409 RESUME_SEMANTIC_CLASSIFICATION_STALE`，章节选择非法返回 `400 INVALID_RESUME_SEMANTIC_CLASSIFICATION`，模型不可用或返回越界 ID 返回 `503 RESUME_SEMANTIC_CLASSIFICATION_UNAVAILABLE`。未登录返回 `401 UNAUTHORIZED`，不存在或越权统一返回 `404 RESUME_NOT_FOUND`。
 
-Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Web Cookie 或 desktop Bearer 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；Linux 部署可用专用账号降权运行，Windows 本地环境没有 Unix 账号 API 时直接运行 Node，这一内部选择不改变 HTTP 响应契约。成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。简历级图片只接受 PNG/JPEG，上传与 PDF 读取共用 10 MiB 单图上限，一份当前快照引用的私有图片原始二进制总量上限为 10 MiB；更新简历、切换模板和复制当前简历均在持久化前校验该契约，超限返回 `413 RESUME_PDF_ASSET_TOO_LARGE` 或 `413 RESUME_PDF_ASSETS_TOO_LARGE`，因此不能保存成随后无法导出的当前快照。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
+Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Web Cookie 或 desktop Bearer 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；Linux 部署可用专用账号降权运行，Windows 本地环境没有 Unix 账号 API 时直接运行 Node，这一内部选择不改变 HTTP 响应契约。成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-DrawOffer-Pdf-Lock-Version`（兼容期同时返回旧名 `X-LinkResume-Pdf-Lock-Version`） 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。简历级图片只接受 PNG/JPEG，上传与 PDF 读取共用 10 MiB 单图上限，一份当前快照引用的私有图片原始二进制总量上限为 10 MiB；更新简历、切换模板和复制当前简历均在持久化前校验该契约，超限返回 `413 RESUME_PDF_ASSET_TOO_LARGE` 或 `413 RESUME_PDF_ASSETS_TOO_LARGE`，因此不能保存成随后无法导出的当前快照。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
 
 每个用户最多保存 10 份正式简历；创建事务锁定用户行后检查，达到上限返回 `409 RESUME_LIMIT_REACHED`。创建只写当前简历，不创建历史记录。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
 
@@ -256,7 +256,7 @@ Pi 服务令牌保护的 POST/GET `/internal/agent/runs/:runId/steer[/:submissio
 
 `share` 为 `{share_token, share_visibility, share_expires_at, share_allow_download, share_created_at}`。`share_visibility` 只允许 `public|private`，`share_expires_at` 为带时区的 ISO 8601，`null` 表示长期有效；`share_allow_download` 为布尔值，旧记录和创建缺省值均为 `true`。`private` 时只有分享者本人登录可见，未登录或其他用户访问一律按失效处理。
 
-公开读取在通过 token、过期时间和 `private` 所有者校验后，从分享记录反查用户与简历，实时读取简历主记录中最近一次保存成功的 `data/style` 草稿，并把该草稿引用的本人私有 PNG/JPEG 解析为 `assets` 映射中的 data URI；无需创建正式版本，自动保存成功后公开内容立即更新，尚未保存成功的浏览器本地编辑不会公开。浏览器不直接匿名访问私有资源路由。对象键不能由匿名请求指定，单图和快照图片原始总量继续分别受 10 MiB 上限约束。JSON 与 PDF 成功响应都使用 `Cache-Control: private, no-store`。公开 PDF 复用编辑器的受控 Node/Chromium 渲染器，固定按 A4 分页生成，只包含简历文档，不包含分享页头部或操作按钮，并返回 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。`allow_download=false` 时公开 JSON 仍可读取并用于隐藏入口，但 PDF 路由对未登录访问者、其他登录用户和分享者本人统一返回 `404 SHARE_LINK_UNAVAILABLE`。
+公开读取在通过 token、过期时间和 `private` 所有者校验后，从分享记录反查用户与简历，实时读取简历主记录中最近一次保存成功的 `data/style` 草稿，并把该草稿引用的本人私有 PNG/JPEG 解析为 `assets` 映射中的 data URI；无需创建正式版本，自动保存成功后公开内容立即更新，尚未保存成功的浏览器本地编辑不会公开。浏览器不直接匿名访问私有资源路由。对象键不能由匿名请求指定，单图和快照图片原始总量继续分别受 10 MiB 上限约束。JSON 与 PDF 成功响应都使用 `Cache-Control: private, no-store`。公开 PDF 复用编辑器的受控 Node/Chromium 渲染器，固定按 A4 分页生成，只包含简历文档，不包含分享页头部或操作按钮，并返回 `Content-Disposition`、`X-DrawOffer-Pdf-Lock-Version`（兼容期同时返回旧名 `X-LinkResume-Pdf-Lock-Version`） 和 `X-Content-Type-Options: nosniff`。`allow_download=false` 时公开 JSON 仍可读取并用于隐藏入口，但 PDF 路由对未登录访问者、其他登录用户和分享者本人统一返回 `404 SHARE_LINK_UNAVAILABLE`。
 
 `POST` 创建或覆盖请求可选 `{visibility, expires_at, allow_download}`，分别指定可见性（缺省 `public`）、有效期（缺省永久，即 `expires_at` 为 `null`）和 PDF 下载权限（缺省 `true`）。`PATCH` 用 `model_fields_set` 区分传入字段，可单独续期（延长或清除 `expires_at`）、切换可见性或更新下载权限；未开启分享时返回 `404 SHARE_LINK_UNAVAILABLE`。token 使用 `secrets.token_urlsafe(16)`（约 160 bit 熵）且全局唯一，冲突重试 3 次。为避免枚举探测，以下场景在管理侧与公开侧统一返回 `404 SHARE_LINK_UNAVAILABLE`：token 不存在、已删除、已过期、`private` 无权查看、分享记录对应的用户或简历不存在，以及直接请求已关闭下载的 PDF。过期后可再次 `PATCH expires_at` 恢复访问，不需重建链接。
 
@@ -690,7 +690,7 @@ Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针
 | POST | `/sessions/:id/complete` | 复用 CompleteInterviewRequest，只完成本场 |
 | POST | `/sessions/:id/cancel` | 复用 CancelInterviewRequest，取消安排，保留记录 |
 | PUT | `/applications/:id/resume` | 仅接受 resume_id（必填可空）和 base_lock_version；关联、更换或解除本人简历，不推进阶段；复用求职乐观锁与归属校验 |
-| GET | `/applications/:id/resume-preview.png` | 按本人求职记录关联的当前简历渲染；返回 PNG、private/no-store 和 X-LinkResume-Lock-Version；无关联或源已删除返回 409 APPLICATION_RESUME_UNAVAILABLE |
+| GET | `/applications/:id/resume-preview.png` | 按本人求职记录关联的当前简历渲染；返回 PNG、private/no-store 和 X-DrawOffer-Lock-Version；无关联或源已删除返回 409 APPLICATION_RESUME_UNAVAILABLE |
 
 修改复用 base_lock_version；过期锁返回 `409 INTERVIEW_EDIT_CONFLICT`，非法阶段动作返回 `409 INTERVIEW_INVALID_TRANSITION`，排期允许时间重叠；兼容字段 `allow_conflict` 不再影响是否可保存。非法 ID、不存在或越权统一 `404 INTERVIEW_NOT_FOUND`。日期查询缺时区或范围倒置返回 `400 INVALID_INTERVIEW_QUERY`。阶段与安排分别提交，阶段成功后排期失败不会回滚阶段。原 overview、advance、close 兼容端点保留，新页面使用 stages/terminate。Web API、数据库 schema 和代理配置未改变。
 

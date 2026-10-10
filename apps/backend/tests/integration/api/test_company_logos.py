@@ -7,10 +7,10 @@ from minio.error import S3Error
 from PIL import Image, PngImagePlugin
 from sqlalchemy import select
 
-from linkresume.application.job_descriptions.logo_service import normalize_logo
-from linkresume.core.errors import ApiError
-from linkresume.core.storage import get_storage
-from linkresume.modules.interviews.models import JobApplication
+from drawoffer.application.job_descriptions.logo_service import normalize_logo
+from drawoffer.core.errors import ApiError
+from drawoffer.core.storage import get_storage
+from drawoffer.modules.interviews.models import JobApplication
 from tests.integration.api.test_job_descriptions import build_app, create_job, register
 
 
@@ -108,7 +108,7 @@ def test_upload_dedup_access_cache_and_delete_are_isolated_per_user():
         with app.state.session_factory() as db:
             after = db.get(JobApplication, application_id).job_snapshot
             assert after == {**before, 'logo_url': logo['logo_url']}
-        from linkresume.application.interviews.service import application_logo_url
+        from drawoffer.application.interviews.service import application_logo_url
         with app.state.session_factory() as db:
             assert application_logo_url(db.get(JobApplication, application_id)) == logo['logo_url']
         assert upload(client, first, picture('blue')).json() == logo
@@ -196,7 +196,7 @@ def test_missing_logo_can_be_filled_later_and_uploads_are_rate_limited():
 
 
 def test_snapshot_cannot_supply_another_job_or_external_relative_path():
-    from linkresume.application.interviews.service import application_logo_url
+    from drawoffer.application.interviews.service import application_logo_url
     app = build_app()
     with TestClient(app) as client:
         register(client)

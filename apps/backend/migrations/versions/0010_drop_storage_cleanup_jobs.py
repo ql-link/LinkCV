@@ -10,7 +10,7 @@ from pathlib import Path
 from alembic import op
 from sqlalchemy import text
 
-from linkresume.core.migration_sql import execute_sql_file
+from drawoffer.core.migration_sql import execute_sql_file
 
 revision: str = "0010"
 down_revision: str | None = "0009"

@@ -111,7 +111,7 @@ def build_plugin_zip(
     output = BytesIO()
     manifest = {
         "manifest_version": 3,
-        "name": "LinkResume 岗位采集",
+        "name": "DrawOffer 岗位采集",
         "version": version,
         "permissions": ["activeTab"],
         "host_permissions": permissions or [*BOSS_PERMISSIONS, f"{origin}/*"],

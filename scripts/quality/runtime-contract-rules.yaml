@@ -2,7 +2,7 @@ version: 1
 
 contracts:
   - id: production-web-assets-oss
-    description: Production 只把哈希 Web assets 发布到 OSS 的 LinkResume 前缀并在应用切换前通过 OSS HTTPS 验证
+    description: Production 只把哈希 Web assets 发布到 OSS 的 DrawOffer 前缀并在应用切换前通过 OSS HTTPS 验证
     assertions:
       - path: apps/web/vite.config.mjs
         pattern: 'resolveAssetBase[\s\S]*VITE_ASSET_BASE_URL[\s\S]*parsed\.protocol !== "https:"[\s\S]*base: assetBase'
@@ -33,13 +33,13 @@ contracts:
         pattern: 'serviceScriptForProfile[\s\S]*\.env\.development[\s\S]*dev:development-services'
         message: Development profile 必须路由到 Agent 感知的四服务启动器
       - path: scripts/dev/start-development.sh
-        pattern: 'node_bin="node"[\s\S]*node\.exe[\s\S]*wslpath[\s\S]*BACKEND_PORT="\$\{backend_port\}"[\s\S]*PI_SERVICE_BASE_URL="http://127\.0\.0\.1:\$\{pi_port\}"[\s\S]*LINKRESUME_BASE_URL="http://127\.0\.0\.1:\$\{backend_port\}"[\s\S]*node_env_args=.*node_path.*base_env'
+        pattern: 'node_bin="node"[\s\S]*node\.exe[\s\S]*wslpath[\s\S]*BACKEND_PORT="\$\{backend_port\}"[\s\S]*PI_SERVICE_BASE_URL="http://127\.0\.0\.1:\$\{pi_port\}"[\s\S]*DRAWOFFER_BASE_URL="http://127\.0\.0\.1:\$\{backend_port\}"[\s\S]*node_env_args=.*node_path.*base_env'
         message: 启动脚本必须跨平台加载 Development 配置并统一本地跨服务地址
       - path: scripts/dev/start-development.sh
-        pattern: 'worktree_queue_id=.*cksum[\s\S]*LINKRESUME_LOCAL_RABBITMQ_QUEUE[\s\S]*linkresume\.resume_import\.worker\.local\.\$\{worktree_queue_id\}\.v2[\s\S]*LINKRESUME_LOCAL_RABBITMQ_ROUTING_KEY[\s\S]*resume\.import\.local\.\$\{worktree_queue_id\}\.v2'
+        pattern: 'worktree_queue_id=.*cksum[\s\S]*DRAWOFFER_LOCAL_RABBITMQ_QUEUE[\s\S]*linkresume\.resume_import\.worker\.local\.\$\{worktree_queue_id\}\.v2[\s\S]*DRAWOFFER_LOCAL_RABBITMQ_ROUTING_KEY[\s\S]*resume\.import\.local\.\$\{worktree_queue_id\}\.v2'
         message: 本地 Development 必须自动隔离 worktree 的 queue 与 routing key，避免共享 Worker 竞争消费
       - path: scripts/dev/run-development.mjs
-        pattern: 'RABBITMQ_URL[\s\S]*LINKRESUME_LOCAL_RABBITMQ_HOST[\s\S]*MYSQL_HOST[\s\S]*LINKRESUME_LOCAL_RABBITMQ_PORT'
+        pattern: 'RABBITMQ_URL[\s\S]*DRAWOFFER_LOCAL_RABBITMQ_HOST[\s\S]*MYSQL_HOST[\s\S]*DRAWOFFER_LOCAL_RABBITMQ_PORT'
         message: 本机 Worker 必须把 Development 容器 DNS 转换为可达的 AMQP 地址
       - path: scripts/dev/run-development.mjs
         pattern: 'npm:dev:web[\s\S]*npm:dev:backend[\s\S]*npm:dev:worker[\s\S]*npm:dev:pi'
@@ -48,14 +48,14 @@ contracts:
   - id: agent-readiness-deployment-contract
     description: Dev 与 Production 分别检查基础部署健康和 Agent 对话能力状态
     assertions:
-      - path: apps/backend/src/linkresume/modules/agent/routes.py
+      - path: apps/backend/src/drawoffer/modules/agent/routes.py
         pattern: '@router\.get\("/readiness", response_model=AgentReadinessResponse\)'
         message: FastAPI 必须暴露不泄露配置的 Agent readiness 入口
       - path: apps/pi-service/src/server.js
         pattern: 'GET" && url\.pathname === "/internal/agent/readiness"'
         message: Pi 必须提供受服务令牌保护的内部 readiness
       - path: deploy/scripts/build-production-on-cloud.sh
-        pattern: 'pi_image="linkresume-pi"[\s\S]*PI_TAG="\$\{tag\}"[\s\S]*report_agent_readiness'
+        pattern: 'pi_image="drawoffer-pi"[\s\S]*PI_TAG="\$\{tag\}"[\s\S]*report_agent_readiness'
         message: Production 远端发布必须部署同版本 Pi 镜像并单独报告 Agent readiness
       - path: deploy/scripts/build-development-on-primary.sh
         pattern: '/api/health" >/dev/null; then[\s\S]*Agent readiness warning:'
@@ -80,16 +80,16 @@ contracts:
       - path: apps/pi-service/src/runtime/orchestrator.js
         pattern: 'modelTool[\s\S]*executionMode: "sequential"[\s\S]*submit_resume_edit_plan'
         message: Pi 审计业务工具必须声明串行执行并注册简历修改计划提交工具
-      - path: apps/backend/src/linkresume/modules/agent/schemas.py
+      - path: apps/backend/src/drawoffer/modules/agent/schemas.py
         pattern: 'class ToolEventRequest[\s\S]*"runtime_step"[\s\S]*"submit_resume_edit_plan"'
         message: FastAPI 工具审计白名单必须接受修改计划提交工具和运行时步骤
 
   - id: observability-loki-promtail-contract
-    description: LinkResume 三套环境固定七天 JSONL 契约，Dev/Production 使用独立 Promtail 和共享 Loki
+    description: DrawOffer 三套环境固定七天 JSONL 契约，Dev/Production 使用独立 Promtail 和共享 Loki
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default="linkresume", alias="LOG_SERVICE_NAME"[\s\S]*default=7, alias="LOG_RETENTION_DAYS"[\s\S]*default=5,[\s\S]*alias="LOKI_QUERY_TIMEOUT_SECONDS"'
-        message: 后端必须固定 LinkResume service、七天本地保留和五秒 Loki 查询预算
+        message: 后端必须固定 DrawOffer service、七天本地保留和五秒 Loki 查询预算
       - path: .env.example
         pattern: '(?m)^LOG_SERVICE_NAME=linkresume$[\s\S]*^LOG_RETENTION_DAYS=7$[\s\S]*^LOKI_QUERY_TIMEOUT_SECONDS=5$'
         message: 本地模板必须声明统一日志契约
@@ -100,25 +100,25 @@ contracts:
         pattern: '(?m)^LOG_DIRECTORY=/app/logs$[\s\S]*^LOG_RETENTION_DAYS=7$[\s\S]*^LOKI_QUERY_URL=http://tolink-loki:3100$[\s\S]*^LOKI_PUSH_URL=http://tolink-loki:3100/loki/api/v1/push$'
         message: Production 必须使用独立日志目录和共享 Production Loki 内网地址
       - path: deploy/docker-compose.development.yml
-        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: linkresume-dev-promtail[\s\S]*linkresume-dev-logs:/var/log/linkresume:ro[\s\S]*linkresume-dev-promtail-positions:/tmp'
+        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: drawoffer-dev-promtail[\s\S]*linkresume-dev-logs:/var/log/linkresume:ro[\s\S]*linkresume-dev-promtail-positions:/tmp'
         message: Dev 必须部署固定版本的独立 Promtail、日志卷和 positions 卷
       - path: deploy/docker-compose.production.yml
-        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: linkresume-promtail[\s\S]*linkresume-production-logs:/var/log/linkresume:ro[\s\S]*linkresume-production-promtail-positions:/tmp'
+        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: drawoffer-promtail[\s\S]*linkresume-production-logs:/var/log/linkresume:ro[\s\S]*linkresume-production-promtail-positions:/tmp'
         message: Production 必须部署固定版本的独立 Promtail、日志卷和 positions 卷
       - path: deploy/docker-compose.observability.local.yml
-        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: linkresume-local-promtail[\s\S]*LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push[\s\S]*LINKRESUME_LOG_PATH:-\.\./\.runtime/logs[\s\S]*LOKI_DOCKER_NETWORK:-tolink-rag-local_tolink-net'
-        message: 本地联调必须使用独立 Promtail、LinkResume 日志目录和 LinkRag 共享 Loki 网络
+        pattern: 'grafana/promtail:2\.9\.8[\s\S]*container_name: drawoffer-local-promtail[\s\S]*LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push[\s\S]*DRAWOFFER_LOG_PATH:-\$\{LINKRESUME_LOG_PATH:-\.\./\.runtime/logs\}[\s\S]*LOKI_DOCKER_NETWORK:-tolink-rag-local_tolink-net'
+        message: 本地联调必须使用独立 Promtail、DrawOffer 日志目录和 LinkRag 共享 Loki 网络
       - path: deploy/observability/promtail-config.yml
         pattern: '__path__: /var/log/linkresume/\*\*/linkresume\*\.jsonl[\s\S]*service: service[\s\S]*environment: environment[\s\S]*log_type: log_type[\s\S]*level: level[\s\S]*labels:[\s\S]*service:[\s\S]*environment:[\s\S]*log_type:[\s\S]*level:'
         message: Promtail 只能提升约定的低基数 JSON 字段为 Loki labels
-      - path: apps/backend/src/linkresume/workers/__main__.py
+      - path: apps/backend/src/drawoffer/workers/__main__.py
         pattern: 'configure_logging\(settings\)'
         message: 异步导入 Worker 必须启用与 FastAPI 相同的结构化日志入口
       - path: deploy/docker-compose.development.yml
-        pattern: 'linkresume-worker:[\s\S]*LOG_DIRECTORY: /app/logs/worker[\s\S]*linkresume-dev-logs:/app/logs'
+        pattern: 'drawoffer-worker:[\s\S]*LOG_DIRECTORY: /app/logs/worker[\s\S]*linkresume-dev-logs:/app/logs'
         message: Dev Worker 必须使用共享卷中的独立日志子目录
       - path: deploy/docker-compose.production.yml
-        pattern: 'linkresume-worker:[\s\S]*LOG_DIRECTORY: /app/logs/worker[\s\S]*linkresume-production-logs:/app/logs'
+        pattern: 'drawoffer-worker:[\s\S]*LOG_DIRECTORY: /app/logs/worker[\s\S]*linkresume-production-logs:/app/logs'
         message: Production Worker 必须使用共享卷中的独立日志子目录
 
   - id: llm-credential-encryption-key-ring
@@ -137,7 +137,7 @@ contracts:
   - id: unified-llm-timeout
     description: 统一 LLM Gateway 与三套环境使用同一个请求超时默认值
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default=75,[\s\S]*alias="LLM_TIMEOUT_SECONDS"'
         message: FastAPI 必须保留统一 LLM 超时默认值 75 秒
       - path: .env.example
@@ -153,7 +153,7 @@ contracts:
   - id: fastapi-default-port
     description: FastAPI 和 Vite 使用同一个 BACKEND_PORT 默认值
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default=8000, alias="BACKEND_PORT"'
         message: FastAPI 配置必须默认监听 8000
       - path: apps/web/vite.config.mjs
@@ -166,10 +166,10 @@ contracts:
       - path: apps/web/vite.config.mjs
         pattern: '"/api"\s*:\s*\{\s*target:\s*backendTarget'
         message: Vite 必须把 /api 代理到 backendTarget
-      - path: apps/backend/src/linkresume/main.py
+      - path: apps/backend/src/drawoffer/main.py
         pattern: 'include_router\(api_router, prefix="/api"\)'
         message: FastAPI 聚合路由必须使用 /api 前缀
-      - path: apps/backend/src/linkresume/api/routes/health.py
+      - path: apps/backend/src/drawoffer/api/routes/health.py
         pattern: '@router\.get\("/health"'
         message: FastAPI 必须注册 /health 子路由
       - path: .ai/prompts/project.md
@@ -182,7 +182,7 @@ contracts:
   - id: jwt-cookie-contract
     description: 三套环境显式声明一致的双 Token Cookie 名称和默认有效期
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default=15, alias="ACCESS_TTL_MINUTES"[\s\S]*default="resume_access", alias="ACCESS_COOKIE_NAME"[\s\S]*default="resume_refresh", alias="REFRESH_COOKIE_NAME"[\s\S]*default=7, alias="SESSION_TTL_DAYS"'
         message: FastAPI 必须保留双 Token Cookie 名称和有效期默认值
       - path: .env.example
@@ -204,10 +204,10 @@ contracts:
       - path: .env.example
         pattern: '(?m)^APP_ENV=local$'
         message: 本地模板必须使用允许普通账号密码登录的 local 环境
-      - path: apps/backend/src/linkresume/modules/identity/capabilities.py
+      - path: apps/backend/src/drawoffer/modules/identity/capabilities.py
         pattern: 'app_environment\.strip\(\)\.lower\(\) in \{"local", "development"\}'
         message: 本地和 Development 必须共享密码登录能力，Production 必须排除在外
-      - path: apps/backend/src/linkresume/modules/identity/capabilities.py
+      - path: apps/backend/src/drawoffer/modules/identity/capabilities.py
         pattern: 'app_environment\.strip\(\)\.lower\(\) == "production" and settings\.wechat_enabled'
         message: 微信普通登录仅允许配置可用的 Production
       - path: .env.production
@@ -216,7 +216,7 @@ contracts:
       - path: .env.example
         pattern: '(?m)^WECHAT_APPID=$[\s\S]*^WECHAT_SECRET=$[\s\S]*^WECHAT_API_TIMEOUT_SECONDS=5$'
         message: 环境模板必须声明后端实际读取的微信凭据与超时键
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'invalid\.append\("WECHAT_APPID"\)[\s\S]*invalid\.append\("WECHAT_SECRET"\)'
         message: Production 必须在启动时拒绝缺少微信凭据的配置
       - path: deploy/scripts/build-development-on-primary.sh
@@ -260,7 +260,7 @@ contracts:
   - id: interview-asset-upload-limit
     description: FastAPI 与三套环境使用一致的面试素材上传上限
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default=500 \* 1024 \* 1024,[\s\S]*alias="INTERVIEW_ASSET_UPLOAD_MAX_BYTES"'
         message: FastAPI 必须使用 500 MiB 的面试素材上传上限
       - path: .env.example
@@ -276,7 +276,7 @@ contracts:
   - id: dataset-upload-admission-contract
     description: FastAPI 与三套环境使用一致的资料上传、配额和解析恢复默认值
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default=10 \* 1024 \* 1024,[\s\S]*alias="DATASET_UPLOAD_MAX_BYTES"[\s\S]*default=10,[\s\S]*alias="DATASET_MAX_FILES_PER_BATCH"[\s\S]*default=20,[\s\S]*alias="DATASET_UPLOAD_REQUESTS_PER_MINUTE"[\s\S]*default=3,[\s\S]*alias="DATASET_UPLOAD_USER_CONCURRENCY"[\s\S]*default=12,[\s\S]*alias="DATASET_UPLOAD_GLOBAL_CONCURRENCY"[\s\S]*default=200,[\s\S]*alias="DATASET_MAX_COUNT_PER_USER"[\s\S]*default=1024 \* 1024 \* 1024,[\s\S]*alias="DATASET_MAX_TOTAL_BYTES_PER_USER"[\s\S]*default=5,[\s\S]*alias="DATASET_DISPATCH_SCAN_SECONDS"[\s\S]*default=30,[\s\S]*alias="DATASET_REDISPATCH_AFTER_SECONDS"[\s\S]*default=240,[\s\S]*alias="DATASET_PARSE_STALE_SECONDS"[\s\S]*default=3,[\s\S]*alias="DATASET_PARSE_MAX_ATTEMPTS"[\s\S]*default=86400,[\s\S]*alias="DATASET_UPLOAD_RESERVATION_TTL_SECONDS"'
         message: FastAPI 必须使用方案确认的资料上传、配额和解析恢复默认值
       - path: .env.example
@@ -302,7 +302,7 @@ contracts:
   - id: resume-import-admission-defaults
     description: FastAPI 与三套环境使用一致的简历导入成本保护默认值
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default=128 \* 1024,[\s\S]*alias="RESUME_STRUCTURING_MAX_BYTES"[\s\S]*default=3,[\s\S]*alias="RESUME_IMPORT_REQUESTS_PER_MINUTE"[\s\S]*default=4,[\s\S]*alias="RESUME_IMPORT_GLOBAL_CONCURRENCY"[\s\S]*default=1,[\s\S]*alias="RESUME_IMPORT_USER_CONCURRENCY"'
         message: FastAPI 必须保留经过审查的导入限制默认值
       - path: .env.example
@@ -318,7 +318,7 @@ contracts:
   - id: resume-import-linkparse-contract
     description: FastAPI 与环境模板使用冻结的 LinkParse 转换契约
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default="http://100\.86\.10\.52:18743",[\s\S]*alias="LINKPARSE_BASE_URL"[\s\S]*default="/v1/parse",[\s\S]*alias="LINKPARSE_PARSE_PATH"[\s\S]*default=90,[\s\S]*alias="LINKPARSE_TIMEOUT_SECONDS"[\s\S]*default=3 \* 1024 \* 1024,[\s\S]*alias="LINKPARSE_RESPONSE_MAX_BYTES"'
         message: FastAPI 必须保留冻结的 LinkParse 地址、路径、超时和响应上限
       - path: .env.example
@@ -336,7 +336,7 @@ contracts:
   - id: resume-import-idempotency-contract
     description: FastAPI 和三套环境使用一致的 Worker deadline、陈旧收口与 Redis 幂等默认值
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default=60,[\s\S]*alias="RESUME_STRUCTURING_TIMEOUT_SECONDS"[\s\S]*default=180, alias="RESUME_IMPORT_PARSE_DEADLINE_SECONDS"[\s\S]*default=240, alias="RESUME_IMPORT_PARSE_STALE_SECONDS"[\s\S]*default=30, alias="RESUME_IMPORT_IDEMPOTENCY_BIND_TTL_SECONDS"[\s\S]*default=900, alias="RESUME_IMPORT_IDEMPOTENCY_TTL_SECONDS"'
         message: FastAPI 必须保留 Worker deadline、陈旧收口与两阶段幂等 TTL
       - path: .env.example
@@ -352,19 +352,19 @@ contracts:
   - id: async-resume-import-broker-contract
     description: FastAPI、Worker、环境模板与 Compose 使用同一套异步导入 Broker 契约
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default="rabbitmq", alias="MQ_VENDOR"[\s\S]*default="tolink\.resume\.resume_import\.v2"[\s\S]*alias="RABBITMQ_EXCHANGE_NAME"[\s\S]*default="linkresume\.resume_import\.worker\.v2"[\s\S]*alias="RABBITMQ_QUEUE"[\s\S]*default="resume\.import\.v2"[\s\S]*alias="RABBITMQ_ROUTING_KEY"'
         message: 后端必须默认使用 RabbitMQ V2 exchange、queue 和 routing key
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default="tolink\.resume\.resume_import\.v2"[\s\S]*alias="KAFKA_TOPIC"[\s\S]*default="linkresume\.resume_import\.worker\.v2"[\s\S]*alias="KAFKA_CONSUMER_GROUP"'
         message: 后端必须默认使用 Kafka V2 topic 和 consumer group
-      - path: apps/backend/src/linkresume/core/mq/message.py
+      - path: apps/backend/src/drawoffer/core/mq/message.py
         pattern: 'ConfigDict\(extra="forbid"\)[\s\S]*pipeline_version: Literal\["v2"\][\s\S]*mq_name: Literal\["tolink\.resume\.resume_import\.v2"\]'
         message: 文档解析消息必须使用严格的 V2 envelope 和必填 pipeline version
-      - path: apps/backend/src/linkresume/core/mq/rabbitmq.py
+      - path: apps/backend/src/drawoffer/core/mq/rabbitmq.py
         pattern: 'headers=\{\"x-linkresume-pipeline-version\": message\.pipeline_version\}'
         message: RabbitMQ 发布必须以 header 观测 V2 pipeline version
-      - path: apps/backend/src/linkresume/modules/observability/logging.py
+      - path: apps/backend/src/drawoffer/modules/observability/logging.py
         pattern: 'ALLOWED_FIELDS = \{[\s\S]*"message_id"[\s\S]*"pipeline_version"[\s\S]*"vendor"[\s\S]*"route"'
         message: 结构化日志必须保留受控的 V2 消息诊断字段
       - path: .env.example
@@ -380,10 +380,10 @@ contracts:
         pattern: '(?m)^  rabbitmq:$[\s\S]*rabbitmq:4-management-alpine'
         message: 本地 Compose 必须提供 RabbitMQ
       - path: deploy/docker-compose.development.yml
-        pattern: '(?m)^  linkresume-worker:$[\s\S]*command: \["python", "-m", "linkresume\.workers"\]'
+        pattern: '(?m)^  drawoffer-worker:$[\s\S]*command: \["python", "-m", "drawoffer\.workers"\]'
         message: Dev Compose 必须启动独立导入 Worker
       - path: deploy/docker-compose.production.yml
-        pattern: '(?m)^  linkresume-worker:$[\s\S]*command: \["python", "-m", "linkresume\.workers"\]'
+        pattern: '(?m)^  drawoffer-worker:$[\s\S]*command: \["python", "-m", "drawoffer\.workers"\]'
         message: Production Compose 必须启动独立导入 Worker
 
   - id: production-middleware-docker-dns
@@ -402,8 +402,8 @@ contracts:
   - id: environment-layering
     description: 本地 worktree、FastAPI、Dev Compose 与 Production Compose 都支持基础配置加私密覆盖
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
-        pattern: 'configured_secret = os\.environ\.get\("LINKRESUME_SECRET_ENV_FILE"\)[\s\S]*_default_secret_env_file\(base\)'
+      - path: apps/backend/src/drawoffer/core/config.py
+        pattern: 'configured_secret = env_value\("DRAWOFFER_SECRET_ENV_FILE"\)[\s\S]*_default_secret_env_file\(base\)'
         message: Settings 必须支持显式私密文件并回退 worktree 共享覆盖
       - path: package.json
         pattern: '"dev:development": "node scripts/dev/run_with_env_profile\.mjs \.env\.development"'
@@ -415,19 +415,19 @@ contracts:
         pattern: '启动器实际打印的“基础配置”和“共享私密覆盖”路径[\s\S]*`APP_ENV` 只控制应用功能，不选择 env profile'
         message: 故障分诊必须核实真实 env 文件路径，不能用 APP_ENV 推断配置文件
       - path: scripts/dev/run_with_env_profile.mjs
-        pattern: 'resolveMainWorktreeRoot[\s\S]*LINKRESUME_SECRET_ENV_FILE[\s\S]*dev:services'
+        pattern: 'resolveMainWorktreeRoot[\s\S]*DRAWOFFER_SECRET_ENV_FILE[\s\S]*dev:services'
         message: 本地启动器必须从 Git 主工作目录加载私密覆盖并启动全部服务
       - path: deploy/docker-compose.production.yml
-        pattern: 'LINKRESUME_ENV_FILE:-\.\./\.env\.production'
+        pattern: 'DRAWOFFER_ENV_FILE:-\$\{LINKRESUME_ENV_FILE:-\.\./\.env\.production\}'
         message: Production Compose 必须默认加载基础配置
       - path: deploy/docker-compose.production.yml
-        pattern: 'LINKRESUME_SECRET_ENV_FILE:-\.\./\.env\.production\.local'
+        pattern: 'DRAWOFFER_SECRET_ENV_FILE:-\$\{LINKRESUME_SECRET_ENV_FILE:-\.\./\.env\.production\.local\}'
         message: Production Compose 必须后加载私密覆盖
       - path: deploy/docker-compose.development.yml
-        pattern: 'LINKRESUME_ENV_FILE:-\.\./\.env\.development'
+        pattern: 'DRAWOFFER_ENV_FILE:-\$\{LINKRESUME_ENV_FILE:-\.\./\.env\.development\}'
         message: Dev Compose 必须默认加载基础配置
       - path: deploy/docker-compose.development.yml
-        pattern: 'LINKRESUME_SECRET_ENV_FILE:-\.\./\.env\.development\.local'
+        pattern: 'DRAWOFFER_SECRET_ENV_FILE:-\$\{LINKRESUME_SECRET_ENV_FILE:-\.\./\.env\.development\.local\}'
         message: Dev Compose 必须后加载私密覆盖
 
   - id: node-lockfile-tarball-host
@@ -440,7 +440,7 @@ contracts:
   - id: resume-pdf-chromium-runtime
     description: FastAPI、三套环境与生产镜像使用同一个受控 Chromium 路径和智能一页高度上限
     assertions:
-      - path: apps/backend/src/linkresume/core/config.py
+      - path: apps/backend/src/drawoffer/core/config.py
         pattern: 'default="/usr/bin/chromium",[\s\S]*alias="CHROMIUM_EXECUTABLE_PATH"[\s\S]*default=2000,[\s\S]*alias="PDF_RENDERER_MAX_SMART_HEIGHT_MM"'
         message: FastAPI 必须读取受控 Chromium 路径和智能一页高度上限
       - path: .env.example
@@ -479,7 +479,7 @@ contracts:
         pattern: 'execute_sql_file\(op\.get_bind\(\), SQL_DIR / "\$\{up_revision\}\.up\.sql"\)'
         message: 新 revision 必须通过独立 up SQL 文件执行
       - path: apps/backend/migrations/script.py.mako
-        pattern: 'LinkResume database migrations are forward-only'
+        pattern: 'DrawOffer database migrations are forward-only'
         message: 新 revision 必须明确拒绝 downgrade
       - path: scripts/db/create_sql_revision.py
         pattern: 'create_up_sql_file\(revision\.revision, args\.message\)'
@@ -507,13 +507,13 @@ contracts:
     description: Dev 与 Production 使用独立的发布目标和运行资源
     assertions:
       - path: deploy/docker-compose.development.yml
-        pattern: '(?m)^    container_name: linkresume-dev$'
+        pattern: '(?m)^    container_name: drawoffer-dev$'
         message: Dev 必须使用独立容器名
       - path: deploy/docker-compose.development.yml
-        pattern: 'LINKRESUME_DEV_HTTP_PORT:-18002'
+        pattern: 'DRAWOFFER_DEV_HTTP_PORT:-\$\{LINKRESUME_DEV_HTTP_PORT:-18002\}'
         message: Dev 必须使用独立宿主机端口 18002
       - path: deploy/docker-compose.development.yml
-        pattern: 'LINKRESUME_DOCKER_NETWORK:-tolink-dev-net'
+        pattern: 'DRAWOFFER_DOCKER_NETWORK:-\$\{LINKRESUME_DOCKER_NETWORK:-tolink-dev-net\}'
         message: Dev 必须加入隔离开发网络
       - path: deploy/scripts/build-development-on-primary.sh
         pattern: 'dev_root="/opt/tolink/dev"'
@@ -531,13 +531,13 @@ contracts:
         pattern: 'regexpFilterExpression: ''\^refs/heads/dev\$'''
         message: Dev webhook 必须只接受 refs/heads/dev push
       - path: deploy/docker-compose.production.yml
-        pattern: '(?m)^    container_name: linkresume$'
+        pattern: '(?m)^    container_name: drawoffer$'
         message: Production 必须使用生产容器名
       - path: deploy/docker-compose.production.yml
-        pattern: 'LINKRESUME_HTTP_PORT:-4174'
+        pattern: 'DRAWOFFER_HTTP_PORT:-\$\{LINKRESUME_HTTP_PORT:-4174\}'
         message: Production 必须保持反向代理使用的宿主机端口 4174
       - path: deploy/docker-compose.production.yml
-        pattern: 'LINKRESUME_DOCKER_NETWORK:-tolink-app-net'
+        pattern: 'DRAWOFFER_DOCKER_NETWORK:-\$\{LINKRESUME_DOCKER_NETWORK:-tolink-app-net\}'
         message: Production 必须加入生产应用网络
       - path: Jenkinsfile
         pattern: 'CLOUD_HOST = ''100\.77\.31\.79'''
@@ -555,7 +555,7 @@ contracts:
         pattern: 'http_port="4174"'
         message: Production 远端健康检查必须使用宿主机端口 4174
       - path: deploy/scripts/build-production-on-cloud.sh
-        pattern: 'required_secret_keys=\([\s\S]*PI_SERVICE_TOKEN[\s\S]*pi_health_status=.*linkresume-pi'
+        pattern: 'required_secret_keys=\([\s\S]*PI_SERVICE_TOKEN[\s\S]*pi_health_status=.*drawoffer-pi'
         message: Production 必须在发布前要求 Pi 内部令牌并检查 Pi Service 健康状态
       - path: deploy/scripts/build-production-on-cloud.sh
         pattern: 'backup_compose_file="\$\{backup_dir\}/docker-compose\.production\.yml"[\s\S]*docker compose -f "\$\{backup_compose_file\}" up -d --remove-orphans'
@@ -588,10 +588,10 @@ contracts:
     assertions:
       - path: .env.development
         pattern: '(?m)^REDIS_DB=2$'
-        message: LinkResume Dev 必须使用独立 Redis DB 2
+        message: DrawOffer Dev 必须使用独立 Redis DB 2
       - path: .env.development
         pattern: '(?m)^MINIO_BUCKET=linkresume$'
-        message: LinkResume Dev 必须使用独立 linkresume Bucket
+        message: DrawOffer Dev 必须使用独立 linkresume Bucket
 
   - id: desktop-shell-window-contract
     description: 桌面壳固定无标题栏沉浸形态、隐藏滚动条、顶部拖动区，并以工作区为入口跳过宣传落地页

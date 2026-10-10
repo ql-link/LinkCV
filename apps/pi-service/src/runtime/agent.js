@@ -34,9 +34,9 @@ export async function executeAgentProbe({ model: modelConfig, nonce, signal }) {
   const { modelRuntime, model } = await configuredModel(modelConfig);
   let toolCallId = null;
   const probeTool = defineTool({
-    name: "linkresume_probe",
-    label: "LinkResume Pi 探针",
-    description: "完成 LinkResume Pi Agent 能力验证。",
+    name: "drawoffer_probe",
+    label: "DrawOffer Pi 探针",
+    description: "完成 DrawOffer Pi Agent 能力验证。",
     parameters: objectSchema({ nonce: { type: "string" } }, ["nonce"]),
     execute: async (callId, params) => {
       if (params.nonce !== nonce) throw new Error("AGENT_PROBE_NONCE_MISMATCH");
@@ -53,7 +53,7 @@ export async function executeAgentProbe({ model: modelConfig, nonce, signal }) {
     agentDir: fileURLToPath(new URL("../../resources/", import.meta.url)),
     settingsManager,
     systemPromptOverride: () =>
-      "你正在执行连接验证。必须且只能调用一次 linkresume_probe，并原样传入用户提供的 nonce；不要调用其他工具。",
+      "你正在执行连接验证。必须且只能调用一次 drawoffer_probe，并原样传入用户提供的 nonce；不要调用其他工具。",
   });
   await resourceLoader.reload();
   const { session } = await createAgentSession({
@@ -61,7 +61,7 @@ export async function executeAgentProbe({ model: modelConfig, nonce, signal }) {
     modelRuntime,
     thinkingLevel: "off",
     noTools: "builtin",
-    tools: ["linkresume_probe"],
+    tools: ["drawoffer_probe"],
     customTools: [probeTool],
     resourceLoader,
     sessionManager: SessionManager.inMemory(),

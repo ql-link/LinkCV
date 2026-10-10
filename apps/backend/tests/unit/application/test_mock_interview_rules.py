@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from linkresume.application.mock_interviews import rubric
-from linkresume.application.mock_interviews.retrieval import (
+from drawoffer.application.mock_interviews import rubric
+from drawoffer.application.mock_interviews.retrieval import (
     MaterialDocument,
     MaterialRetriever,
     split_chunks,
     tokenize,
 )
-from linkresume.application.mock_interviews.service import _align_signals, _parse_header, _split_header
-from linkresume.application.mock_interviews.outputs import ExpressionJudgement, QuestionEvaluation, SignalJudgement
+from drawoffer.application.mock_interviews.service import _align_signals, _parse_header, _split_header
+from drawoffer.application.mock_interviews.outputs import ExpressionJudgement, QuestionEvaluation, SignalJudgement
 
 NO_EXPRESSION = ExpressionJudgement(verdict="miss")
 
@@ -171,7 +171,7 @@ def test_slot_contention_maps_mysql_deadlock_to_conflict() -> None:
 
     from sqlalchemy.exc import OperationalError
 
-    from linkresume.application.mock_interviews.service import MockInterviewError, occupy_slot
+    from drawoffer.application.mock_interviews.service import MockInterviewError, occupy_slot
 
     class Deadlocked:
         rolled_back = False
@@ -196,7 +196,7 @@ def test_slot_contention_maps_mysql_deadlock_to_conflict() -> None:
 
 
 def test_signal_specs_tag_legacy_signals_and_bound_core_count() -> None:
-    from linkresume.application.mock_interviews.scoring import signal_specs
+    from drawoffer.application.mock_interviews.scoring import signal_specs
 
     legacy = signal_specs({"expected_signals": ["a", "b"], "project": "订单系统"}, "technical")
     assert [(s["competency"], s["core"]) for s in legacy] == [("ownership", True), ("ownership", False)]
@@ -225,8 +225,8 @@ def test_judgement_index_beats_name_and_is_not_reused() -> None:
 def test_unquoted_factual_errors_do_not_cost_points() -> None:
     from types import SimpleNamespace
 
-    from linkresume.application.mock_interviews.outputs import FactualError
-    from linkresume.application.mock_interviews.scoring import score_root
+    from drawoffer.application.mock_interviews.outputs import FactualError
+    from drawoffer.application.mock_interviews.scoring import score_root
 
     interview = SimpleNamespace(difficulty="junior", interview_type="technical")
     root = SimpleNamespace(id=1, parent_id=None, answer_text="我用了 Redis 做缓存", answer_status="answered", depth_level=2)
@@ -248,7 +248,7 @@ def test_unquoted_factual_errors_do_not_cost_points() -> None:
 def test_unquoted_expression_counts_as_a_missed_bonus_signal() -> None:
     from types import SimpleNamespace
 
-    from linkresume.application.mock_interviews.scoring import score_root
+    from drawoffer.application.mock_interviews.scoring import score_root
 
     interview = SimpleNamespace(difficulty="junior", interview_type="technical")
     root = SimpleNamespace(id=1, parent_id=None, answer_text="我用了 Redis 做缓存", answer_status="answered", depth_level=2)
@@ -264,14 +264,14 @@ def test_unquoted_expression_counts_as_a_missed_bonus_signal() -> None:
 
 
 def _plan_item(topic: str, **kwargs):
-    from linkresume.application.mock_interviews.outputs import PlanItem
+    from drawoffer.application.mock_interviews.outputs import PlanItem
 
     return PlanItem(topic=topic, anchor=kwargs.pop("anchor", "a"), start_depth=kwargs.pop("start_depth", 2), expected_signals=["x"], **kwargs)
 
 
 def test_plan_selection_enforces_project_gap_and_design_rules() -> None:
-    from linkresume.application.mock_interviews.outputs import InterviewPlan
-    from linkresume.application.mock_interviews.planning import select_plan
+    from drawoffer.application.mock_interviews.outputs import InterviewPlan
+    from drawoffer.application.mock_interviews.planning import select_plan
 
     plan = InterviewPlan(
         selected=[
@@ -291,8 +291,8 @@ def test_plan_selection_enforces_project_gap_and_design_rules() -> None:
 
 
 def test_senior_plan_requires_exactly_one_open_design_and_orders_warm_up_first() -> None:
-    from linkresume.application.mock_interviews.outputs import InterviewPlan
-    from linkresume.application.mock_interviews.planning import select_plan
+    from drawoffer.application.mock_interviews.outputs import InterviewPlan
+    from drawoffer.application.mock_interviews.planning import select_plan
 
     items = [_plan_item(f"t{i}", start_depth=5, anchor_kind="job") for i in range(4)]
     plan = InterviewPlan(selected=items, candidates=[_plan_item("design", is_open_design=True)])
@@ -304,8 +304,8 @@ def test_senior_plan_requires_exactly_one_open_design_and_orders_warm_up_first()
 
 
 def test_short_plan_is_reported() -> None:
-    from linkresume.application.mock_interviews.outputs import InterviewPlan
-    from linkresume.application.mock_interviews.planning import select_plan
+    from drawoffer.application.mock_interviews.outputs import InterviewPlan
+    from drawoffer.application.mock_interviews.planning import select_plan
 
     _, problems = select_plan(InterviewPlan(selected=[_plan_item("only")]), difficulty="junior", question_count=3, require_skills=False)
     assert "count" in problems
@@ -319,7 +319,7 @@ def test_header_split_tolerates_code_fence() -> None:
 def test_follow_up_prompt_carries_next_topic_and_allowed_actions() -> None:
     from types import SimpleNamespace
 
-    from linkresume.application.mock_interviews import prompts
+    from drawoffer.application.mock_interviews import prompts
 
     interview = SimpleNamespace(
         interview_type="technical", difficulty="senior", language="zh", answer_mode="voice",
@@ -334,7 +334,7 @@ def test_follow_up_prompt_carries_next_topic_and_allowed_actions() -> None:
 
 
 def test_follow_up_must_quote_the_candidate_answer() -> None:
-    from linkresume.application.mock_interviews.scoring import follow_up_grounded
+    from drawoffer.application.mock_interviews.scoring import follow_up_grounded
 
     answer = "冻结会把数据复制到独立版本表形成不可变快照"
     assert follow_up_grounded("复制到独立版本表", answer, "缺变更记录")
@@ -347,7 +347,7 @@ def test_follow_up_must_quote_the_candidate_answer() -> None:
 def test_follow_up_prompt_asks_for_probe_and_previous_depth() -> None:
     from types import SimpleNamespace
 
-    from linkresume.application.mock_interviews import prompts
+    from drawoffer.application.mock_interviews import prompts
 
     interview = SimpleNamespace(
         interview_type="technical", difficulty="intermediate", language="zh", answer_mode="text",
@@ -363,9 +363,9 @@ def test_follow_up_prompt_asks_for_probe_and_previous_depth() -> None:
 def test_intro_is_fixed_first_item_and_not_depth_penalised() -> None:
     from types import SimpleNamespace
 
-    from linkresume.application.mock_interviews.outputs import PlanItem
-    from linkresume.application.mock_interviews.planning import with_intro
-    from linkresume.application.mock_interviews.scoring import score_root
+    from drawoffer.application.mock_interviews.outputs import PlanItem
+    from drawoffer.application.mock_interviews.planning import with_intro
+    from drawoffer.application.mock_interviews.scoring import score_root
 
     items = with_intro([PlanItem(topic="缓存", anchor="a", start_depth=3, expected_signals=["x"])], "zh")
     assert items[0].is_intro and items[0].topic == "自我介绍" and items[0].start_depth == 1
@@ -381,8 +381,8 @@ def test_intro_is_fixed_first_item_and_not_depth_penalised() -> None:
 
 
 def test_comprehensive_and_technical_plans_must_test_the_declared_tech_stack() -> None:
-    from linkresume.application.mock_interviews.outputs import InterviewPlan
-    from linkresume.application.mock_interviews.planning import required_skill_checks, select_plan
+    from drawoffer.application.mock_interviews.outputs import InterviewPlan
+    from drawoffer.application.mock_interviews.planning import required_skill_checks, select_plan
 
     assert required_skill_checks("comprehensive", 5) == 1
     assert required_skill_checks("technical", 5) == 2 and required_skill_checks("technical", 3) == 1
@@ -405,7 +405,7 @@ def test_comprehensive_and_technical_plans_must_test_the_declared_tech_stack() -
 def test_intro_adaptation_requires_quoted_anchor_and_protects_required_items() -> None:
     from types import SimpleNamespace
 
-    from linkresume.application.mock_interviews.planning import apply_intro_adaptation
+    from drawoffer.application.mock_interviews.planning import apply_intro_adaptation
 
     plan = [
         {"topic": "自我介绍", "is_intro": True},
@@ -422,8 +422,8 @@ def test_intro_adaptation_requires_quoted_anchor_and_protects_required_items() -
 
 
 def test_skill_check_tag_must_name_a_declared_skill_and_loses_its_project() -> None:
-    from linkresume.application.mock_interviews.outputs import InterviewPlan
-    from linkresume.application.mock_interviews.planning import select_plan
+    from drawoffer.application.mock_interviews.outputs import InterviewPlan
+    from drawoffer.application.mock_interviews.planning import select_plan
 
     fake = _plan_item("套了皮的项目题", project="项目A", is_skill_check=True, skill="Rust")
     real = _plan_item("Java 并发", project="项目B", is_skill_check=True, skill="java")
@@ -438,7 +438,7 @@ def test_skill_check_tag_must_name_a_declared_skill_and_loses_its_project() -> N
 
 
 def test_fill_skill_checks_guarantees_coverage_without_touching_open_design() -> None:
-    from linkresume.application.mock_interviews.planning import fill_skill_checks
+    from drawoffer.application.mock_interviews.planning import fill_skill_checks
 
     items = [_plan_item("a"), _plan_item("设计", is_open_design=True), _plan_item("c")]
     filled = fill_skill_checks(items, ["Java", "MySQL"], 2, "intermediate", "zh")
@@ -450,7 +450,7 @@ def test_fill_skill_checks_guarantees_coverage_without_touching_open_design() ->
 def test_intro_adaptation_uses_at_most_two_replacements() -> None:
     from types import SimpleNamespace
 
-    from linkresume.application.mock_interviews.planning import apply_intro_adaptation
+    from drawoffer.application.mock_interviews.planning import apply_intro_adaptation
 
     plan = [{"topic": "自我介绍", "is_intro": True}] + [{"topic": f"旧{i}", "anchor": "x"} for i in range(1, 4)]
     intro = "我非常熟练掌握 Kafka、Redis 和 Elasticsearch"
@@ -464,8 +464,8 @@ def test_intro_adaptation_uses_at_most_two_replacements() -> None:
 
 
 def test_project_cap_merges_spellings_and_infers_missing_project() -> None:
-    from linkresume.application.mock_interviews.outputs import InterviewPlan
-    from linkresume.application.mock_interviews.planning import select_plan
+    from drawoffer.application.mock_interviews.outputs import InterviewPlan
+    from drawoffer.application.mock_interviews.planning import select_plan
 
     plan = InterviewPlan(
         selected=[
@@ -483,8 +483,8 @@ def test_project_cap_merges_spellings_and_infers_missing_project() -> None:
 
 
 def test_resume_topic_without_project_triggers_a_retry_hint_only_in_spread_types() -> None:
-    from linkresume.application.mock_interviews.outputs import InterviewPlan
-    from linkresume.application.mock_interviews.planning import select_plan
+    from drawoffer.application.mock_interviews.outputs import InterviewPlan
+    from drawoffer.application.mock_interviews.planning import select_plan
 
     plan = InterviewPlan(selected=[_plan_item("p1", project="甲项目"), _plan_item("loose")])
     _, problems = select_plan(plan, difficulty="junior", question_count=2, require_skills=False)
@@ -496,8 +496,8 @@ def test_resume_topic_without_project_triggers_a_retry_hint_only_in_spread_types
 
 
 def test_project_deep_dive_may_concentrate_on_one_project() -> None:
-    from linkresume.application.mock_interviews.outputs import InterviewPlan
-    from linkresume.application.mock_interviews.planning import select_plan
+    from drawoffer.application.mock_interviews.outputs import InterviewPlan
+    from drawoffer.application.mock_interviews.planning import select_plan
 
     plan = InterviewPlan(selected=[_plan_item(f"p{i}", project="甲项目") for i in range(4)])
     chosen, problems = select_plan(
@@ -509,7 +509,7 @@ def test_project_deep_dive_may_concentrate_on_one_project() -> None:
 def test_intro_adaptation_keeps_every_experience_in_the_plan() -> None:
     from types import SimpleNamespace
 
-    from linkresume.application.mock_interviews.planning import apply_intro_adaptation
+    from drawoffer.application.mock_interviews.planning import apply_intro_adaptation
 
     plan = [
         {"topic": "自我介绍", "is_intro": True},
@@ -538,7 +538,7 @@ def test_intro_adaptation_keeps_every_experience_in_the_plan() -> None:
 
 
 def test_fill_skill_checks_takes_from_the_most_covered_experience() -> None:
-    from linkresume.application.mock_interviews.planning import fill_skill_checks
+    from drawoffer.application.mock_interviews.planning import fill_skill_checks
 
     items = [
         _plan_item("甲1", project="甲"),

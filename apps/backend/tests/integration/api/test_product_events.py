@@ -8,10 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
-from linkresume.modules.identity.models import User
-from linkresume.modules.product_events import service as product_events
-from linkresume.modules.product_events.models import ProductEvent
-from linkresume.modules.product_events.service import build_event
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.product_events import service as product_events
+from drawoffer.modules.product_events.models import ProductEvent
+from drawoffer.modules.product_events.service import build_event
 from tests.integration.api.test_resume_pdf import build_app
 
 FUNNEL = "/api/admin/insights/funnel"

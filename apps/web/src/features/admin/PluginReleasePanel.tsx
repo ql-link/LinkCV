@@ -106,7 +106,7 @@ export function PluginReleasePanel() {
         <section className="adm-release" aria-label="当前发布">
           <div className="adm-release-name">
             <Chip icon={Puzzle} tint="blue" size={44} />
-            <div><strong>{release ? "LinkResume 岗位采集插件" : "当前没有插件"}</strong><span>{release ? "Chrome / Edge · 在 BOSS 直聘岗位页一键导入" : "上传首个安装包后，用户即可在 JD 页面下载。"}</span></div>
+            <div><strong>{release ? "DrawOffer 岗位采集插件" : "当前没有插件"}</strong><span>{release ? "Chrome / Edge · 在 BOSS 直聘岗位页一键导入" : "上传首个安装包后，用户即可在 JD 页面下载。"}</span></div>
           </div>
           {release && (
             <>

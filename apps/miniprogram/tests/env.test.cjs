@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const runtimeConfig = require("../config/runtime");
 const { resolveApiBaseUrl } = require("../config/env");
 
-test("release build defaults to the LinkResume production origin", () => {
+test("release build defaults to the DrawOffer production origin", () => {
   global.wx = {
     getExtConfigSync: () => ({}),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "release" } }),
@@ -13,10 +13,10 @@ test("release build defaults to the LinkResume production origin", () => {
 
 test("ext config API URL wins and removes a trailing slash", () => {
   global.wx = {
-    getExtConfigSync: () => ({ apiBaseUrl: "https://linkresume.example.test/" }),
+    getExtConfigSync: () => ({ apiBaseUrl: "https://drawoffer.example.test/" }),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "release" } }),
   };
-  assert.equal(resolveApiBaseUrl(), "https://linkresume.example.test");
+  assert.equal(resolveApiBaseUrl(), "https://drawoffer.example.test");
 });
 
 test("static runtime config supports a standalone release build", () => {
@@ -25,9 +25,9 @@ test("static runtime config supports a standalone release build", () => {
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "release" } }),
   };
   const previous = runtimeConfig.productionApiBaseUrl;
-  runtimeConfig.productionApiBaseUrl = "https://linkresume.example.test/api/";
+  runtimeConfig.productionApiBaseUrl = "https://drawoffer.example.test/api/";
   try {
-    assert.equal(resolveApiBaseUrl(), "https://linkresume.example.test/api");
+    assert.equal(resolveApiBaseUrl(), "https://drawoffer.example.test/api");
   } finally {
     runtimeConfig.productionApiBaseUrl = previous;
   }
@@ -274,7 +274,7 @@ test("trial build ignores opt-in and local config", () => {
 
 test("release build rejects an insecure configured API URL", () => {
   global.wx = {
-    getExtConfigSync: () => ({ apiBaseUrl: "http://linkresume.example.test" }),
+    getExtConfigSync: () => ({ apiBaseUrl: "http://drawoffer.example.test" }),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "trial" } }),
   };
   assert.throws(resolveApiBaseUrl, /必须使用 HTTPS/);

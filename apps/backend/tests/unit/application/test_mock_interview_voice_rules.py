@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 from types import SimpleNamespace
 
-from linkresume.application.mock_interviews import voice_metrics
-from linkresume.application.mock_interviews.speech_session import AudioBuffer
-from linkresume.application.mock_interviews.service import voice_report
-from linkresume.application.mock_interviews.transcripts import MAX_CHANGE_RATIO, change_ratio
-from linkresume.modules.llm.providers import speech_ws_url, validate_use_case_protocol
-from linkresume.modules.mock_interviews.routes import split_sentences
+from drawoffer.application.mock_interviews import voice_metrics
+from drawoffer.application.mock_interviews.speech_session import AudioBuffer
+from drawoffer.application.mock_interviews.service import voice_report
+from drawoffer.application.mock_interviews.transcripts import MAX_CHANGE_RATIO, change_ratio
+from drawoffer.modules.llm.providers import speech_ws_url, validate_use_case_protocol
+from drawoffer.modules.mock_interviews.routes import split_sentences
 
 
 def words(text: str, *, gap_at: int | None = None, step: int = 250) -> list[dict]:
@@ -77,7 +77,7 @@ def test_speech_protocols_are_scoped_to_speech_use_cases_and_regions():
 
 
 def test_speech_session_audio_is_shared_between_workers_with_matching_ttl():
-    from linkresume.application.mock_interviews.speech_session import SpeechResult, SpeechSessionStore, SESSION_TTL_SECONDS
+    from drawoffer.application.mock_interviews.speech_session import SpeechResult, SpeechSessionStore, SESSION_TTL_SECONDS
     from tests.fakes import FakeRedis
 
     redis = FakeRedis()
@@ -97,7 +97,7 @@ def test_speech_session_audio_is_shared_between_workers_with_matching_ttl():
 def test_speaker_sequences_remain_monotonic_after_draining():
     import asyncio
     import json
-    from linkresume.modules.mock_interviews.routes import _Speaker
+    from drawoffer.modules.mock_interviews.routes import _Speaker
 
     class Speech:
         async def synthesize(self, user_id, text, *, source):

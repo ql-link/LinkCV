@@ -99,7 +99,7 @@ Pi 复用 SDK 的 `steer()` 和 `prepareNextTurnWithContext` 包装钩子，在�
 | --- | --- | --- | --- |
 | Web | FastAPI `/api/agent/*` | 用户 Cookie | 当前用户会话、模型摘要、上下文、运行和提案 |
 | FastAPI | Pi Service | `PI_SERVICE_TOKEN` | 创建/继续/取消 Agent 运行 |
-| Pi Service | FastAPI `/internal/agent/*` | `LINKRESUME_INTERNAL_AGENT_TOKEN` | 受控上下文、模型和简历提案工具 |
+| Pi Service | FastAPI `/internal/agent/*` | `DRAWOFFER_INTERNAL_AGENT_TOKEN` | 受控上下文、模型和简历提案工具 |
 | FastAPI LLM service | 模型供应商 | 运行时解密凭据 | 当前绑定能力的一次模型调用 |
 
 两枚服务 token 方向不同且不能复用。Pi Service 默认只监听内部地址；浏览器、插件和小程序都不应感知 Pi URL。

@@ -21,8 +21,8 @@ from typing import Any
 import sqlalchemy as sa
 from alembic import op
 
-from linkresume.core.migration_sql import execute_sql_file
-from linkresume.domain.resume import TemplateDefinition
+from drawoffer.core.migration_sql import execute_sql_file
+from drawoffer.domain.resume import TemplateDefinition
 
 revision: str = "0049"
 down_revision: str | None = "0048"

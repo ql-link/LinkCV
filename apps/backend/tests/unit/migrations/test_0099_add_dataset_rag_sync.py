@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.modules.datasets.models import UserDatasetRagSync
+from drawoffer.modules.datasets.models import UserDatasetRagSync
 from tests.migration_naming import current_columns
-from linkresume.modules.mock_interviews.models import MockInterview
+from drawoffer.modules.mock_interviews.models import MockInterview
 
 ROOT = Path(__file__).resolve().parents[5]
 MIGRATIONS = ROOT / "apps/backend/migrations"

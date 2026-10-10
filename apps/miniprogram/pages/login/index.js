@@ -33,7 +33,7 @@ Page({
     privacyReady: false,
     privacySupported: false,
     privacyAuthorizationRequired: false,
-    privacyContractName: "《LinkResume 小程序隐私保护指引》",
+    privacyContractName: "《DrawOffer 小程序隐私保护指引》",
     returnTo: DEFAULT_RETURN_TARGET,
     message: "让每一次投递更有底气 · 随时随地同步查阅",
   },

@@ -1230,7 +1230,7 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
       ? '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif'
       : persistedFontOverride;
     const fontFamily = /PingFang SC|Microsoft YaHei|system-ui/u.test(persistedFontFamily)
-      ? '"LinkResume Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
+      ? '"DrawOffer Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
       : persistedFontFamily;
     void accentColor;
     return {
@@ -1267,7 +1267,7 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
     ? '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif'
     : style.font_family;
   const fontFamily = /PingFang SC|Microsoft YaHei|system-ui/u.test(persistedFontFamily)
-    ? '"LinkResume Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
+    ? '"DrawOffer Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
     : persistedFontFamily;
   return {
     fontFamily,

@@ -20,7 +20,7 @@ function safePart(value) {
 }
 
 function resumePreviewPath(ownerId, resumeId, lockVersion) {
-  return `${wx.env.USER_DATA_PATH}/linkresume-preview-v2-${safePart(ownerId)}-${safePart(resumeId)}-${safePart(lockVersion)}.png`;
+  return `${wx.env.USER_DATA_PATH}/drawoffer-preview-v2-${safePart(ownerId)}-${safePart(resumeId)}-${safePart(lockVersion)}.png`;
 }
 
 function accessFile(filePath) {

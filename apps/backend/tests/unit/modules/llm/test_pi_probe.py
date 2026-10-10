@@ -3,10 +3,10 @@ import json
 
 import httpx
 
-from linkresume.core.config import Settings
-from linkresume.modules.llm.pi_probe import PiProbeCoordinator
-from linkresume.modules.llm.resolver import RoutePlan
-from linkresume.modules.llm.service import AgentRuntimeModel
+from drawoffer.core.config import Settings
+from drawoffer.modules.llm.pi_probe import PiProbeCoordinator
+from drawoffer.modules.llm.resolver import RoutePlan
+from drawoffer.modules.llm.service import AgentRuntimeModel
 
 
 def test_coordinator_requires_matching_backend_and_pi_tool_evidence():

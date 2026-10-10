@@ -5950,7 +5950,7 @@ select:not([data-slot]):focus-visible,
 .share-panel-danger-zone strong { color: var(--ink); font-size: 12px; }
 .share-panel-danger-zone span { color: var(--muted); font-size: 11px; line-height: 1.45; }
 
-/* Figma: LinkResume · 分享链接弹窗优化 */
+/* Figma: DrawOffer · 分享链接弹窗优化 */
 .share-panel-backdrop {
   padding: 24px;
   background: rgba(15, 18, 22, 0.36);

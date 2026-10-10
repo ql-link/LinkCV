@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from tests.integration.api.test_llm_admin import build_app, register_admin
-from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection
+from drawoffer.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection
 
 
 def seed(app):

@@ -5,13 +5,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.config import Settings
-from linkresume.core.security import hash_password
-from linkresume.integrations.wechat_client import WechatClient
-from linkresume.main import create_app
-from linkresume.modules.identity.models import User
-from linkresume.modules.product_events.models import ProductEvent
-from linkresume.modules.identity.session_service import (
+from drawoffer.core.config import Settings
+from drawoffer.core.security import hash_password
+from drawoffer.integrations.wechat_client import WechatClient
+from drawoffer.main import create_app
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.product_events.models import ProductEvent
+from drawoffer.modules.identity.session_service import (
     MINIPROGRAM_CHANNEL,
     WEB_CHANNEL,
     issue_session,

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.domain.resume_document import default_resume_document
-from linkresume.domain.resume_snapshot import parse_resume_snapshot
-from linkresume.domain.resume_style import (
+from drawoffer.domain.resume_document import default_resume_document
+from drawoffer.domain.resume_snapshot import parse_resume_snapshot
+from drawoffer.domain.resume_style import (
     PageStyle,
     ResumePresentation,
     default_resume_style,
@@ -22,7 +22,7 @@ REVISION_PATH = (
 
 
 def load_revision():
-    spec = importlib.util.spec_from_file_location("linkresume_revision_0047", REVISION_PATH)
+    spec = importlib.util.spec_from_file_location("drawoffer_revision_0047", REVISION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

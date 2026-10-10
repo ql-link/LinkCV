@@ -34,7 +34,7 @@ final class PaperCheck: NSObject, WKScriptMessageHandler {
         super.init()
         window.contentView = webView
         window.makeKeyAndOrderFront(nil)
-        configuration.userContentController.add(self, name: "linkresume")
+        configuration.userContentController.add(self, name: "drawoffer")
         webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
     }
 
@@ -49,7 +49,7 @@ final class PaperCheck: NSObject, WKScriptMessageHandler {
         do {
             let data = try JSONSerialization.data(withJSONObject: cases[index]["request"]!)
             let json = String(decoding: data, as: UTF8.self)
-            webView.evaluateJavaScript("window.linkresume.render(\(json))") { _, error in
+            webView.evaluateJavaScript("window.drawoffer.render(\(json))") { _, error in
                 if let error { self.fail(error.localizedDescription) }
             }
         } catch { fail(error.localizedDescription) }
@@ -95,7 +95,7 @@ struct CheckWebKit {
         let deadline = Date().addingTimeInterval(60)
         while !runner.finished && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
         if !runner.finished { runner.fail("WebKit timed out") }
-        runner.webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkresume")
+        runner.webView.configuration.userContentController.removeScriptMessageHandler(forName: "drawoffer")
         runner.window.close()
         exit(runner.failed ? 1 : 0)
     }

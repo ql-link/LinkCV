@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from linkresume.core.errors import ApiError
-from linkresume.modules.plugin_releases.service import PluginReleaseService
+from drawoffer.core.errors import ApiError
+from drawoffer.modules.plugin_releases.service import PluginReleaseService
 from tests.plugin_release_fakes import FakePluginStorage, build_plugin_zip
 
 ORIGIN = "http://127.0.0.1:5173"

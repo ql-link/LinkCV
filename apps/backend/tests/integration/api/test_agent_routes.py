@@ -13,35 +13,35 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import delete, event, func, select, update
 
-from linkresume.core.config import Settings
-from linkresume.core.database import utc_now
-from linkresume.core.errors import ApiError
-from linkresume.main import create_app
-from linkresume.modules.agent import routes as agent_routes
-from linkresume.modules.agent.models import (
+from drawoffer.core.config import Settings
+from drawoffer.core.database import utc_now
+from drawoffer.core.errors import ApiError
+from drawoffer.main import create_app
+from drawoffer.modules.agent import routes as agent_routes
+from drawoffer.modules.agent.models import (
     AgentMessage,
     AgentRun,
     AgentSession,
     AgentToolCall,
     ResumeChangeProposal,
 )
-from linkresume.modules.agent.pi_client import (
+from drawoffer.modules.agent.pi_client import (
     _conversation_history,
     _current_clarification_answers,
     _finalize,
     stream_pi_run,
 )
-from linkresume.modules.agent.service import create_run
-from linkresume.modules.datasets.models import UserDataset
-from linkresume.modules.identity.models import User
-from linkresume.modules.job_descriptions.models import JobDescription
-from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
-from linkresume.modules.llm.resolver import ASSISTANT_CONVERSATION, validation_fingerprint
+from drawoffer.modules.agent.service import create_run
+from drawoffer.modules.datasets.models import UserDataset
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.job_descriptions.models import JobDescription
+from drawoffer.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
+from drawoffer.modules.llm.resolver import ASSISTANT_CONVERSATION, validation_fingerprint
 from cryptography.fernet import Fernet
 import json
-from linkresume.modules.llm.service import LLMError
-from linkresume.modules.product_events.models import ProductEvent
-from linkresume.modules.resumes.models import (
+from drawoffer.modules.llm.service import LLMError
+from drawoffer.modules.product_events.models import ProductEvent
+from drawoffer.modules.resumes.models import (
     DATASET_SOURCE_TYPE,
     DocumentParseTask,
     Resume,
@@ -97,7 +97,7 @@ def build_app(*, event_emitter=None, with_model=True):
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="agent-routes-test-secret-at-least-32-bytes",
-            linkresume_internal_agent_token=INTERNAL_TOKEN,
+            drawoffer_internal_agent_token=INTERNAL_TOKEN,
             llm_credential_encryption_keys=f"test:{Fernet.generate_key().decode('ascii')}",
         ),
         storage=FakeStorage(),
@@ -707,8 +707,8 @@ def memory_run(app, client, a, b, *, contexts=None, task_refs=None):
 
 
 def test_memory_reference_uses_current_identity_and_freezes_task() -> None:
-    from linkresume.modules.agent.conversation_memory import conversation_memory
-    from linkresume.modules.resumes.models import Resume
+    from drawoffer.modules.agent.conversation_memory import conversation_memory
+    from drawoffer.modules.resumes.models import Resume
 
     app = build_app()
     with TestClient(app) as client:
@@ -803,7 +803,7 @@ def test_memory_selection_respects_explicit_choice_but_can_leave_editor_backgrou
 
 
 def test_memory_rejects_missing_evidence_foreign_session_and_unavailable_owner() -> None:
-    from linkresume.modules.resumes.models import Resume
+    from drawoffer.modules.resumes.models import Resume
 
     app = build_app()
     with TestClient(app) as client:
@@ -1647,8 +1647,8 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
 
 
 def test_revision_supersedes_only_after_replacement_and_is_session_scoped() -> None:
-    from linkresume.modules.agent.pi_client import _revision_prompt
-    from linkresume.modules.agent.service import revision_source
+    from drawoffer.modules.agent.pi_client import _revision_prompt
+    from drawoffer.modules.agent.service import revision_source
 
     app = build_app()
     with TestClient(app) as client:
@@ -2739,8 +2739,8 @@ def test_nine_scoped_proposals_replay_current_content_and_preserve_style() -> No
         result = response.json()["resume"]
         assert result["lock_version"] == 12
         assert result["style"] == manual.json()["resume"]["style"]
-        from linkresume.modules.agent.resume_tools import editor_markdown
-        from linkresume.application.resumes.service import parse_persisted_resume_snapshot
+        from drawoffer.modules.agent.resume_tools import editor_markdown
+        from drawoffer.application.resumes.service import parse_persisted_resume_snapshot
         content = editor_markdown(parse_persisted_resume_snapshot(result["data"], result["style"]).data)
         for index in range(9):
             assert f"技术架构{index}：Java" in content
@@ -2953,7 +2953,7 @@ def test_cancel_does_not_overwrite_a_run_that_completed_while_waiting(
                 other_db.commit()
 
         monkeypatch.setattr(
-            "linkresume.modules.agent.routes.cancel_pi_run", complete_during_cancel
+            "drawoffer.modules.agent.routes.cancel_pi_run", complete_during_cancel
         )
 
         response = client.post(f"/api/agent/runs/{run_id}/cancel")
@@ -3008,7 +3008,7 @@ def test_pi_stream_emits_failure_when_upstream_ends_without_terminal_event(
                 return FakeStreamResponse()
 
         monkeypatch.setattr(
-            "linkresume.modules.agent.pi_client.httpx.AsyncClient",
+            "drawoffer.modules.agent.pi_client.httpx.AsyncClient",
             lambda **_kwargs: FakeHttpClient(),
         )
 
@@ -3105,7 +3105,7 @@ def test_pi_stream_persists_successful_usage_and_assistant_message(
                 return FakeStreamResponse()
 
         monkeypatch.setattr(
-            "linkresume.modules.agent.pi_client.httpx.AsyncClient",
+            "drawoffer.modules.agent.pi_client.httpx.AsyncClient",
             lambda **_kwargs: FakeHttpClient(),
         )
 
@@ -3444,7 +3444,7 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
                 return FakeStreamResponse()
 
         monkeypatch.setattr(
-            "linkresume.modules.agent.pi_client.httpx.AsyncClient",
+            "drawoffer.modules.agent.pi_client.httpx.AsyncClient",
             lambda **_kwargs: FakeHttpClient(),
         )
 
@@ -3557,7 +3557,7 @@ def test_agent_readiness_checks_model_config_and_full_service_chain(
         return_value=SimpleNamespace(plan=SimpleNamespace(protocol_code="openai_responses"))
     )
     check_chain = AsyncMock(return_value={"ready": True, "steering": True})
-    monkeypatch.setattr("linkresume.modules.agent.routes.check_pi_readiness", check_chain)
+    monkeypatch.setattr("drawoffer.modules.agent.routes.check_pi_readiness", check_chain)
     with TestClient(app) as client:
         internal = client.get("/internal/agent/readiness", headers=internal_headers())
         public = client.get("/api/agent/readiness")
@@ -4075,7 +4075,7 @@ def test_hiding_every_conversation_model_reports_not_configured() -> None:
 
 def test_agent_session_delete_removes_stage_events_and_keeps_detached_call_logs() -> None:
     """Without database foreign keys the service deletes stage events and detaches call logs."""
-    from linkresume.modules.agent.models import AgentOperation, AgentStageEvent
+    from drawoffer.modules.agent.models import AgentOperation, AgentStageEvent
 
     app = build_app()
     with TestClient(app) as client:
@@ -4221,8 +4221,8 @@ def test_generic_memory_reads_owned_current_material_and_records_receipt(kind):
 
 @pytest.mark.parametrize("kind", ["user_profile", "resume", "dataset", "job", "application", "interview"])
 def test_generic_memory_checks_latest_version_conflicts_and_owner(kind):
-    from linkresume.modules.interviews.models import JobApplication, InterviewSession
-    from linkresume.modules.identity.models import UserProfile
+    from drawoffer.modules.interviews.models import JobApplication, InterviewSession
+    from drawoffer.modules.identity.models import UserProfile
     app = build_app()
     models = {"user_profile": UserProfile, "resume": Resume, "dataset": UserDataset, "job": JobDescription,
               "application": JobApplication, "interview": InterviewSession}
@@ -4310,8 +4310,8 @@ def test_generic_file_read_detects_body_change_deletion_and_same_task_switch():
 
 
 def test_generic_resume_grant_rolls_back_if_resolution_is_interrupted(monkeypatch):
-    from linkresume.core.errors import ApiError
-    from linkresume.modules.agent import service as agent_service
+    from drawoffer.core.errors import ApiError
+    from drawoffer.modules.agent import service as agent_service
     app = build_app()
     with TestClient(app) as client:
         refs = generic_memory_fixture(app, client)
@@ -4355,7 +4355,7 @@ def test_skill_tool_audit_records_safe_name_and_rejects_arbitrary_path():
 
 
 def test_flat_canonical_range_is_task_bound_and_proposal_confirmation_is_native() -> None:
-    from linkresume.modules.agent.canonical_targets import plain_run
+    from drawoffer.modules.agent.canonical_targets import plain_run
     app = build_app()
     with TestClient(app) as client:
         register(client, 'canonical-range@example.test')

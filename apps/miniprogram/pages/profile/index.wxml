@@ -22,7 +22,7 @@
       <!-- 用户昵称与状态 -->
       <view class="profile-info" wx:if="{{guest}}">
         <view class="name-line">
-          <text class="user-name" hover-class="guest-login-hover" role="button" aria-label="登录或注册 LinkResume" bindtap="goLogin">登录 / 注册 LinkResume</text>
+          <text class="user-name" hover-class="guest-login-hover" role="button" aria-label="登录或注册 DrawOffer" bindtap="goLogin">登录 / 注册 DrawOffer</text>
           <view class="status-pill is-guest">
             <text class="status-dot"></text>
             <text>未登录</text>
@@ -144,7 +144,7 @@
               <text class="setting-label">客户端版本</text>
             </view>
             <view class="setting-action">
-              <text class="info-val is-muted">LinkResume v1.0.0</text>
+              <text class="info-val is-muted">DrawOffer v1.0.0</text>
             </view>
           </view>
         </view>

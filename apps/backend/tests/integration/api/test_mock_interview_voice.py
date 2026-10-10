@@ -8,22 +8,22 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from starlette.websockets import WebSocketDisconnect
 
-from linkresume.core.database import utc_now
-from linkresume.modules.llm.models import (
+from drawoffer.core.database import utc_now
+from drawoffer.modules.llm.models import (
     LLMCallLog,
     LLMModel,
     LLMModelRoute,
     LLMProviderConnection,
     LLMUseCaseRoute,
 )
-from linkresume.modules.llm.resolver import (
+from drawoffer.modules.llm.resolver import (
     SPEECH_TO_TEXT,
     TEXT_TO_SPEECH,
     TRANSCRIPT_CORRECTION,
     validation_fingerprint,
 )
-from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
-from linkresume.modules.speech.gateway import RecognitionEvent, SpeechProviderError, SpeechWord
+from drawoffer.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
+from drawoffer.modules.speech.gateway import RecognitionEvent, SpeechProviderError, SpeechWord
 from tests.integration.api.test_interviews import register
 from tests.integration.api.test_mock_interviews import (
     FakeStorage,
@@ -84,7 +84,7 @@ class CorrectingGateway(ScriptedGateway):
     async def complete(self, *, model, messages, api_base, api_key, protocol_code="openai_chat"):
         system = self._system(messages)
         if "语音识别校对员" in system:
-            from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
+            from drawoffer.modules.llm.gateway import GatewayResult, GatewayUsage
 
             payload = self.corrections.pop(0)
             return GatewayResult(content=json.dumps(payload, ensure_ascii=False),
@@ -133,7 +133,7 @@ def configure_speech(app) -> None:
 
 def voice_app(gateway=None, *, speech: FakeSpeech | None = None, storage: FakeStorage | None = None, configure=True):
     speech = speech or FakeSpeech()
-    import linkresume.main as main_module
+    import drawoffer.main as main_module
 
     original = main_module.create_app
 

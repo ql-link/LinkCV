@@ -1,5 +1,5 @@
 import { t, useLocale } from "@/i18n";
-import brandWordmark from "@/assets/linkresume-wordmark.png";
+import brandWordmark from "@/assets/drawoffer-wordmark.png";
 import { navigateTo } from "../../routing";
 import { MiniResume } from "../../v3/art";
 import { Icon, type V3IconName } from "../../v3/Icon";
@@ -62,7 +62,7 @@ export function NotFoundPage() {
     <main className="v3 not-found-page" data-ui-theme="light">
       <div className="not-found-window-card">
         <header className="not-found-head">
-          <a className="not-found-brand" href="/" aria-label={t("LinkResume 首页")}>
+          <a className="not-found-brand" href="/" aria-label={t("DrawOffer 首页")}>
             <img src={brandWordmark} alt="" aria-hidden="true" />
           </a>
           <a className="not-found-login" href="/login">{t("登录")}</a>
@@ -75,10 +75,10 @@ export function NotFoundPage() {
           />
           <p className="not-found-extra">
             <span>{t("第一次来？")}</span>
-            <a href="/">{t("了解 LinkResume")}</a>
+            <a href="/">{t("了解 DrawOffer")}</a>
           </p>
         </div>
-        <footer className="not-found-foot">{t("© 2026 LinkResume · 让每一份简历都被认真对待")}</footer>
+        <footer className="not-found-foot">{t("© 2026 DrawOffer · 让每一份简历都被认真对待")}</footer>
       </div>
     </main>
   );

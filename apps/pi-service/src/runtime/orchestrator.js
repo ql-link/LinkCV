@@ -8,7 +8,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-import { createLinkResumeClient } from "../tools/linkresume-client.js";
+import { createDrawOfferClient } from "../tools/drawoffer-client.js";
 import { createSteeringHandle } from "../steering.js";
 import {
   clarifyInstruction,
@@ -133,8 +133,8 @@ export async function executeAgentRun({
 }) {
   const emit = (type, data) => rawEmit(type, { ...data,
     ...(userSequenceNo == null ? {} : { userSequenceNo }) });
-  const client = createLinkResumeClient(config, runId, signal, userSequenceNo);
-  const meteringClient = createLinkResumeClient(config, runId, new AbortController().signal);
+  const client = createDrawOfferClient(config, runId, signal, userSequenceNo);
+  const meteringClient = createDrawOfferClient(config, runId, new AbortController().signal);
   const runtimeConfig = await client.runtimeConfig();
   let intentDecision = await loadIntentDecision(client);
   const routeConfigs = runtimeConfig.routes?.length ? runtimeConfig.routes : [runtimeConfig];

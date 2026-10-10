@@ -23,13 +23,13 @@ if [[ ! -f "${source_archive}" ]]; then
   exit 5
 fi
 
-image="linkresume"
-pi_image="linkresume-pi"
+image="drawoffer"
+pi_image="drawoffer-pi"
 tag="dev-${commit_short}-b${build_number}"
 dev_root="/opt/tolink/dev"
 deploy_dir="${dev_root}/linkresume"
 work_root="${dev_root}/jenkins/workspaces"
-build_dir="${work_root}/linkresume-${build_number}"
+build_dir="${work_root}/drawoffer-${build_number}"
 base_env="${deploy_dir}/.env.development"
 secret_env="${deploy_dir}/.env.development.local"
 compose_file="${deploy_dir}/deploy/docker-compose.development.yml"
@@ -37,7 +37,7 @@ docker_network="tolink-dev-net"
 http_port="18002"
 
 cleanup() {
-  if [[ "${build_dir}" == "${work_root}/linkresume-${build_number}" ]]; then
+  if [[ "${build_dir}" == "${work_root}/drawoffer-${build_number}" ]]; then
     rm -rf -- "${build_dir}"
   fi
 }
@@ -83,8 +83,8 @@ docker run --rm \
   -e APP_ENV=development \
   "${image}:${tag}" \
   python -c '
-from linkresume.core.config import Settings
-from linkresume.modules.identity.capabilities import password_login_enabled, wechat_login_enabled
+from drawoffer.core.config import Settings
+from drawoffer.modules.identity.capabilities import password_login_enabled, wechat_login_enabled
 settings = Settings()
 if not password_login_enabled(settings) or wechat_login_enabled(settings):
     raise SystemExit("Development identity capabilities are inconsistent")
@@ -109,7 +109,10 @@ docker run --rm \
 # Stop every process that can read or write the old AgentSession schema before
 # applying forward-only migrations.  A failed migration intentionally leaves
 # the old application stopped until an operator verifies schema compatibility.
-for runtime_container in linkresume-dev linkresume-worker-dev linkresume-pi-dev; do
+# Includes the pre-rename LinkResume container names for the first DrawOffer deploy.
+for runtime_container in \
+  drawoffer-dev drawoffer-worker-dev drawoffer-pi-dev \
+  linkresume-dev linkresume-worker-dev linkresume-pi-dev; do
   if docker inspect "${runtime_container}" >/dev/null 2>&1; then
     docker stop "${runtime_container}" >/dev/null
   fi
@@ -129,16 +132,16 @@ docker run --rm \
 
 TAG="${tag}" \
 PI_TAG="${tag}" \
-LINKRESUME_ENV_FILE="${base_env}" \
-LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
-LINKRESUME_DOCKER_NETWORK="${docker_network}" \
-LINKRESUME_DEV_HTTP_PORT="${http_port}" \
+DRAWOFFER_ENV_FILE="${base_env}" \
+DRAWOFFER_SECRET_ENV_FILE="${secret_env}" \
+DRAWOFFER_DOCKER_NETWORK="${docker_network}" \
+DRAWOFFER_DEV_HTTP_PORT="${http_port}" \
   docker compose -f "${compose_file}" up -d --remove-orphans
 
 for _ in $(seq 1 30); do
-  health_status="$(docker inspect --format='{{.State.Health.Status}}' linkresume-dev 2>/dev/null || true)"
-  pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkresume-pi-dev 2>/dev/null || true)"
-  promtail_status="$(docker inspect --format='{{.State.Status}}' linkresume-dev-promtail 2>/dev/null || true)"
+  health_status="$(docker inspect --format='{{.State.Health.Status}}' drawoffer-dev 2>/dev/null || true)"
+  pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' drawoffer-pi-dev 2>/dev/null || true)"
+  promtail_status="$(docker inspect --format='{{.State.Status}}' drawoffer-dev-promtail 2>/dev/null || true)"
   if [[ "${health_status}" == "healthy" ]] && [[ "${pi_health_status}" == "healthy" ]] && [[ "${promtail_status}" == "running" ]] && \
     curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null; then
     echo "Container health: ${health_status}"
@@ -158,10 +161,10 @@ done
 
 TAG="${tag}" \
 PI_TAG="${tag}" \
-LINKRESUME_ENV_FILE="${base_env}" \
-LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
-LINKRESUME_DOCKER_NETWORK="${docker_network}" \
-LINKRESUME_DEV_HTTP_PORT="${http_port}" \
-  docker compose -f "${compose_file}" logs --tail=100 linkresume linkresume-pi promtail || true
+DRAWOFFER_ENV_FILE="${base_env}" \
+DRAWOFFER_SECRET_ENV_FILE="${secret_env}" \
+DRAWOFFER_DOCKER_NETWORK="${docker_network}" \
+DRAWOFFER_DEV_HTTP_PORT="${http_port}" \
+  docker compose -f "${compose_file}" logs --tail=100 drawoffer drawoffer-pi promtail || true
 echo "Development health check timed out." >&2
 exit 12

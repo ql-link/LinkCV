@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from linkresume.application.mock_interviews.outputs import ActionItem
-from linkresume.application.mock_interviews.scoring import legacy_report_fields, normalize_actions, report_metrics
+from drawoffer.application.mock_interviews.outputs import ActionItem
+from drawoffer.application.mock_interviews.scoring import legacy_report_fields, normalize_actions, report_metrics
 
 
 def _question(sequence_no, number, score, *, signals=(), expression="hit", intro=False, skipped=False,

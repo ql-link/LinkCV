@@ -6,8 +6,8 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from linkresume.application.interviews.written_import_service import ExtractedQuestion, ExtractedQuestions
-from linkresume.modules.llm.resolver import JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION
+from drawoffer.application.interviews.written_import_service import ExtractedQuestion, ExtractedQuestions
+from drawoffer.modules.llm.resolver import JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION
 from tests.integration.api.test_interviews import (
     FakeStorage,
     build_app,

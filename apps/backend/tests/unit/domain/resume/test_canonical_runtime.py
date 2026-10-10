@@ -1,6 +1,6 @@
 import pytest
 
-from linkresume.domain.resume import (
+from drawoffer.domain.resume import (
     CanonicalCompositionError,
     ParsedSourceBlock,
     SparseResumeAnnotations,

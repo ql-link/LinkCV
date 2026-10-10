@@ -4,8 +4,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pypdfium2 as pdfium
 import pytest
 
-from linkresume.core.errors import ApiError
-from linkresume.services.dataset_upload_service import validate_dataset_file
+from drawoffer.core.errors import ApiError
+from drawoffer.services.dataset_upload_service import validate_dataset_file
 
 
 def valid_pdf() -> bytes:

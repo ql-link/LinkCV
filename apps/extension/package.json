@@ -1,5 +1,5 @@
 {
-  "name": "@linkresume/browser-extension",
+  "name": "@drawoffer/browser-extension",
   "version": "0.1.7",
   "private": true,
   "type": "module",

@@ -2,11 +2,11 @@ from pydantic import SecretStr
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.config import Settings
-from linkresume.main import create_app
-from linkresume.modules.identity.models import User
-from linkresume.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
-from linkresume.modules.resumes.models import ResumeTemplate
+from drawoffer.core.config import Settings
+from drawoffer.main import create_app
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
+from drawoffer.modules.resumes.models import ResumeTemplate
 from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import canonical_template_payload
 
@@ -133,7 +133,8 @@ def test_pdf_uses_current_content_and_rejects_stale_lock() -> None:
         )
         assert downloaded.status_code == 200
         assert downloaded.content.startswith(b"%PDF-")
-        assert downloaded.headers["x-linkresume-lock-version"] == str(manual["id"])
+        assert downloaded.headers["x-drawoffer-lock-version"] == str(manual["id"])
+        assert downloaded.headers["x-linkresume-lock-version"] == downloaded.headers["x-drawoffer-lock-version"]
         assert downloaded.headers["cache-control"] == "private, no-store"
         assert app.state.resume_pdf_renderer.payloads[-1]["data"]["identity"]["name"]["value"] == "尚未手动保存的草稿"
         assert app.state.resume_pdf_renderer.payloads[-1]["style"]["portable"]["smart_one_page"] is True
@@ -146,7 +147,8 @@ def test_pdf_uses_current_content_and_rejects_stale_lock() -> None:
         assert preview.status_code == 200
         assert preview.headers["content-type"] == "image/png"
         assert preview.content.startswith(b"\x89PNG\r\n\x1a\n")
-        assert preview.headers["x-linkresume-lock-version"] == str(manual["id"])
+        assert preview.headers["x-drawoffer-lock-version"] == str(manual["id"])
+        assert preview.headers["x-linkresume-lock-version"] == preview.headers["x-drawoffer-lock-version"]
         assert preview.headers["cache-control"] == "private, no-store"
         assert app.state.resume_preview_renderer.pdf_inputs[-1].startswith(b"%PDF-")
 

@@ -90,14 +90,14 @@ def test_deployment_gate_reports_agent_readiness_without_requiring_a_model(
     logs_environment = script[logs_position - 260 : logs_position]
     assert 'TAG="${tag}"' in logs_environment
     assert 'PI_TAG="${tag}"' in logs_environment
-    assert 'LINKRESUME_ENV_FILE="${base_env}"' in logs_environment
-    assert 'LINKRESUME_SECRET_ENV_FILE="${secret_env}"' in logs_environment
+    assert 'DRAWOFFER_ENV_FILE="${base_env}"' in logs_environment
+    assert 'DRAWOFFER_SECRET_ENV_FILE="${secret_env}"' in logs_environment
 
 
 def test_sql_migration_executor_rejects_database_scope_changes(tmp_path: Path) -> None:
     module = load_module(
-        "linkresume_migration_sql_test",
-        REPO_ROOT / "apps/backend/src/linkresume/core/migration_sql.py",
+        "drawoffer_migration_sql_test",
+        REPO_ROOT / "apps/backend/src/drawoffer/core/migration_sql.py",
     )
     sql_file = tmp_path / "unsafe.up.sql"
     sql_file.write_text("USE other_database;", encoding="utf-8")
@@ -108,8 +108,8 @@ def test_sql_migration_executor_rejects_database_scope_changes(tmp_path: Path) -
 
 def test_sql_migration_executor_keeps_json_colons_literal(tmp_path: Path) -> None:
     module = load_module(
-        "linkresume_migration_sql_json_test",
-        REPO_ROOT / "apps/backend/src/linkresume/core/migration_sql.py",
+        "drawoffer_migration_sql_json_test",
+        REPO_ROOT / "apps/backend/src/drawoffer/core/migration_sql.py",
     )
     sql_file = tmp_path / "json.up.sql"
     sql_file.write_text(
@@ -144,8 +144,8 @@ def test_sql_migration_executor_keeps_percent_literals_unparameterized(
     tmp_path: Path,
 ) -> None:
     module = load_module(
-        "linkresume_migration_sql_percent_test",
-        REPO_ROOT / "apps/backend/src/linkresume/core/migration_sql.py",
+        "drawoffer_migration_sql_percent_test",
+        REPO_ROOT / "apps/backend/src/drawoffer/core/migration_sql.py",
     )
     sql_file = tmp_path / "percent.up.sql"
     sql_file.write_text(
@@ -178,8 +178,8 @@ def test_sql_migration_executor_keeps_percent_literals_unparameterized(
 
 def test_sql_migration_executor_strips_utf8_bom(tmp_path: Path) -> None:
     module = load_module(
-        "linkresume_migration_sql_bom_test",
-        REPO_ROOT / "apps/backend/src/linkresume/core/migration_sql.py",
+        "drawoffer_migration_sql_bom_test",
+        REPO_ROOT / "apps/backend/src/drawoffer/core/migration_sql.py",
     )
     sql_file = tmp_path / "bom.up.sql"
     sql_file.write_text(
@@ -208,7 +208,7 @@ def test_sql_migration_executor_strips_utf8_bom(tmp_path: Path) -> None:
 
 def test_sql_revision_creates_only_upgrade_file(tmp_path: Path) -> None:
     module = load_module(
-        "linkresume_create_sql_revision_test",
+        "drawoffer_create_sql_revision_test",
         REPO_ROOT / "scripts/db/create_sql_revision.py",
     )
     module.create_up_sql_file("0002", "add example", tmp_path)
@@ -219,7 +219,7 @@ def test_sql_revision_creates_only_upgrade_file(tmp_path: Path) -> None:
 
 def test_next_sql_revision_uses_zero_padded_sequence(tmp_path: Path) -> None:
     module = load_module(
-        "linkresume_create_sql_revision_sequence_test",
+        "drawoffer_create_sql_revision_sequence_test",
         REPO_ROOT / "scripts/db/create_sql_revision.py",
     )
 
@@ -230,7 +230,7 @@ def test_next_sql_revision_uses_zero_padded_sequence(tmp_path: Path) -> None:
 
 def test_next_sql_revision_rejects_mixed_random_ids(tmp_path: Path) -> None:
     module = load_module(
-        "linkresume_create_sql_revision_invalid_sequence_test",
+        "drawoffer_create_sql_revision_invalid_sequence_test",
         REPO_ROOT / "scripts/db/create_sql_revision.py",
     )
     (tmp_path / "2b158fb5d8b6_random.py").write_text("revision", encoding="utf-8")
@@ -318,12 +318,12 @@ def test_all_migrations_are_forward_only() -> None:
             continue
         revision_text = revision.read_text(encoding="utf-8")
         assert ".down.sql" not in revision_text
-        assert "LinkResume database migrations are forward-only" in revision_text
+        assert "DrawOffer database migrations are forward-only" in revision_text
 
 
-def test_database_initializer_rejects_any_schema_except_linkresume() -> None:
+def test_database_initializer_rejects_any_schema_except_drawoffer() -> None:
     module = load_module(
-        "linkresume_init_mysql_test", REPO_ROOT / "scripts/db/init_mysql.py"
+        "drawoffer_init_mysql_test", REPO_ROOT / "scripts/db/init_mysql.py"
     )
 
     with pytest.raises(ValueError, match="target must be 'linkresume'"):
@@ -334,7 +334,7 @@ def test_database_initializer_rejects_any_schema_except_linkresume() -> None:
 
 def test_database_initializer_summary_never_contains_password() -> None:
     module = load_module(
-        "linkresume_init_mysql_summary_test", REPO_ROOT / "scripts/db/init_mysql.py"
+        "drawoffer_init_mysql_summary_test", REPO_ROOT / "scripts/db/init_mysql.py"
     )
 
     target = module.validated_target(
@@ -347,7 +347,7 @@ def test_database_initializer_summary_never_contains_password() -> None:
 
 def test_database_initializer_reports_only_mysql_error_code() -> None:
     module = load_module(
-        "linkresume_init_mysql_error_test", REPO_ROOT / "scripts/db/init_mysql.py"
+        "drawoffer_init_mysql_error_test", REPO_ROOT / "scripts/db/init_mysql.py"
     )
     error = module.OperationalError(
         "statement",
@@ -361,7 +361,7 @@ def test_database_initializer_reports_only_mysql_error_code() -> None:
 
 def test_release_runner_validates_all_expected_target_fields() -> None:
     module = load_module(
-        "linkresume_run_alembic_test", REPO_ROOT / "scripts/release/run_alembic.py"
+        "drawoffer_run_alembic_test", REPO_ROOT / "scripts/release/run_alembic.py"
     )
     expected = module.ExpectedTarget(
         app_env="development",
@@ -384,7 +384,7 @@ def test_release_runner_validates_all_expected_target_fields() -> None:
 
 def test_release_runner_fails_before_migration_on_target_mismatch() -> None:
     module = load_module(
-        "linkresume_run_alembic_mismatch_test",
+        "drawoffer_run_alembic_mismatch_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     expected = module.ExpectedTarget(
@@ -421,7 +421,7 @@ def test_release_preflight_keeps_old_service_running_when_retirement_is_blocked(
     current: str, table: str, row_count: int
 ) -> None:
     module = load_module(
-        "linkresume_run_alembic_retirement_test",
+        "drawoffer_run_alembic_retirement_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -444,7 +444,7 @@ def test_release_preflight_keeps_old_service_running_when_retirement_is_blocked(
 
 def test_release_runner_rejects_agent_tables_ahead_of_alembic_revision() -> None:
     module = load_module(
-        "linkresume_run_alembic_table_drift_test",
+        "drawoffer_run_alembic_table_drift_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -467,7 +467,7 @@ def test_release_runner_rejects_agent_tables_ahead_of_alembic_revision() -> None
 
 def test_release_runner_rejects_missing_tables_for_applied_revision() -> None:
     module = load_module(
-        "linkresume_run_alembic_missing_table_test",
+        "drawoffer_run_alembic_missing_table_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -490,7 +490,7 @@ def test_release_runner_rejects_missing_tables_for_applied_revision() -> None:
 
 def test_release_runner_rejects_scoped_columns_ahead_of_revision() -> None:
     module = load_module(
-        "linkresume_run_alembic_column_drift_test",
+        "drawoffer_run_alembic_column_drift_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -521,7 +521,7 @@ def test_release_runner_rejects_scoped_columns_ahead_of_revision() -> None:
 
 def test_release_runner_accepts_aligned_agent_schema() -> None:
     module = load_module(
-        "linkresume_run_alembic_aligned_test",
+        "drawoffer_run_alembic_aligned_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -568,7 +568,7 @@ def test_release_runner_accepts_aligned_agent_schema() -> None:
 
 def test_release_runner_rejects_clarification_columns_ahead_of_revision() -> None:
     module = load_module(
-        "linkresume_run_alembic_clarification_drift_test",
+        "drawoffer_run_alembic_clarification_drift_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -611,7 +611,7 @@ def test_release_runner_rejects_clarification_columns_ahead_of_revision() -> Non
 
 def test_release_runner_rejects_job_archive_column_still_present_after_0034() -> None:
     module = load_module(
-        "linkresume_run_alembic_removed_column_applied_test",
+        "drawoffer_run_alembic_removed_column_applied_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -641,7 +641,7 @@ def test_release_runner_rejects_job_archive_column_still_present_after_0034() ->
 
 def test_release_runner_rejects_job_archive_column_removed_before_0034() -> None:
     module = load_module(
-        "linkresume_run_alembic_removed_column_ahead_test",
+        "drawoffer_run_alembic_removed_column_ahead_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -668,7 +668,7 @@ def test_release_runner_rejects_job_archive_column_removed_before_0034() -> None
 
 def test_release_runner_rejects_agent_resume_binding_still_present_after_0065() -> None:
     module = load_module(
-        "linkresume_run_alembic_agent_binding_applied_test",
+        "drawoffer_run_alembic_agent_binding_applied_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -698,7 +698,7 @@ def test_release_runner_rejects_agent_resume_binding_still_present_after_0065() 
 
 def test_release_runner_rejects_agent_resume_binding_removed_before_0065() -> None:
     module = load_module(
-        "linkresume_run_alembic_agent_binding_ahead_test",
+        "drawoffer_run_alembic_agent_binding_ahead_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -725,7 +725,7 @@ def test_release_runner_rejects_agent_resume_binding_removed_before_0065() -> No
 
 def test_release_runner_rejects_agent_resume_index_still_present_after_0065() -> None:
     module = load_module(
-        "linkresume_run_alembic_agent_index_applied_test",
+        "drawoffer_run_alembic_agent_index_applied_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -757,7 +757,7 @@ def test_release_runner_rejects_agent_resume_index_still_present_after_0065() ->
 
 def test_release_runner_rejects_agent_resume_index_removed_before_0065() -> None:
     module = load_module(
-        "linkresume_run_alembic_agent_index_ahead_test",
+        "drawoffer_run_alembic_agent_index_ahead_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -788,7 +788,7 @@ def test_release_runner_rejects_agent_resume_index_removed_before_0065() -> None
 
 def test_release_runner_rejects_missing_profile_target_column_after_0051() -> None:
     module = load_module(
-        "linkresume_run_alembic_profile_missing_target_test",
+        "drawoffer_run_alembic_profile_missing_target_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -817,7 +817,7 @@ def test_release_runner_rejects_missing_profile_target_column_after_0051() -> No
 
 def test_release_runner_rejects_legacy_profile_column_after_0051() -> None:
     module = load_module(
-        "linkresume_run_alembic_profile_legacy_column_test",
+        "drawoffer_run_alembic_profile_legacy_column_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -846,7 +846,7 @@ def test_release_runner_rejects_legacy_profile_column_after_0051() -> None:
 
 def test_release_runner_allows_complete_target_profile_before_0051() -> None:
     module = load_module(
-        "linkresume_run_alembic_profile_target_noop_test",
+        "drawoffer_run_alembic_profile_target_noop_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -873,7 +873,7 @@ def test_release_runner_allows_complete_target_profile_before_0051() -> None:
 
 def test_release_runner_rejects_partial_profile_before_0051() -> None:
     module = load_module(
-        "linkresume_run_alembic_profile_partial_test",
+        "drawoffer_run_alembic_profile_partial_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}

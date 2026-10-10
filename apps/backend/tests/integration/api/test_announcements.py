@@ -8,10 +8,10 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
-from linkresume.core.config import Settings
-from linkresume.main import create_app
-from linkresume.modules.announcements.models import Announcement
-from linkresume.modules.identity.models import User
+from drawoffer.core.config import Settings
+from drawoffer.main import create_app
+from drawoffer.modules.announcements.models import Announcement
+from drawoffer.modules.identity.models import User
 from tests.fakes import FakeRedis
 
 
@@ -85,7 +85,7 @@ def user_client(app, email: str = "zhangsan@example.test") -> TestClient:
 
 
 def create(admin: TestClient, **fields) -> dict:
-    payload = {"title": "LinkResume v2.4 上线", "body": "新版编辑器已上线。\n支持换行。", **fields}
+    payload = {"title": "DrawOffer v2.4 上线", "body": "新版编辑器已上线。\n支持换行。", **fields}
     response = admin.post("/api/admin/announcements", json=payload)
     assert response.status_code == 201, response.text
     return response.json()["announcement"]
@@ -287,7 +287,7 @@ def test_read_all_clears_unread_per_user_and_is_idempotent() -> None:
 
 
 def test_read_through_time_decides_what_counts_as_new() -> None:
-    from linkresume.modules.announcements import service
+    from drawoffer.modules.announcements import service
 
     app, _ = build_app()
     admin = admin_client(app)
@@ -393,7 +393,7 @@ def test_concurrent_publish_changes_state_only_once() -> None:
     app, _ = build_app()
     admin = admin_client(app)
     row = create(admin)
-    from linkresume.modules.announcements import service
+    from drawoffer.modules.announcements import service
 
     with app.state.session_factory() as db:
         admin_user = db.scalar(select(User).where(User.email == "admin@example.test"))

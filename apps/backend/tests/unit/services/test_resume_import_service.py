@@ -7,11 +7,11 @@ import pytest
 import pypdfium2 as pdfium
 from PIL import Image
 
-from linkresume.domain.document_conversion import DocumentMarkdownResult, PdfLayoutBlock
-from linkresume.domain.resume import SparseResumeAnnotations
-from linkresume.domain.resume.models import SparseAnnotation
-from linkresume.domain.resume_extraction import ResumeExtractionDraft
-from linkresume.services.resume_import_service import (
+from drawoffer.domain.document_conversion import DocumentMarkdownResult, PdfLayoutBlock
+from drawoffer.domain.resume import SparseResumeAnnotations
+from drawoffer.domain.resume.models import SparseAnnotation
+from drawoffer.domain.resume_extraction import ResumeExtractionDraft
+from drawoffer.services.resume_import_service import (
     ResumeImportFailure,
     ResumeImportService,
     safe_import_filename,

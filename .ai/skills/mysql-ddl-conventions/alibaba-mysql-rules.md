@@ -1,4 +1,4 @@
-# 阿里巴巴 MySQL 规约（LinkResume 适用版）
+# 阿里巴巴 MySQL 规约（DrawOffer 适用版）
 
 依据《阿里巴巴 Java 开发手册》MySQL 数据库章节（嵩山版、黄山版）整理。手册按约束力分为：
 
@@ -6,7 +6,7 @@
 - **【推荐】**：默认遵守，偏离要写明理由；
 - **【参考】**：设计时参考。
 
-手册面向 Java/MyBatis，只与 Java 语言或 iBATIS/MyBatis 写法相关的条目没有收录。“项目落地”是 LinkResume 对条文的具体解释，与条文同等执行。
+手册面向 Java/MyBatis，只与 Java 语言或 iBATIS/MyBatis 写法相关的条目没有收录。“项目落地”是 DrawOffer 对条文的具体解释，与条文同等执行。
 
 ## 适用范围
 

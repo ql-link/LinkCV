@@ -17,7 +17,7 @@ DESIGN_INPUTS = (
 
 def run_check(repo_root: Path) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
-    env["LINKRESUME_REPO_ROOT"] = str(repo_root)
+    env["DRAWOFFER_REPO_ROOT"] = str(repo_root)
     return subprocess.run(
         [sys.executable, str(DESIGN_CHECK)],
         cwd=REPO_ROOT,

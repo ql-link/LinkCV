@@ -22,20 +22,20 @@ from pathlib import Path
 import sqlalchemy as sa
 from alembic import op
 
-from linkresume.core.migration_sql import execute_sql_file
-from linkresume.domain.resume import (
+from drawoffer.core.migration_sql import execute_sql_file
+from drawoffer.domain.resume import (
     CanonicalResumeDocument,
     ResumePresentation,
     TemplateDefinition,
 )
-from linkresume.domain.resume.legacy_cutover import (
+from drawoffer.domain.resume.legacy_cutover import (
     blank_canonical_document,
     convert_legacy_document,
     convert_legacy_template,
     presentation_for_legacy,
 )
-from linkresume.domain.resume_snapshot import parse_resume_snapshot
-from linkresume.domain.resume_style import default_resume_style
+from drawoffer.domain.resume_snapshot import parse_resume_snapshot
+from drawoffer.domain.resume_style import default_resume_style
 
 revision: str = "0047"
 down_revision: str | None = "0046"

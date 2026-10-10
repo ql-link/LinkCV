@@ -17,22 +17,22 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
-from linkresume.application.resumes.service import (
+from drawoffer.application.resumes.service import (
     ResumeTitleConflict,
     create_resume_from_template,
 )
-from linkresume.core.database import utc_now
-from linkresume.core.errors import ApiError
-from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition
-from linkresume.domain.resume_snapshot import parse_resume_snapshot
-from linkresume.modules.agent.models import AgentRun, ResumeChangeProposal
-from linkresume.modules.agent.service import (
+from drawoffer.core.database import utc_now
+from drawoffer.core.errors import ApiError
+from drawoffer.domain.resume import CanonicalResumeDocument, TemplateDefinition
+from drawoffer.domain.resume_snapshot import parse_resume_snapshot
+from drawoffer.modules.agent.models import AgentRun, ResumeChangeProposal
+from drawoffer.modules.agent.service import (
     create_proposal,
     create_session,
     delete_resume_agent_data,
     reject_proposal,
 )
-from linkresume.modules.resumes.models import Resume
+from drawoffer.modules.resumes.models import Resume
 from tests.legacy_models import ResumeVersion
 
 # Historical migration tests inspect the schema as it was before the 0111-0115
@@ -101,15 +101,15 @@ def editorial_template_keys() -> set[str]:
 
 
 def migration_test_url() -> str:
-    raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
+    raw = os.environ.get("DRAWOFFER_TEST_MYSQL_URL")
     if not raw:
         pytest.skip(
-            "LINKRESUME_TEST_MYSQL_URL is required for destructive MySQL migration tests"
+            "DRAWOFFER_TEST_MYSQL_URL is required for destructive MySQL migration tests"
         )
     url = make_url(raw)
     if url.database != "linkresume" or url.host not in {"127.0.0.1", "localhost"}:
         pytest.fail(
-            "LINKRESUME_TEST_MYSQL_URL must target a local, disposable database named linkresume"
+            "DRAWOFFER_TEST_MYSQL_URL must target a local, disposable database named linkresume"
         )
     return raw
 
@@ -119,7 +119,7 @@ TEMPLATE_CATALOG_HEAD = "0082"
 
 def seed_pre_0082_resume(*, db, user_id, title, template_id):
     """Seed historical schemas without using the newer runtime Resume mapper."""
-    from linkresume.application.resumes.service import parse_persisted_template_snapshot, presentation_from_template
+    from drawoffer.application.resumes.service import parse_persisted_template_snapshot, presentation_from_template
 
     row = db.execute(text("SELECT data_json, style_json FROM resume_templates WHERE id=:id"), {"id": template_id}).one()
     decode = lambda value: json.loads(value) if isinstance(value, str) else value
@@ -186,7 +186,7 @@ def invoke_alembic(
         {
             "APP_ENV": "development",
             "DATABASE_URL": database_url,
-            "LINKRESUME_ENV_FILE": str(REPO_ROOT / ".env.nonexistent-migration-test"),
+            "DRAWOFFER_ENV_FILE": str(REPO_ROOT / ".env.nonexistent-migration-test"),
         }
     )
     return subprocess.run(
@@ -222,9 +222,9 @@ def reset_test_database_to_base(database_url: str) -> None:
 
 
 def test_mysql_0075_retires_only_legacy_templates_and_preserves_resumes() -> None:
-    from linkresume.application.resumes.service import ResumeTemplateUnavailable
-    from linkresume.core.migration_sql import execute_sql_file
-    from linkresume.modules.resumes.template_routes import list_templates
+    from drawoffer.application.resumes.service import ResumeTemplateUnavailable
+    from drawoffer.core.migration_sql import execute_sql_file
+    from drawoffer.modules.resumes.template_routes import list_templates
 
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
@@ -286,7 +286,7 @@ def test_mysql_0075_retires_only_legacy_templates_and_preserves_resumes() -> Non
 
 
 def test_mysql_0067_refresh_preserves_custom_templates() -> None:
-    from linkresume.core.migration_sql import execute_sql_file
+    from drawoffer.core.migration_sql import execute_sql_file
 
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
@@ -325,7 +325,7 @@ def test_mysql_0067_refresh_preserves_custom_templates() -> None:
     ("0081", "0080", 85, "featured", FEATURED_KEYS, "featured-classic-business-cn"),
 ])
 def test_mysql_catalog_creation_and_conflict_guard(revision, previous, count, prefix, keys, first_key) -> None:
-    from linkresume.core.migration_sql import execute_sql_file
+    from drawoffer.core.migration_sql import execute_sql_file
 
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
@@ -4463,9 +4463,9 @@ def test_mysql_0117_normalizes_builtin_sample_names_without_touching_user_conten
     from copy import deepcopy
     import re
 
-    from linkresume.core.migration_sql import execute_sql_file
-    from linkresume.modules.identity.models import User
-    from linkresume.modules.resumes.models import ResumeTemplate
+    from drawoffer.core.migration_sql import execute_sql_file
+    from drawoffer.modules.identity.models import User
+    from drawoffer.modules.resumes.models import ResumeTemplate
 
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)

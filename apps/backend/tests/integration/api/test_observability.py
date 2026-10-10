@@ -4,11 +4,11 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.config import Settings
-from linkresume.main import create_app
-from linkresume.modules.identity.models import User
-from linkresume.modules.observability.loki import LokiUnavailableError
-from linkresume.modules.resumes.models import ResumeTemplate
+from drawoffer.core.config import Settings
+from drawoffer.main import create_app
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.observability.loki import LokiUnavailableError
+from drawoffer.modules.resumes.models import ResumeTemplate
 from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import canonical_template_payload
 
@@ -74,7 +74,7 @@ class FakeLoki:
                     "service": "linkresume",
                     "environment": "test",
                     "source": "backend",
-                    "logger": "linkresume.test",
+                    "logger": "drawoffer.test",
                     "message": "test event",
                 }
             ],

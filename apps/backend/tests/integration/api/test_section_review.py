@@ -7,18 +7,18 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
-from linkresume.core.config import Settings
-from linkresume.core.database import utc_now
-from linkresume.main import create_app
-from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
-from linkresume.modules.llm.models import (
+from drawoffer.core.config import Settings
+from drawoffer.core.database import utc_now
+from drawoffer.main import create_app
+from drawoffer.modules.llm.gateway import GatewayResult, GatewayUsage
+from drawoffer.modules.llm.models import (
     LLMModel,
     LLMModelRoute,
     LLMProviderConnection,
     LLMUseCaseRoute,
 )
-from linkresume.modules.llm.resolver import SECTION_REVIEW, validation_fingerprint
-from linkresume.modules.resumes.models import ResumeTemplate
+from drawoffer.modules.llm.resolver import SECTION_REVIEW, validation_fingerprint
+from drawoffer.modules.resumes.models import ResumeTemplate
 from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
 from tests.integration.api.test_interviews import FakeStorage, create_job, register

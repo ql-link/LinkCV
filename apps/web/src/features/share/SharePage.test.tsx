@@ -124,14 +124,14 @@ describe("SharePage", () => {
     expect(loading.closest('[data-ui-theme="light"]')).toBeInTheDocument();
   });
 
-  it("成功时展示 linkresume 品牌、分享者与脱敏简历内容", async () => {
+  it("成功时展示 DrawOffer 品牌、分享者与脱敏简历内容", async () => {
     mockedFetch.mockResolvedValue(publicPayload);
     render(<SharePage token="token_123" />);
 
-    await waitFor(() => expect(screen.getByLabelText("linkresume")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText("DrawOffer")).toBeInTheDocument());
     expect(screen.getByRole("main")).toHaveAttribute("data-ui-theme", "light");
     // 品牌栏：品牌链接回到公开首页；说明里是分享者昵称 + 有效期
-    expect(screen.getByRole("link", { name: "linkresume" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "DrawOffer" })).toHaveAttribute("href", "/");
     expect(screen.getByText("公开分享 · 长期有效")).toBeInTheDocument();
     // 简历没填 headline：资料卡副标题显示分享者昵称
     expect(screen.getByText("由 于晏 分享")).toBeInTheDocument();
@@ -144,7 +144,7 @@ describe("SharePage", () => {
     expect(screen.queryByText("举报")).not.toBeInTheDocument();
     expect(screen.queryByText("在看机会")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /免费试试/ })).toHaveAttribute("href", "/");
-    expect(screen.queryByText("由 linkresume 生成")).not.toBeInTheDocument();
+    expect(screen.queryByText("由 DrawOffer 生成")).not.toBeInTheDocument();
     // 默认简历内容含姓名「张三」；仅渲染正文，不包含私密字段入口
     // 右栏资料卡的标题也是简历姓名
     expect(screen.getByRole("heading", { level: 2, name: "张三" })).toBeInTheDocument();

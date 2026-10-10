@@ -30,7 +30,7 @@ const CARD_HEIGHT = 58;
 const CARD_GAP = 6;
 const GROUP_GAP = 14;
 const KINDS: SectionReviewNoteKind[] = ["missing", "wording", "structure"];
-const highlightName = (kind: SectionReviewNoteKind) => `linkresume-section-lens-${kind}`;
+const highlightName = (kind: SectionReviewNoteKind) => `drawoffer-section-lens-${kind}`;
 
 const KIND_TEXT: Record<SectionReviewNoteKind, string> = {
   missing: "缺信息",

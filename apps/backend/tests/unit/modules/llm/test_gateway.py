@@ -9,8 +9,8 @@ import pytest
 from openai import AsyncOpenAI
 from litellm.llms.openai.openai import OpenAIChatCompletion
 
-from linkresume.modules.llm.gateway import GatewayError, LiteLLMGateway, _gateway_error, _normalized_gateway_usage
-from linkresume.modules.llm.schemas import (
+from drawoffer.modules.llm.gateway import GatewayError, LiteLLMGateway, _gateway_error, _normalized_gateway_usage
+from drawoffer.modules.llm.schemas import (
     ChatImageContentPart,
     ChatImageUrl,
     ChatMessage,

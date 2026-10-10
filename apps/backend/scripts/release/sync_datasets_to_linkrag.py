@@ -17,13 +17,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 
-from linkresume.core.config import load_settings
-from linkresume.core.database import build_engine, build_session_factory
-from linkresume.core.redis import build_redis_client
-from linkresume.core.storage import AssetStorage
-from linkresume.integrations.linkrag_client import build_linkrag_client
-from linkresume.services.rag_sync_service import RagSyncService
-from linkresume.workers.rag_sync_worker import run_rag_sync_once
+from drawoffer.core.config import load_settings
+from drawoffer.core.database import build_engine, build_session_factory
+from drawoffer.core.redis import build_redis_client
+from drawoffer.core.storage import AssetStorage
+from drawoffer.integrations.linkrag_client import build_linkrag_client
+from drawoffer.services.rag_sync_service import RagSyncService
+from drawoffer.workers.rag_sync_worker import run_rag_sync_once
 
 
 def build_service(settings) -> tuple[RagSyncService, object]:

@@ -6,8 +6,8 @@ import argparse
 
 from sqlalchemy import create_engine, inspect, text
 
-from linkresume.core.config import load_settings
-from linkresume.core.storage import AssetStorage
+from drawoffer.core.config import load_settings
+from drawoffer.core.storage import AssetStorage
 
 
 def retire_operations(connection, storage=None, *, execute=False):

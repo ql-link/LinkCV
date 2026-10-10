@@ -6,7 +6,7 @@ function prepare() {
   }
   if (assetsStarted || typeof wx.preloadAssets !== 'function') return;
   assetsStarted = true;
-  const paths = ['/assets/linkresume-wordmark.png'];
+  const paths = ['/assets/drawoffer-wordmark.png'];
   for (const icon of ['resume', 'career', 'profile']) {
     paths.push(`/assets/career/tab-${icon}.svg`, `/assets/career/tab-${icon}-active.svg`);
   }

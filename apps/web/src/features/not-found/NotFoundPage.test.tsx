@@ -12,7 +12,7 @@ describe("NotFoundPage", () => {
     expect(screen.getByRole("link", { name: /回到首页/ })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "登录" })).toHaveAttribute("href", "/login");
     expect(screen.getByRole("button", { name: /返回上一页/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "了解 LinkResume" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "了解 DrawOffer" })).toHaveAttribute("href", "/");
   });
 
   it("应用内 404：回到工作台首页，并给出三个常用入口", () => {

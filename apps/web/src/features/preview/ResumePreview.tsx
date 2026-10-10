@@ -23,7 +23,7 @@ export function ResumePreview({
   useLocale();
   const documentHtml = useMemo(
     () => renderResumePrintDocument({
-      title: resumeDocumentTitle(data) || "LinkResume Resume",
+      title: resumeDocumentTitle(data) || "DrawOffer Resume",
       data,
       style: firstPageOnly ? { ...style, portable: { ...style.portable, smart_one_page: false } } : style,
       layout_plan: layoutPlan,

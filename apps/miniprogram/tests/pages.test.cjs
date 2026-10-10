@@ -127,7 +127,7 @@ test("career resume form does not silently clear a binding when the list fails",
 const privacySetting = async () => ({
   supported: true,
   needAuthorization: false,
-  privacyContractName: "《LinkResume 隐私保护指引》",
+  privacyContractName: "《DrawOffer 隐私保护指引》",
 });
 
 test("app starts on resumes and exposes resumes, career and profile tabs", () => {
@@ -840,7 +840,7 @@ test("profile tab shows a guest state without requesting account data", async ()
 
 test("profile template exposes the avatar and guest login text as separate triggers", () => {
   assert.match(profileTemplate, /class="avatar-round guest-avatar"[^>]*bindtap="goLogin"/);
-  assert.match(profileTemplate, /<text class="user-name" hover-class="guest-login-hover" role="button" aria-label="登录或注册 LinkResume" bindtap="goLogin">登录 \/ 注册 LinkResume<\/text>/);
+  assert.match(profileTemplate, /<text class="user-name" hover-class="guest-login-hover" role="button" aria-label="登录或注册 DrawOffer" bindtap="goLogin">登录 \/ 注册 DrawOffer<\/text>/);
   assert.equal((profileTemplate.match(/bindtap="goLogin"/g) || []).length, 2);
   assert.doesNotMatch(profileTemplate, /点击左侧头像登录 \/ 注册/);
   assert.doesNotMatch(profileTemplate, /微信登录 \/ 注册/);

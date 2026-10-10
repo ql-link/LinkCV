@@ -78,16 +78,16 @@ md.inline.ruler.before("emphasis", "linkresume_font_size", inlineFontSizeRule);
 
 const inlineStyleRule: InlineRule = (state, silent) => {
   const source = state.src.slice(state.pos);
-  const opening = source.match(/^\[\[linkresume-(underline|color|highlight)(?::(#[0-9A-Fa-f]{6}))?\]\]/u);
+  const opening = source.match(/^\[\[drawoffer-(underline|color|highlight)(?::(#[0-9A-Fa-f]{6}))?\]\]/u);
   if (opening) {
     const kind = opening[1];
     const color = opening[2];
     if ((kind === "color" || kind === "highlight") !== Boolean(color)) return false;
-    const closing = `[[/linkresume-${kind}]]`;
+    const closing = `[[/drawoffer-${kind}]]`;
     if (!source.slice(opening[0].length).includes(closing)) return false;
     if (!silent) {
       const tag = kind === "underline" ? "u" : kind === "highlight" ? "mark" : "span";
-      const token = state.push(`linkresume_${kind}_open`, tag, 1);
+      const token = state.push(`drawoffer_${kind}_open`, tag, 1);
       if (kind === "color") token.attrSet("style", `color:${color}`);
       if (kind === "highlight") {
         token.attrSet("data-color", color);
@@ -97,12 +97,12 @@ const inlineStyleRule: InlineRule = (state, silent) => {
     state.pos += opening[0].length;
     return true;
   }
-  const closing = source.match(/^\[\[\/linkresume-(underline|color|highlight)\]\]/u);
+  const closing = source.match(/^\[\[\/drawoffer-(underline|color|highlight)\]\]/u);
   if (!closing) return false;
   if (!silent) {
     const kind = closing[1];
     const tag = kind === "underline" ? "u" : kind === "highlight" ? "mark" : "span";
-    state.push(`linkresume_${kind}_close`, tag, -1);
+    state.push(`drawoffer_${kind}_close`, tag, -1);
   }
   state.pos += closing[0].length;
   return true;

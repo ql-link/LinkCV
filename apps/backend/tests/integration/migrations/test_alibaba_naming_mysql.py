@@ -4,8 +4,8 @@ from datetime import datetime
 
 from sqlalchemy import create_engine, inspect, text
 
-import linkresume.models  # noqa: F401  (register every ORM table)
-from linkresume.core.database import Base
+import drawoffer.models  # noqa: F401  (register every ORM table)
+from drawoffer.core.database import Base
 from tests.integration.migrations.test_mysql_migrations import (
     migration_test_url,
     reset_test_database_to_base,

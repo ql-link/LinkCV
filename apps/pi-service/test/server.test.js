@@ -20,8 +20,8 @@ test("Pi HTTP validates memory before execution and supports old requests", asyn
   await new Promise((resolve) => reservation.close(resolve));
   const child = spawn(process.execPath, [new URL("../src/server.js", import.meta.url).pathname], {
     env: { PATH: process.env.PATH, APP_ENV: "testing", PI_SERVICE_PORT: String(port),
-      PI_SERVICE_TOKEN: "fictional-pi-test-token", LINKRESUME_INTERNAL_AGENT_TOKEN: "fictional-backend-token",
-      LINKRESUME_BASE_URL: `http://127.0.0.1:${backend.address().port}` },
+      PI_SERVICE_TOKEN: "fictional-pi-test-token", DRAWOFFER_INTERNAL_AGENT_TOKEN: "fictional-backend-token",
+      DRAWOFFER_BASE_URL: `http://127.0.0.1:${backend.address().port}` },
     stdio: ["ignore", "pipe", "pipe"],
   });
   t.after(async () => { if (child.exitCode === null) { child.kill(); await once(child, "exit"); } });

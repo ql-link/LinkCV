@@ -9,7 +9,7 @@ PUBLIC="$MODULE/$ARCH-apple-macos.swiftinterface"
 PRIVATE="$MODULE/$ARCH-apple-macos.private.swiftinterface"
 if [ -z "${SWIFTPM_CUSTOM_LIBS_DIR:-}" ] && [ -f "$PRIVATE" ] && [ -f "$PUBLIC" ] \
     && grep -q 'swiftLanguageModes' "$PUBLIC" && ! grep -q 'swiftLanguageModes' "$PRIVATE"; then
-  TASK_PM="$(mktemp -d "${TMPDIR:-/tmp/}linkresume-swift-pm.XXXXXX")"
+  TASK_PM="$(mktemp -d "${TMPDIR:-/tmp/}drawoffer-swift-pm.XXXXXX")"
   trap 'rm -rf "$TASK_PM"' EXIT
   cp -R "$PM/ManifestAPI" "$TASK_PM/"
   rm "$TASK_PM/ManifestAPI/PackageDescription.swiftmodule/"*.private.swiftinterface

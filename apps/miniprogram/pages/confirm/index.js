@@ -27,7 +27,7 @@ Page({
     privacyReady: false,
     privacySupported: false,
     privacyAuthorizationRequired: false,
-    privacyContractName: "《LinkResume 小程序隐私保护指引》",
+    privacyContractName: "《DrawOffer 小程序隐私保护指引》",
     phase: "checking",
     message: "正在校验本次登录请求…",
   },
@@ -96,7 +96,7 @@ Page({
         const desktop = response.data && response.data.login_target === "desktop";
         this.setData({ loginTarget: desktop ? "desktop" : "web", platform: desktop ? response.data.platform : "" });
         if (status === "pending") {
-          this.setData({ loading: false, phase: "pending", message: desktop ? "请确认是否允许当前桌面客户端登录 LinkResume。" : "请确认是否允许当前网页登录 LinkResume。" });
+          this.setData({ loading: false, phase: "pending", message: desktop ? "请确认是否允许当前桌面客户端登录 DrawOffer。" : "请确认是否允许当前网页登录 DrawOffer。" });
         } else if (status === "success") {
           if (desktop) {
             this.setData({ loading: false, phase: "confirmed", message: "已确认桌面登录请求，请返回客户端完成登录。" });

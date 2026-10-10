@@ -3,7 +3,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from linkresume.domain.resume_document import (
+from drawoffer.domain.resume_document import (
     Highlight,
     Project,
     ResumeBasics,
@@ -15,8 +15,8 @@ from linkresume.domain.resume_document import (
     default_resume_document,
     with_default_semantics,
 )
-from linkresume.domain.resume_snapshot import ResumeSnapshot, parse_resume_snapshot
-from linkresume.domain.resume_style import (
+from drawoffer.domain.resume_snapshot import ResumeSnapshot, parse_resume_snapshot
+from drawoffer.domain.resume_style import (
     ResumePresentation,
     default_resume_style,
     default_template_manifest,

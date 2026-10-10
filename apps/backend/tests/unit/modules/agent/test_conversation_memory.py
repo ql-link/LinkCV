@@ -1,7 +1,7 @@
 import json
 from types import SimpleNamespace
 
-from linkresume.modules.agent.conversation_memory import project_memory
+from drawoffer.modules.agent.conversation_memory import project_memory
 
 
 def message(sequence, metadata, role="user"):
@@ -93,8 +93,8 @@ def test_memory_uses_latest_user_request_within_steered_run():
     from sqlalchemy import select
     from fastapi.testclient import TestClient
     from tests.integration.api.test_agent_routes import build_app, register, create_active_run
-    from linkresume.modules.agent.models import AgentMessage, AgentRun
-    from linkresume.modules.agent.conversation_memory import conversation_memory
+    from drawoffer.modules.agent.models import AgentMessage, AgentRun
+    from drawoffer.modules.agent.conversation_memory import conversation_memory
     app = build_app()
     with TestClient(app) as client:
         register(client, "memory-steered@example.test")

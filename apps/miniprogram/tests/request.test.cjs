@@ -10,7 +10,7 @@ test("concurrent 401 responses share one refresh and retry once", async () => {
   let refreshCalls = 0;
   let protectedCalls = 0;
 
-  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkresume.example.test" } });
+  global.getApp = () => ({ globalData: { apiBaseUrl: "https://drawoffer.example.test" } });
   global.wx = {
     getStorageSync: (key) => storage.get(key),
     setStorageSync: (key, value) => storage.set(key, value),
@@ -59,7 +59,7 @@ test("transient refresh failure keeps the session and does not create a new logi
   ]);
   let loginCalls = 0;
 
-  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkresume.example.test" } });
+  global.getApp = () => ({ globalData: { apiBaseUrl: "https://drawoffer.example.test" } });
   global.wx = {
     getStorageSync: (key) => storage.get(key),
     setStorageSync: (key, value) => storage.set(key, value),
@@ -100,7 +100,7 @@ test("expired refresh can only log into an existing account and never registers 
   ]);
   let loginRequestData;
 
-  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkresume.example.test" } });
+  global.getApp = () => ({ globalData: { apiBaseUrl: "https://drawoffer.example.test" } });
   global.wx = {
     getStorageSync: (key) => storage.get(key),
     setStorageSync: (key, value) => storage.set(key, value),

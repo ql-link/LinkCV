@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from linkresume.application.job_matches.prefilter import prefilter_score, resume_profile
-from linkresume.application.job_matches.scoring import score_analysis, summarize
-from linkresume.modules.job_matches.schemas import MatchAnalysis
+from drawoffer.application.job_matches.prefilter import prefilter_score, resume_profile
+from drawoffer.application.job_matches.scoring import score_analysis, summarize
+from drawoffer.modules.job_matches.schemas import MatchAnalysis
 
 JOB = "负责分布式系统开发，需要 Kubernetes 经验，熟悉 Go"
 RESUME = "# 张三\n- 熟悉分布式系统设计与调优\n- 使用 Go 开发过消息系统"

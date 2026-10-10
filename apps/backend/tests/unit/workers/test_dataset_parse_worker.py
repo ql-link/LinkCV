@@ -7,17 +7,17 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy import select
 
-from linkresume.core.config import Settings
-from linkresume.core.database import utc_now
-from linkresume.domain.document_conversion import (
+from drawoffer.core.config import Settings
+from drawoffer.core.database import utc_now
+from drawoffer.domain.document_conversion import (
     DocumentConversionFailure,
     DocumentMarkdownResult,
 )
-from linkresume.main import create_app
-from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
-from linkresume.workers.dataset_parse_worker import DatasetParseProcessor
-from linkresume.workers.resume_import_worker import WorkerTaskRetryable
+from drawoffer.main import create_app
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
+from drawoffer.workers.dataset_parse_worker import DatasetParseProcessor
+from drawoffer.workers.resume_import_worker import WorkerTaskRetryable
 from tests.fakes import FakeRedis
 
 
@@ -52,8 +52,8 @@ def test_dataset_worker_entry_configures_mappers_in_fresh_process() -> None:
         [
             sys.executable,
             "-c",
-            "from linkresume.workers import __main__; "
-            "from linkresume.modules.datasets.models import UserDataset; "
+            "from drawoffer.workers import __main__; "
+            "from drawoffer.modules.datasets.models import UserDataset; "
             "from sqlalchemy.orm import configure_mappers; "
             "configure_mappers(); "
             "assert not UserDataset.__table__.c.interview_session_id.foreign_keys",

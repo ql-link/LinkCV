@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>LinkResume</string>
+	<string>DrawOffer</string>
 	<key>CFBundleDisplayName</key>
-	<string>LinkResume</string>
+	<string>DrawOffer</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.linkresume.desktop</string>
 	<key>CFBundleExecutable</key>
-	<string>LinkResume</string>
+	<string>DrawOffer</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleIconFile</key>
-	<string>LinkResume.icns</string>
+	<string>DrawOffer.icns</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSMicrophoneUsageDescription</key>

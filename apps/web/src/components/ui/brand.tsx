@@ -1,12 +1,12 @@
-import brandMark from "@/assets/linkresume-mark.png";
-import brandWordmark from "@/assets/linkresume-wordmark.png";
+import brandMark from "@/assets/drawoffer-mark.png";
+import brandWordmark from "@/assets/drawoffer-wordmark.png";
 import { cn } from "@/lib/utils";
 
 export function Brand({
   compact = false,
   className,
-  label = "LinkResume",
-  name = "LinkResume",
+  label = "DrawOffer",
+  name = "DrawOffer",
 }: {
   compact?: boolean;
   className?: string;

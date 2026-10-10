@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.domain.resume.legacy_cutover import LegacyCutoverError
-from linkresume.domain.resume.legacy_cutover import blank_canonical_document
-from linkresume.domain.resume.models import ParagraphBlock
+from drawoffer.domain.resume.legacy_cutover import LegacyCutoverError
+from drawoffer.domain.resume.legacy_cutover import blank_canonical_document
+from drawoffer.domain.resume.models import ParagraphBlock
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 REVISION_PATH = (
@@ -19,7 +19,7 @@ REVISION_PATH = (
 
 
 def load_revision():
-    spec = importlib.util.spec_from_file_location("linkresume_revision_0048", REVISION_PATH)
+    spec = importlib.util.spec_from_file_location("drawoffer_revision_0048", REVISION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

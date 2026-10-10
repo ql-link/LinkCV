@@ -1930,7 +1930,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       role="textbox"
       aria-multiline="true"
       aria-label={t("告诉助手你想完成什么")}
-      data-placeholder={isHome ? t("问问 LinkResume：改简历、分析 JD、准备面试…") : t("继续提问或说明调整要求…")}
+      data-placeholder={isHome ? t("问问 DrawOffer：改简历、分析 JD、准备面试…") : t("继续提问或说明调整要求…")}
       aria-autocomplete="list"
       aria-controls={contextMention ? "assistant-context-mention-list" : undefined}
       aria-expanded={Boolean(contextMention)}

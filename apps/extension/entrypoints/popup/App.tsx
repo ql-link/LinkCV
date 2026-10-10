@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { browser } from "wxt/browser";
 
 import {
-  LinkResumeApiError,
-  connectToLinkResume,
+  DrawOfferApiError,
+  connectToDrawOffer,
   importJob,
-  linkResumeUrl,
-  type LinkResumeConnection,
-} from "../../src/api/linkresume";
+  drawOfferUrl,
+  type DrawOfferConnection,
+} from "../../src/api/drawoffer";
 import {
   CAPTURE_MESSAGE,
   type BossCaptureResult,
@@ -21,7 +21,7 @@ import { readBossLogo, saveCapturedCompanyLogo } from "../../src/api/company-log
 
 type Phase = "loading" | "unavailable" | "login" | "capture-error" | "preview" | "submitting" | "duplicate" | "success";
 
-const CONNECTING_MESSAGE = "正在连接 LinkResume 并读取当前页面…";
+const CONNECTING_MESSAGE = "正在连接 DrawOffer 并读取当前页面…";
 type View = "preview" | "edit" | "description";
 
 interface ReadyCapture {
@@ -32,7 +32,7 @@ interface ReadyCapture {
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>("loading");
-  const [connection, setConnection] = useState<LinkResumeConnection | null>(null);
+  const [connection, setConnection] = useState<DrawOfferConnection | null>(null);
   const [ready, setReady] = useState<ReadyCapture | null>(null);
   const [form, setForm] = useState<BossJobCapture | null>(null);
   const [view, setView] = useState<View>("preview");
@@ -55,18 +55,18 @@ export default function App() {
     setLogoMessage("");
     try {
       const [nextConnection, capture] = await Promise.all([
-        connectToLinkResume(),
+        connectToDrawOffer(),
         captureActiveBossTab(),
       ]);
       setConnection(nextConnection);
       if (!nextConnection) {
         setPhase("unavailable");
-        setMessage("无法连接 LinkResume，请确认对应环境已经启动。");
+        setMessage("无法连接 DrawOffer，请确认对应环境已经启动。");
         return;
       }
       if (!nextConnection.user) {
         setPhase("login");
-        setMessage("请先登录 LinkResume，再回来继续导入。");
+        setMessage("请先登录 DrawOffer，再回来继续导入。");
         return;
       }
       if (!capture.ok) {
@@ -97,7 +97,7 @@ export default function App() {
     }
     submitting.current = true;
     setPhase("submitting");
-    setMessage("正在整理并保存到 LinkResume…");
+    setMessage("正在整理并保存到 DrawOffer…");
     try {
       const job = await importJob(connection.origin, {
         source_url: ready.sourceUrl,
@@ -111,14 +111,14 @@ export default function App() {
       setMessage("");
       setPhase("success");
     } catch (error) {
-      if (error instanceof LinkResumeApiError && error.code === "JD_SOURCE_DUPLICATE" && error.duplicate) {
+      if (error instanceof DrawOfferApiError && error.code === "JD_SOURCE_DUPLICATE" && error.duplicate) {
         setDuplicate(error.duplicate);
         setPhase("duplicate");
         return;
       }
-      if (error instanceof LinkResumeApiError && error.status === 401) {
+      if (error instanceof DrawOfferApiError && error.status === 401) {
         setPhase("login");
-        setMessage("LinkResume 登录已失效，请重新登录后再试。");
+        setMessage("DrawOffer 登录已失效，请重新登录后再试。");
         return;
       }
       setPhase("preview");
@@ -128,16 +128,16 @@ export default function App() {
     }
   }
 
-  async function openLinkResume(path: string) {
+  async function openDrawOffer(path: string) {
     if (!connection) return;
-    await browser.tabs.create({ url: linkResumeUrl(connection.origin, path) });
+    await browser.tabs.create({ url: drawOfferUrl(connection.origin, path) });
   }
 
   const header = (
     <header className="app-header">
       <div className="brand-lockup">
-        <img className="mark" src="/linkresume-mark.png" alt="" aria-hidden="true" />
-        <strong>LinkResume</strong>
+        <img className="mark" src="/drawoffer-mark.png" alt="" aria-hidden="true" />
+        <strong>DrawOffer</strong>
       </div>
 
     </header>
@@ -148,7 +148,7 @@ export default function App() {
   }
 
   if (phase === "unavailable") {
-    return <main>{header}<StatusView title="无法连接 LinkResume" message={message} actionLabel="重试连接" onAction={() => void initialize()} /></main>;
+    return <main>{header}<StatusView title="无法连接 DrawOffer" message={message} actionLabel="重试连接" onAction={() => void initialize()} /></main>;
   }
 
   if (phase === "login") {
@@ -159,7 +159,7 @@ export default function App() {
           title="需要登录"
           message={message}
           actionLabel="去登录"
-          onAction={() => void openLinkResume("/login")}
+          onAction={() => void openDrawOffer("/login")}
           secondaryLabel="已登录，重新连接"
           onSecondary={() => void initialize()}
         />
@@ -204,7 +204,7 @@ export default function App() {
           {logoMessage.includes("图标未保存") && <p className="notice" role="status">{logoMessage}</p>}
         </section>
         <footer className="success-footer">
-          <button className="primary" type="button" onClick={() => void openLinkResume(created.application
+          <button className="primary" type="button" onClick={() => void openDrawOffer(created.application
             ? `/career/applications/${encodeURIComponent(created.application.id)}`
             : `/career/jobs/${encodeURIComponent(job.id)}`)}>
             {created.application ? "查看求职记录" : "查看岗位详情"}
@@ -226,12 +226,12 @@ export default function App() {
         <section className="status-card compact">
           <span className="status-label">发现重复来源</span>
           <h1>{duplicate.existing.job_title}</h1>
-          <p>{duplicate.existing.company_name} 已存在于你的 LinkResume。</p>
+          <p>{duplicate.existing.company_name} 已存在于你的 DrawOffer。</p>
           <div className="actions vertical">
             {duplicate.allowed_actions.includes("update") && (
               <button className="primary" type="button" onClick={() => void submit(resolution())}>用本次内容更新</button>
             )}
-            <button className="secondary" type="button" onClick={() => void openLinkResume(`/career/jobs/${encodeURIComponent(duplicate.existing.id)}`)}>打开现有 JD</button>
+            <button className="secondary" type="button" onClick={() => void openDrawOffer(`/career/jobs/${encodeURIComponent(duplicate.existing.id)}`)}>打开现有 JD</button>
             <button className="ghost" type="button" onClick={() => setPhase("preview")}>返回预览</button>
           </div>
         </section>
@@ -449,7 +449,7 @@ function captureErrorMessage(error: unknown): string {
 }
 
 function importErrorMessage(error: unknown): string {
-  if (!(error instanceof LinkResumeApiError)) return "网络请求失败，请确认 LinkResume 仍在运行。";
+  if (!(error instanceof DrawOfferApiError)) return "网络请求失败，请确认 DrawOffer 仍在运行。";
   const messages: Record<string, string> = {
     INVALID_JOB_IMPORT: "抓取内容不完整或格式无效，请检查必填字段。",
     JD_EDIT_CONFLICT: "现有 JD 已被修改，请重新读取后再处理。",

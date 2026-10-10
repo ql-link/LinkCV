@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 function loadAuth(wxMock) {
-  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkresume.example.test" } });
+  global.getApp = () => ({ globalData: { apiBaseUrl: "https://drawoffer.example.test" } });
   global.wx = wxMock;
   const modulePath = require.resolve("../services/auth");
   delete require.cache[modulePath];
@@ -89,7 +89,7 @@ test("reads the platform privacy contract name when available", async () => {
     getPrivacySetting(options) {
       options.success({
         needAuthorization: true,
-        privacyContractName: "《LinkResume 隐私保护指引》",
+        privacyContractName: "《DrawOffer 隐私保护指引》",
       });
     },
   });
@@ -97,7 +97,7 @@ test("reads the platform privacy contract name when available", async () => {
   assert.deepEqual(await auth.getPrivacySetting(), {
     supported: true,
     needAuthorization: true,
-    privacyContractName: "《LinkResume 隐私保护指引》",
+    privacyContractName: "《DrawOffer 隐私保护指引》",
   });
 });
 
@@ -107,6 +107,6 @@ test("fails closed when the platform privacy API is unavailable", async () => {
   assert.deepEqual(await auth.getPrivacySetting(), {
     supported: false,
     needAuthorization: false,
-    privacyContractName: "《LinkResume 小程序隐私保护指引》",
+    privacyContractName: "《DrawOffer 小程序隐私保护指引》",
   });
 });

@@ -1,10 +1,10 @@
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.config import Settings
-from linkresume.core.security import hash_password
-from linkresume.main import create_app
-from linkresume.modules.identity.models import User
+from drawoffer.core.config import Settings
+from drawoffer.core.security import hash_password
+from drawoffer.main import create_app
+from drawoffer.modules.identity.models import User
 from tests.fakes import FakeRedis
 
 

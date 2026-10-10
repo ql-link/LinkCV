@@ -15,7 +15,7 @@ import "./section-focus.css";
 
 const COACH_KEY = "linkresume.section-focus.coach.v1";
 const QUICK_ASKS = ["分析这段", "突出技术深度", "更有冲击力", "更精简", "补上数据"];
-const HIGHLIGHT_NAME = "linkresume-section-focus-added";
+const HIGHLIGHT_NAME = "drawoffer-section-focus-added";
 /** The entry stays this long after the editor loses focus, so it can still be clicked. */
 const BLUR_GRACE = 200;
 const GUTTER_GAP = 12;

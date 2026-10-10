@@ -3,12 +3,12 @@ import base64
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.config import Settings
-from linkresume.core.security import verify_password
-from linkresume.integrations.wechat_client import WechatApiError
-from linkresume.main import create_app
-from linkresume.modules.identity.models import User, UserProfile
-from linkresume.modules.resumes.models import ResumeTemplate
+from drawoffer.core.config import Settings
+from drawoffer.core.security import verify_password
+from drawoffer.integrations.wechat_client import WechatApiError
+from drawoffer.main import create_app
+from drawoffer.modules.identity.models import User, UserProfile
+from drawoffer.modules.resumes.models import ResumeTemplate
 from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
 from tests.integration.api.test_identity_resumes_assets import FakeStorage

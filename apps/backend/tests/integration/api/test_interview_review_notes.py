@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from linkresume.application.interviews.review_service import question_key
+from drawoffer.application.interviews.review_service import question_key
 from tests.integration.api.test_interviews import (
     FakeStorage,
     build_app,

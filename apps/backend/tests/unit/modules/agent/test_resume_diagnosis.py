@@ -1,4 +1,4 @@
-from linkresume.modules.agent.resume_tools import diagnose_content
+from drawoffer.modules.agent.resume_tools import diagnose_content
 
 
 def test_qualitative_delivery_is_result_evidence_without_forced_number() -> None:

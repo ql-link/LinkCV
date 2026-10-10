@@ -1,4 +1,4 @@
-# LinkResume 原生桌面客户端
+# DrawOffer 原生桌面客户端
 
 `apps/mac` 是 SwiftUI 客户端，`apps/windows` 是 WinUI 3 客户端。界面使用系统控件，仅简历纸面嵌入离线网页视图，复用 Web 的 `renderResumePrintDocument`；`apps/desktop` 的 Electron 壳是独立线路。
 
@@ -18,16 +18,16 @@
 
 ### 应用图标
 
-应用图标统一来自 Web 的 `apps/web/src/assets/linkresume-mark.png`，保留原羽毛 Logo，叠加暖白色 `#F7F5F0` 圆角底板；底板外保留透明，Web 品牌源文件不变。更新品牌后执行 `uv run --directory apps/backend python ../native/scripts/generate_app_icons.py`，同步 Mac 运行时 PNG／ICNS、Windows 多尺寸 ICO 与 Electron 图标副本。Mac `swift run` 也会设置 Dock 图标；生成 `.app` 时须把 `apps/mac/Resources/LinkResume.icns` 复制到 `Contents/Resources`，并以 `apps/mac/Resources/Info.plist` 作为 `Contents/Info.plist`（已含 `CFBundleIconFile=LinkResume.icns` 与语音面试所需的 `NSMicrophoneUsageDescription`）；`swift run` 时麦克风授权归属启动它的终端。Windows 同时配置 exe 资源图标与窗口图标；Electron 开发态 Dock 和打包图标均使用更新后的副本。
+应用图标统一来自 Web 的 `apps/web/src/assets/drawoffer-mark.png`，保留原羽毛 Logo，叠加暖白色 `#F7F5F0` 圆角底板；底板外保留透明，Web 品牌源文件不变。更新品牌后执行 `uv run --directory apps/backend python ../native/scripts/generate_app_icons.py`，同步 Mac 运行时 PNG／ICNS、Windows 多尺寸 ICO 与 Electron 图标副本。Mac `swift run` 也会设置 Dock 图标；生成 `.app` 时须把 `apps/mac/Resources/DrawOffer.icns` 复制到 `Contents/Resources`，并以 `apps/mac/Resources/Info.plist` 作为 `Contents/Info.plist`（已含 `CFBundleIconFile=DrawOffer.icns` 与语音面试所需的 `NSMicrophoneUsageDescription`）；`swift run` 时麦克风授权归属启动它的终端。Windows 同时配置 exe 资源图标与窗口图标；Electron 开发态 Dock 和打包图标均使用更新后的副本。
 
 ## 配置与启动
 
-两端从进程环境读取 `LINKRESUME_API_ORIGIN`，值必须是受信任的 HTTPS origin，不能包含路径、查询、用户信息或 fragment。缺失或非法时显示配置错误，不回退 Mock。仅本机 HTTP 调试可另设 `LINKRESUME_ALLOW_LOCAL_HTTP=1`，且地址仅限 localhost、127.0.0.1 或 ::1；这不允许远程明文服务。
+两端从进程环境读取 `DRAWOFFER_API_ORIGIN`，值必须是受信任的 HTTPS origin，不能包含路径、查询、用户信息或 fragment。缺失或非法时显示配置错误，不回退 Mock。仅本机 HTTP 调试可另设 `DRAWOFFER_ALLOW_LOCAL_HTTP=1`，且地址仅限 localhost、127.0.0.1 或 ::1；这不允许远程明文服务。
 
 ```bash
 npm ci --prefix apps/web
 # 按实际本地后端端口配置；后端必须单独按明确的 Local/Development profile 启动。
-LINKRESUME_API_ORIGIN=http://127.0.0.1:8000 LINKRESUME_ALLOW_LOCAL_HTTP=1 npm run dev:mac
+DRAWOFFER_API_ORIGIN=http://127.0.0.1:8000 DRAWOFFER_ALLOW_LOCAL_HTTP=1 npm run dev:mac
 RUN_DESKTOP_KEYCHAIN_TESTS=1 npm run test:mac
 npm run test:windows-core
 ```
@@ -35,14 +35,14 @@ npm run test:windows-core
 Windows PowerShell：
 
 ```powershell
-$env:LINKRESUME_API_ORIGIN = "http://127.0.0.1:8000"
-$env:LINKRESUME_ALLOW_LOCAL_HTTP = "1"
+$env:DRAWOFFER_API_ORIGIN = "http://127.0.0.1:8000"
+$env:DRAWOFFER_ALLOW_LOCAL_HTTP = "1"
 $env:RUN_DESKTOP_CREDENTIAL_TESTS = "1"
 npm run test:windows-platform
 npm run build:native-renderer
 cd apps/windows
-dotnet build src/LinkResume.App/LinkResume.App.csproj -p:Platform=x64 -r win-x64
-dotnet run --project src/LinkResume.App/LinkResume.App.csproj -p:Platform=x64 -r win-x64
+dotnet build src/DrawOffer.App/DrawOffer.App.csproj -p:Platform=x64 -r win-x64
+dotnet run --project src/DrawOffer.App/DrawOffer.App.csproj -p:Platform=x64 -r win-x64
 ```
 
 后端必须启用 desktop 能力及微信配置，并通过私密配置提供独立的 `AUTH_DESKTOP_RETRY_ENCRYPTION_KEY`。多实例共享该 key；客户端不持有它。小程序确认页必须与 desktop 协议版本匹配。配置细节见 [开发文档](../../docs/ops/development.md)。

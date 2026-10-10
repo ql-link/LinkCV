@@ -342,6 +342,6 @@ function getLocationSnapshot() {
 
 export function useAppRoute() {
   const location = useSyncExternalStore(subscribeToLocation, getLocationSnapshot, () => "/");
-  const url = new URL(location, "http://linkresume.local");
+  const url = new URL(location, "http://drawoffer.local");
   return parseAppRoute(url.pathname, url.search);
 }

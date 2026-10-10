@@ -9,20 +9,20 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 
-from linkresume.core.config import Settings
-from linkresume.main import create_app
-from linkresume.modules.agent.models import AgentOperation, AgentRun, AgentSession
-from linkresume.modules.identity.models import User
-from linkresume.modules.job_descriptions.models import JobDescription
-from linkresume.modules.llm.models import (
+from drawoffer.core.config import Settings
+from drawoffer.main import create_app
+from drawoffer.modules.agent.models import AgentOperation, AgentRun, AgentSession
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.job_descriptions.models import JobDescription
+from drawoffer.modules.llm.models import (
     LLMCallLog,
     LLMModel,
     LLMModelRoute,
     LLMProviderConnection,
     LLMUseCaseRoute,
 )
-from linkresume.modules.llm.resolver import validation_fingerprint
-from linkresume.modules.resumes.models import Resume, ResumeTemplate
+from drawoffer.modules.llm.resolver import validation_fingerprint
+from drawoffer.modules.resumes.models import Resume, ResumeTemplate
 from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import canonical_template_payload
 
@@ -53,7 +53,7 @@ class FakeLoki:
         pass
 
     def query_level_buckets(self, **query):
-        from linkresume.modules.observability.loki import LokiUnavailableError
+        from drawoffer.modules.observability.loki import LokiUnavailableError
 
         self.calls.append(query)
         if self.unavailable:

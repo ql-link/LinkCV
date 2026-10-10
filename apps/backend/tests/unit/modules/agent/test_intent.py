@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from linkresume.modules.agent.intent import intent_input
-from linkresume.modules.agent.intent_schemas import IntentDecision, validate_intent_probe
+from drawoffer.modules.agent.intent import intent_input
+from drawoffer.modules.agent.intent_schemas import IntentDecision, validate_intent_probe
 
 
 def task(**changes):
@@ -61,7 +61,7 @@ def test_input_does_not_include_material_bodies_or_locators():
 
 
 def test_intent_accepts_chat_and_native_decision_but_not_responses():
-    from linkresume.modules.llm.providers import validate_use_case_protocol, validate_route, validate_model_protocol
+    from drawoffer.modules.llm.providers import validate_use_case_protocol, validate_route, validate_model_protocol
     validate_use_case_protocol("assistant_intent", "openai_chat")
     validate_use_case_protocol("assistant_intent", "system_one")
     validate_route("aihubmix", "model", "system_one")

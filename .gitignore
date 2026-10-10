@@ -36,5 +36,5 @@ apps/mac/.build/
 apps/windows/**/bin/
 apps/windows/**/obj/
 apps/native/renderer/dist/
-apps/mac/Sources/LinkResumeRender/Resources/paper.html
-apps/windows/src/LinkResume.App/Assets/Renderer/paper.html
+apps/mac/Sources/DrawOfferRender/Resources/paper.html
+apps/windows/src/DrawOffer.App/Assets/Renderer/paper.html

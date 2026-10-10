@@ -1,6 +1,6 @@
-# LinkResume Alembic 迁移约束
+# DrawOffer Alembic 迁移约束
 
-本目录管理 LinkResume MySQL schema 版本。迁移采用 **SQL-first、forward-only**：表、字段、索引、外键和可表达的数据变更写在 up SQL 中，Python revision 按版本顺序执行；仓库不保存 down SQL，也不支持数据库降级。
+本目录管理 DrawOffer MySQL schema 版本。迁移采用 **SQL-first、forward-only**：表、字段、索引、外键和可表达的数据变更写在 up SQL 中，Python revision 按版本顺序执行；仓库不保存 down SQL，也不支持数据库降级。
 
 ## 目录
 
@@ -55,13 +55,13 @@ npm run db:init
 共享 Dev 环境显式选择配置：
 
 ```bash
-LINKRESUME_ENV_FILE=.env.development npm run db:migrate
+DRAWOFFER_ENV_FILE=.env.development npm run db:migrate
 ```
 
 部署通过 `scripts/release/run_alembic.py` 核对环境、MySQL host、port 和 database 后升级到 head。迁移测试只覆盖空库到 head、受支持历史版本到 head 和重复 upgrade；不执行升级降级往返：
 
 ```bash
-LINKRESUME_TEST_MYSQL_URL='mysql+pymysql://<user>:<password>@127.0.0.1:<port>/linkresume' \
+DRAWOFFER_TEST_MYSQL_URL='mysql+pymysql://<user>:<password>@127.0.0.1:<port>/linkresume' \
   uv run --directory apps/backend pytest tests/integration/migrations
 ```
 

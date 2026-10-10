@@ -14,8 +14,8 @@ import json
 import re
 from pathlib import Path
 
-from linkresume.application.resumes.service import parse_persisted_template_snapshot
-from linkresume.domain.resume import compile_layout_plan
+from drawoffer.application.resumes.service import parse_persisted_template_snapshot
+from drawoffer.domain.resume import compile_layout_plan
 
 ROOT = Path(__file__).resolve().parents[3]
 MIGRATION = ROOT / "apps/backend/migrations/sql/0079.up.sql"
@@ -88,8 +88,8 @@ def main() -> None:
     validation_cases.append(case)
     (OUTPUT.parent / "paper-validation.json").write_text(json.dumps(validation_cases, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     output = json.dumps({"templates": templates}, ensure_ascii=False, indent=2) + "\n"
-    targets = [OUTPUT, ROOT / "apps/mac/Sources/LinkResumeCore/Resources/resume-templates.json",
-               ROOT / "apps/windows/src/LinkResume.Core/Resources/resume-templates.json"]
+    targets = [OUTPUT, ROOT / "apps/mac/Sources/DrawOfferCore/Resources/resume-templates.json",
+               ROOT / "apps/windows/src/DrawOffer.Core/Resources/resume-templates.json"]
     for target in targets:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(output, encoding="utf-8")

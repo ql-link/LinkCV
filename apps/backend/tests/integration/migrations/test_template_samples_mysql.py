@@ -11,12 +11,12 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from linkresume.application.resumes.service import create_resume_from_template
-from linkresume.core.migration_sql import execute_sql_file
-from linkresume.domain.resume import CanonicalResumeDocument
-from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import ResumeTemplate
-from linkresume.modules.resumes.template_routes import template_record
+from drawoffer.application.resumes.service import create_resume_from_template
+from drawoffer.core.migration_sql import execute_sql_file
+from drawoffer.domain.resume import CanonicalResumeDocument
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.resumes.models import ResumeTemplate
+from drawoffer.modules.resumes.template_routes import template_record
 
 SQL = Path(__file__).resolve().parents[3] / "migrations/sql/0103.up.sql"
 PATTERN = (
@@ -36,11 +36,11 @@ UPDATES = {key: {"old": decode(old), "new": decode(new), "style": decode(style)}
 
 @pytest.fixture
 def db():
-    raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
+    raw = os.environ.get("DRAWOFFER_TEST_MYSQL_URL")
     if not raw:
-        pytest.skip("Set LINKRESUME_TEST_MYSQL_URL to a disposable local MySQL at head")
+        pytest.skip("Set DRAWOFFER_TEST_MYSQL_URL to a disposable local MySQL at head")
     url = make_url(raw)
-    assert url.database in {"linkresume", "linkresume_sample_fit_0103", "linkresume_curation_0104"} and url.host in {"localhost", "127.0.0.1"}
+    assert url.database in {"linkresume", "drawoffer_sample_fit_0103", "drawoffer_curation_0104"} and url.host in {"localhost", "127.0.0.1"}
     engine = create_engine(raw)
     with engine.connect() as connection:
         transaction = connection.begin()

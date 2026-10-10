@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
 
-from linkresume.core.config import Settings
-from linkresume.main import create_app
-from linkresume.modules.resumes.models import ResumeTemplate
+from drawoffer.core.config import Settings
+from drawoffer.main import create_app
+from drawoffer.modules.resumes.models import ResumeTemplate
 from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import canonical_template_payload
 
@@ -66,9 +66,10 @@ def test_web_pdf_requires_current_lock_version_and_owned_resume() -> None:
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/pdf"
         assert response.headers["cache-control"] == "private, no-store"
-        assert response.headers["x-linkresume-pdf-lock-version"] == str(
+        assert response.headers["x-drawoffer-pdf-lock-version"] == str(
             created["lock_version"]
         )
+        assert response.headers["x-linkresume-pdf-lock-version"] == response.headers["x-drawoffer-pdf-lock-version"]
         assert response.headers["content-disposition"].startswith(
             'attachment; filename="resume.pdf"; filename*=UTF-8\'\''
         )

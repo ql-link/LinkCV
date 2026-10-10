@@ -6,11 +6,11 @@ from datetime import UTC, datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.config import Settings
-from linkresume.main import create_app
-from linkresume.modules.identity.models import User
-from linkresume.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
-from linkresume.modules.job_descriptions.models import JobDescription
+from drawoffer.core.config import Settings
+from drawoffer.main import create_app
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
+from drawoffer.modules.job_descriptions.models import JobDescription
 from tests.fakes import FakeRedis
 
 
@@ -654,7 +654,8 @@ def test_application_resume_preview_uses_latest_current_content():
             headers=headers,
         )
         assert preview.status_code == 200, preview.text
-        assert preview.headers["x-linkresume-lock-version"] == "2"
+        assert preview.headers["x-drawoffer-lock-version"] == "2"
+        assert preview.headers["x-linkresume-lock-version"] == preview.headers["x-drawoffer-lock-version"]
         assert preview.headers["cache-control"] == "private, no-store"
         assert (
             app.state.resume_pdf_renderer.payloads[-1]["data"]["identity"]["name"]

@@ -12,7 +12,7 @@ on:
       - 'apps/web/public/templates/**'
       - 'apps/web/pdf-cli/**'
       - 'apps/web/package*.json'
-      - 'apps/backend/src/linkresume/modules/identity/**'
+      - 'apps/backend/src/drawoffer/modules/identity/**'
       - 'apps/backend/tests/integration/api/test_desktop_auth.py'
       - '.github/workflows/native-desktop.yml'
       - 'package.json'
@@ -50,13 +50,13 @@ jobs:
           dotnet-version: '10.0.x'
       - run: npm ci --prefix apps/web
       - run: npm run build:native-renderer
-      - run: dotnet test --project tests/LinkResume.Core.Tests/LinkResume.Core.Tests.csproj
+      - run: dotnet test --project tests/DrawOffer.Core.Tests/DrawOffer.Core.Tests.csproj
         working-directory: apps/windows
-      - run: dotnet test --project tests/LinkResume.Platform.Tests/LinkResume.Platform.Tests.csproj
+      - run: dotnet test --project tests/DrawOffer.Platform.Tests/DrawOffer.Platform.Tests.csproj
         working-directory: apps/windows
         env:
           RUN_DESKTOP_CREDENTIAL_TESTS: '1'
-      - run: dotnet build src/LinkResume.App/LinkResume.App.csproj -p:Platform=x64 -r win-x64
+      - run: dotnet build src/DrawOffer.App/DrawOffer.App.csproj -p:Platform=x64 -r win-x64
         working-directory: apps/windows
 
   redis:

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { Brand, Button, FeedbackNotice, IconButton, NumberStepper, TextField, TogglePill } from ".";
 
-describe("LinkResume UI components", () => {
+describe("DrawOffer UI components", () => {
   it("按钮默认不会提交所在表单", () => {
     render(<Button>保存</Button>);
     expect(screen.getByRole("button", { name: "保存" })).toHaveAttribute("type", "button");
@@ -98,11 +98,11 @@ describe("LinkResume UI components", () => {
 
   it("紧凑品牌只保留图形标识", () => {
     const { rerender } = render(<Brand compact />);
-    expect(screen.getByLabelText("LinkResume").querySelectorAll("img")).toHaveLength(1);
-    expect(screen.getByLabelText("LinkResume").querySelector("img")).toHaveClass("ui-brand-mark");
+    expect(screen.getByLabelText("DrawOffer").querySelectorAll("img")).toHaveLength(1);
+    expect(screen.getByLabelText("DrawOffer").querySelector("img")).toHaveClass("ui-brand-mark");
 
     rerender(<Brand />);
-    expect(screen.getByLabelText("LinkResume").querySelectorAll("img")).toHaveLength(2);
-    expect(screen.getByLabelText("LinkResume").querySelector(".ui-brand-wordmark")).toBeInTheDocument();
+    expect(screen.getByLabelText("DrawOffer").querySelectorAll("img")).toHaveLength(2);
+    expect(screen.getByLabelText("DrawOffer").querySelector(".ui-brand-wordmark")).toBeInTheDocument();
   });
 });

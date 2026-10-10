@@ -3,11 +3,11 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.security import session_key, create_access_token
-from linkresume.modules.identity.session_service import prepare_session
-from linkresume.modules.identity.models import User
-from linkresume.modules.datasets.models import UserDataset
-from linkresume.modules.resumes.models import DocumentParseTask
+from drawoffer.core.security import session_key, create_access_token
+from drawoffer.modules.identity.session_service import prepare_session
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.datasets.models import UserDataset
+from drawoffer.modules.resumes.models import DocumentParseTask
 from tests.integration.api.test_user_datasets import build_test_app, register, upload_file, mark_dataset_succeeded
 
 

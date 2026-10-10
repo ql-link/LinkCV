@@ -52,7 +52,7 @@ test("runtime registers an arbitrary OpenAI-compatible provider route", async ()
     apiKey: "fictional-key", baseUrl: "https://aihubmix.com/v1",
     contextWindow: 16384, maxOutputTokens: 4096,
   });
-  assert.equal(model.provider, "linkresume-aihubmix");
+  assert.equal(model.provider, "drawoffer-aihubmix");
   assert.equal(model.id, "vendor/model");
   assert.equal(model.baseUrl, "https://aihubmix.com/v1");
   assert.equal(model.contextWindow, 16384);
@@ -65,7 +65,7 @@ test("runtime keeps separate provider configuration for each route of one model"
     { provider: "aihubmix", api: "openai-completions", name: "same-model", routeId: "11", apiKey: "fictional-one", baseUrl: "https://aihubmix.com/v1" },
     { provider: "deepseek", api: "openai-completions", name: "same-model", routeId: "12", apiKey: "fictional-two", baseUrl: "https://api.deepseek.com/v1" },
   ]);
-  assert.deepEqual(routes.map((route) => route.model.provider), ["linkresume-aihubmix-11", "linkresume-deepseek-12"]);
+  assert.deepEqual(routes.map((route) => route.model.provider), ["drawoffer-aihubmix-11", "drawoffer-deepseek-12"]);
 });
 
 test("configured Pi runtime sends non-thinking options through the actual OpenAI stream", async () => {
@@ -237,7 +237,7 @@ test("system prompt applies the user-facing response style after agent policy", 
   assert.match(USER_FACING_RESPONSE_PROMPT, /“只分析，不修改”是行为边界/);
   assert.match(USER_FACING_RESPONSE_PROMPT, /先重写草稿再输出/);
   assert.ok(
-    SYSTEM_PROMPT.indexOf("你是 LinkResume 的简历智能助手") <
+    SYSTEM_PROMPT.indexOf("你是 DrawOffer 的简历智能助手") <
       SYSTEM_PROMPT.indexOf("以下规则只约束用户最终能够看到的自然语言回复"),
   );
   assert.doesNotMatch(SYSTEM_PROMPT, /Claude Code|IS_TEXT_OUTPUT_VISIBLE_TO_USER/);
@@ -719,7 +719,7 @@ test("explicit selected identity survives duplicate title guesses but real alter
 
 
 test("system prompt identifies the assistant and describes runtime-driven steps", () => {
-  assert.match(SYSTEM_PROMPT, /你是 LinkResume 的职业与简历智能助手/);
+  assert.match(SYSTEM_PROMPT, /你是 DrawOffer 的职业与简历智能助手/);
   assert.match(SYSTEM_PROMPT, /运行时按任务和步骤驱动整个流程/);
   assert.match(SYSTEM_PROMPT, /临时工作过程/);
   assert.match(SYSTEM_PROMPT, /不要调用没有提供的工具/);

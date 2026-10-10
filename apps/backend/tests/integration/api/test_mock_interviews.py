@@ -10,22 +10,22 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.config import Settings
-from linkresume.core.database import utc_now
-from linkresume.main import create_app
-from linkresume.modules.datasets.models import UserDataset
-from linkresume.modules.llm.gateway import GatewayResult, GatewayStreamEvent, GatewayUsage
-from linkresume.modules.llm.models import (
+from drawoffer.core.config import Settings
+from drawoffer.core.database import utc_now
+from drawoffer.main import create_app
+from drawoffer.modules.datasets.models import UserDataset
+from drawoffer.modules.llm.gateway import GatewayResult, GatewayStreamEvent, GatewayUsage
+from drawoffer.modules.llm.models import (
     LLMCallLog,
     LLMModel,
     LLMModelRoute,
     LLMProviderConnection,
     LLMUseCaseRoute,
 )
-from linkresume.modules.llm.resolver import MOCK_INTERVIEW, validation_fingerprint
-from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
-from linkresume.modules.product_events.models import ProductEvent
-from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
+from drawoffer.modules.llm.resolver import MOCK_INTERVIEW, validation_fingerprint
+from drawoffer.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
+from drawoffer.modules.product_events.models import ProductEvent
+from drawoffer.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 from tests.fakes import FakeRedis
 from tests.integration.api.test_interviews import (
     FakeStorage as InterviewFakeStorage,
@@ -188,7 +188,7 @@ def build_app(
         create_schema=True,
     )
     with app.state.session_factory() as db:
-        from linkresume.modules.resumes.models import ResumeTemplate
+        from drawoffer.modules.resumes.models import ResumeTemplate
         from tests.canonical_resume_fixtures import canonical_template_payload
 
         data, style = canonical_template_payload(key="mock-interview-test")
@@ -568,7 +568,7 @@ def test_other_users_cannot_access_and_unconfigured_model_creates_nothing() -> N
 
 
 def seed_dataset(app, user_email: str, storage: FakeStorage, markdown: str, *, parse_status: str = "succeeded") -> str:
-    from linkresume.modules.identity.models import User
+    from drawoffer.modules.identity.models import User
 
     with app.state.session_factory() as db:
         user = db.scalar(select(User).where(User.email == user_email))
@@ -664,7 +664,7 @@ def test_materials_in_questions_switch_feeds_analysis_and_carries_to_repeat() ->
 
 
 def mark_indexed(app, dataset_id: str, rag_file_id: int) -> None:
-    from linkresume.modules.datasets.models import UserDatasetRagSync
+    from drawoffer.modules.datasets.models import UserDatasetRagSync
 
     with app.state.session_factory() as db:
         dataset = db.get(UserDataset, int(dataset_id))
@@ -784,7 +784,7 @@ def _row(app, public_id: str) -> MockInterview:
 
 def test_superseded_task_cannot_write_or_fail_the_retried_run() -> None:
     app = build_app(ScriptedGateway())
-    runner_module = __import__("linkresume.application.mock_interviews.service", fromlist=["x"])
+    runner_module = __import__("drawoffer.application.mock_interviews.service", fromlist=["x"])
     with TestClient(app) as client:
         register(client, "mock-supersede@example.test")
         created = start_interview(client, app, follow_up_enabled=False)
@@ -904,10 +904,10 @@ def test_repeat_keeps_job_context_after_application_is_deleted() -> None:
 
 
 def test_desktop_text_interview_flow_keeps_ownership_channel_and_idempotency() -> None:
-    from linkresume.modules.identity.models import User
-    from linkresume.modules.identity.session_service import prepare_session
-    from linkresume.core.security import session_key
-    from linkresume.core.security import create_access_token
+    from drawoffer.modules.identity.models import User
+    from drawoffer.modules.identity.session_service import prepare_session
+    from drawoffer.core.security import session_key
+    from drawoffer.core.security import create_access_token
 
     gateway = ScriptedGateway()
     gateway.turn_headers = [{"action": "next_question", "depth_level": 2}, {"action": "follow_up", "depth_level": 3, "probe_quote": "我用火焰图定位热点", "probe_gap": "缺少数据验证"}]

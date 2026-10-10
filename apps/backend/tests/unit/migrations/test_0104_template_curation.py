@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from linkresume.core.migration_sql import sql_statements
-from linkresume.modules.resumes.template_admin_routes import AdminTemplateClassificationRequest
+from drawoffer.core.migration_sql import sql_statements
+from drawoffer.modules.resumes.template_admin_routes import AdminTemplateClassificationRequest
 
 ROOT = Path(__file__).resolve().parents[5]
 SQL = ROOT / "apps/backend/migrations/sql/0104.up.sql"

@@ -13,13 +13,13 @@ import redis
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
-from linkresume.core.config import Settings
-from linkresume.core.errors import ApiError
-from linkresume.core.security import session_key, user_sessions_key
-from linkresume.integrations.wechat_client import WechatClient
-from linkresume.main import create_app
-from linkresume.modules.identity import desktop_login_service as service
-from linkresume.modules.identity.models import User
+from drawoffer.core.config import Settings
+from drawoffer.core.errors import ApiError
+from drawoffer.core.security import session_key, user_sessions_key
+from drawoffer.integrations.wechat_client import WechatClient
+from drawoffer.main import create_app
+from drawoffer.modules.identity import desktop_login_service as service
+from drawoffer.modules.identity.models import User
 from tests.fakes import FakeRedis
 from tests.integration.api.test_identity_resumes_assets import FakeStorage
 from tests.integration.api.test_wechat_routes import wxacode_handler
@@ -111,8 +111,8 @@ def login(client):
 
 
 def test_desktop_readonly_resources_keep_ownership_and_version_checks(desktop_app):
-    from linkresume.modules.identity.session_service import issue_session
-    from linkresume.modules.resumes.models import ResumeTemplate
+    from drawoffer.modules.identity.session_service import issue_session
+    from drawoffer.modules.resumes.models import ResumeTemplate
     from tests.canonical_resume_fixtures import canonical_template_payload
     from tests.integration.api.test_resume_pdf import FakeRenderer
 
@@ -271,7 +271,7 @@ def test_credentials_cannot_cross_channels_or_mix_with_cookies(desktop_app):
         sid = tokens['refresh_token'].split('.')[0]
         headers = {'Authorization': 'Bearer ' + tokens['access_token']}
         for channel in ('web', 'miniprogram'):
-            from linkresume.core.security import create_access_token
+            from drawoffer.core.security import create_access_token
             token = create_access_token(int(tokens['user']['id']), sid, settings, channel)
             wrong_headers = {'Authorization': 'Bearer ' + token}
             for path in ('/api/auth/desktop/me', '/api/resumes', '/api/resume-templates'):
@@ -332,7 +332,7 @@ def test_desktop_wechat_routes_follow_the_environment_policy(desktop_app, enviro
 
 
 def test_deletion_marker_denies_desktop_credentials_even_with_enabled_status(desktop_app):
-    from linkresume.core.database import utc_now
+    from drawoffer.core.database import utc_now
 
     with TestClient(desktop_app) as client:
         qr, tokens = login(client)
@@ -469,7 +469,7 @@ def test_desktop_career_owned_commands_and_channel_boundaries(desktop_app):
         stranger = User(wechat_openid='openid-career-stranger', nickname='李四')
         db.add(stranger)
         db.commit()
-        from linkresume.modules.identity.session_service import prepare_session
+        from drawoffer.modules.identity.session_service import prepare_session
         stranger_credentials = prepare_session(stranger, settings, channel='desktop')
         desktop_app.state.redis.hset(session_key(stranger_credentials.sid), mapping={'uid': str(stranger.id), 'channel': 'desktop'})
 
@@ -521,7 +521,7 @@ def test_desktop_career_owned_commands_and_channel_boundaries(desktop_app):
                 'interviewer_name': '虚构面试官', 'preparation_note': '准备虚构案例'}
         assert client.put(f'/api/interview-sessions/{sid}', headers=other_headers, json=edit).status_code == 404
         assert client.put(f'/api/interview-sessions/{sid}', json=edit).status_code == 401
-        from linkresume.core.security import create_access_token
+        from drawoffer.core.security import create_access_token
         auth_sid = tokens['refresh_token'].split('.')[0]
         wrong_token = create_access_token(int(tokens['user']['id']), auth_sid, settings, 'miniprogram')
         assert client.put(f'/api/interview-sessions/{sid}', headers={'Authorization': 'Bearer ' + wrong_token}, json=edit).status_code == 401
@@ -635,7 +635,7 @@ def test_desktop_stage_detail_routes_keep_ownership(desktop_app):
         stranger = User(wechat_openid='openid-stage-stranger', nickname='王五')
         db.add(stranger)
         db.commit()
-        from linkresume.modules.identity.session_service import prepare_session
+        from drawoffer.modules.identity.session_service import prepare_session
         stranger_credentials = prepare_session(stranger, settings, channel='desktop')
         desktop_app.state.redis.hset(session_key(stranger_credentials.sid), mapping={'uid': str(stranger.id), 'channel': 'desktop'})
     with TestClient(desktop_app) as client:
@@ -676,7 +676,7 @@ def test_desktop_stage_detail_routes_keep_ownership(desktop_app):
 
 @pytest.mark.parametrize('decision', ['accepted', 'declined'])
 def test_desktop_v4_offer_requires_formal_offer_and_preserves_ownership(desktop_app, decision):
-    from linkresume.modules.identity.session_service import prepare_session
+    from drawoffer.modules.identity.session_service import prepare_session
     with desktop_app.state.session_factory() as db:
         stranger = User(wechat_openid='v4-stranger', nickname='虚构用户')
         db.add(stranger)

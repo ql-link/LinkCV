@@ -2,9 +2,18 @@
 # Git Bash requires this launcher to remain LF-only; .gitattributes enforces it.
 set -euo pipefail
 
+# Accept pre-rename LINKRESUME_* variables during the compatibility window; DRAWOFFER_* wins.
+while IFS='=' read -r legacy_name _; do
+  new_name="DRAWOFFER_${legacy_name#LINKRESUME_}"
+  if [[ -z "${!new_name:-}" ]]; then
+    echo "${legacy_name} is deprecated; rename it to ${new_name}" >&2
+    export "${new_name}=${!legacy_name}"
+  fi
+done < <(env | grep -E '^LINKRESUME_[A-Z0-9_]+=.' || true)
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../.." && pwd)"
-base_env="${LINKRESUME_ENV_FILE:-${repo_root}/.env.development}"
+base_env="${DRAWOFFER_ENV_FILE:-${repo_root}/.env.development}"
 if [[ "${base_env}" =~ ^[A-Za-z]:[\\/] ]] && command -v wslpath >/dev/null 2>&1; then
   base_env="$(wslpath -u "${base_env}")"
 fi
@@ -34,25 +43,25 @@ if ! command -v "${node_bin}" >/dev/null 2>&1; then
   fi
 fi
 
-backend_port="${LINKRESUME_LOCAL_BACKEND_PORT:-18000}"
-pi_port="${LINKRESUME_LOCAL_PI_PORT:-8010}"
+backend_port="${DRAWOFFER_LOCAL_BACKEND_PORT:-18000}"
+pi_port="${DRAWOFFER_LOCAL_PI_PORT:-8010}"
 worktree_queue_id="$(printf '%s' "${repo_root}" | cksum | awk '{print $1}')"
-log_directory="${LINKRESUME_LOCAL_LOG_DIRECTORY:-${repo_root}/.runtime/logs}"
+log_directory="${DRAWOFFER_LOCAL_LOG_DIRECTORY:-${repo_root}/.runtime/logs}"
 
-export LINKRESUME_ENV_FILE="$(node_path "${base_env}")"
+export DRAWOFFER_ENV_FILE="$(node_path "${base_env}")"
 if [[ -f "${local_env}" ]]; then
-  export LINKRESUME_SECRET_ENV_FILE="$(node_path "${local_env}")"
+  export DRAWOFFER_SECRET_ENV_FILE="$(node_path "${local_env}")"
 fi
-export BACKEND_HOST="${LINKRESUME_LOCAL_BACKEND_HOST:-127.0.0.1}"
+export BACKEND_HOST="${DRAWOFFER_LOCAL_BACKEND_HOST:-127.0.0.1}"
 export BACKEND_PORT="${backend_port}"
 export BACKEND_PROXY_TARGET="http://127.0.0.1:${backend_port}"
 export PI_SERVICE_HOST="127.0.0.1"
 export PI_SERVICE_PORT="${pi_port}"
 export PI_SERVICE_BASE_URL="http://127.0.0.1:${pi_port}"
-export LINKRESUME_BASE_URL="http://127.0.0.1:${backend_port}"
+export DRAWOFFER_BASE_URL="http://127.0.0.1:${backend_port}"
 export LOG_DIRECTORY="$(node_path "${log_directory}")"
-export RABBITMQ_QUEUE="${LINKRESUME_LOCAL_RABBITMQ_QUEUE:-linkresume.resume_import.worker.local.${worktree_queue_id}.v2}"
-export RABBITMQ_ROUTING_KEY="${LINKRESUME_LOCAL_RABBITMQ_ROUTING_KEY:-resume.import.local.${worktree_queue_id}.v2}"
+export RABBITMQ_QUEUE="${DRAWOFFER_LOCAL_RABBITMQ_QUEUE:-linkresume.resume_import.worker.local.${worktree_queue_id}.v2}"
+export RABBITMQ_ROUTING_KEY="${DRAWOFFER_LOCAL_RABBITMQ_ROUTING_KEY:-resume.import.local.${worktree_queue_id}.v2}"
 
 mkdir -p "${log_directory}"
 
@@ -74,7 +83,7 @@ set -a
 source "${runtime_agent_env}"
 set +a
 if [[ "${node_uses_windows_interop}" == true ]]; then
-  windows_env_names="LINKRESUME_ENV_FILE:LINKRESUME_SECRET_ENV_FILE:BACKEND_HOST:BACKEND_PORT:BACKEND_PROXY_TARGET:PI_SERVICE_HOST:PI_SERVICE_PORT:PI_SERVICE_BASE_URL:LINKRESUME_BASE_URL:LOG_DIRECTORY:RABBITMQ_QUEUE:RABBITMQ_ROUTING_KEY:PI_SERVICE_TOKEN:LINKRESUME_INTERNAL_AGENT_TOKEN"
+  windows_env_names="DRAWOFFER_ENV_FILE:DRAWOFFER_SECRET_ENV_FILE:BACKEND_HOST:BACKEND_PORT:BACKEND_PROXY_TARGET:PI_SERVICE_HOST:PI_SERVICE_PORT:PI_SERVICE_BASE_URL:DRAWOFFER_BASE_URL:LOG_DIRECTORY:RABBITMQ_QUEUE:RABBITMQ_ROUTING_KEY:PI_SERVICE_TOKEN:DRAWOFFER_INTERNAL_AGENT_TOKEN"
   export WSLENV="${WSLENV:+${WSLENV}:}${windows_env_names}"
 fi
 # Node keeps the first value across repeated --env-file flags. Runtime tokens
@@ -84,15 +93,15 @@ node_env_args=("--env-file=$(node_path "${runtime_agent_env}")" "${node_env_args
 "${node_bin}" "${node_env_args[@]}" -e '
   const required = [
     "PI_SERVICE_TOKEN",
-    "LINKRESUME_INTERNAL_AGENT_TOKEN",
+    "DRAWOFFER_INTERNAL_AGENT_TOKEN",
   ];
   const missing = required.filter((name) => !process.env[name]?.trim());
   if (missing.length) {
     console.error(`Missing Development Agent secrets: ${missing.join(", ")}`);
     process.exit(11);
   }
-  if (process.env.PI_SERVICE_TOKEN === process.env.LINKRESUME_INTERNAL_AGENT_TOKEN) {
-    console.error("PI_SERVICE_TOKEN and LINKRESUME_INTERNAL_AGENT_TOKEN must be different");
+  if (process.env.PI_SERVICE_TOKEN === process.env.DRAWOFFER_INTERNAL_AGENT_TOKEN) {
+    console.error("PI_SERVICE_TOKEN and DRAWOFFER_INTERNAL_AGENT_TOKEN must be different");
     process.exit(12);
   }
   if (!process.env.LLM_CREDENTIAL_ENCRYPTION_KEYS?.trim()) {

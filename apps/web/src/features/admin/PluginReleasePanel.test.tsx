@@ -48,7 +48,7 @@ describe("PluginReleasePanel", () => {
       cleanup_pending: false,
     });
     render(<PluginReleasePanel />);
-    expect(await screen.findByText("LinkResume 岗位采集插件")).toBeInTheDocument();
+    expect(await screen.findByText("DrawOffer 岗位采集插件")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传新版本" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下架" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
@@ -71,7 +71,7 @@ describe("PluginReleasePanel", () => {
     render(<PluginReleasePanel />);
 
     expect(await screen.findByText("已下架")).toBeInTheDocument();
-    expect(screen.getByText("LinkResume 岗位采集插件")).toBeInTheDocument();
+    expect(screen.getByText("DrawOffer 岗位采集插件")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重新上架" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传新版本" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
@@ -87,7 +87,7 @@ describe("PluginReleasePanel", () => {
     vi.spyOn(api, "getAdminPluginRelease").mockResolvedValue({ status: "published", release });
     const remove = vi.spyOn(api, "adminDeletePluginRelease").mockResolvedValue({ deleted: true });
     render(<PluginReleasePanel />);
-    await screen.findByText("LinkResume 岗位采集插件");
+    await screen.findByText("DrawOffer 岗位采集插件");
 
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
     expect(screen.getByRole("alertdialog", { name: "永久删除插件？" })).toHaveTextContent(

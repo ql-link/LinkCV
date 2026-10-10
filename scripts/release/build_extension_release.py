@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and verify environment-specific LinkResume Chrome extension packages."""
+"""Build and verify environment-specific DrawOffer Chrome extension packages."""
 
 from __future__ import annotations
 
@@ -36,11 +36,11 @@ def normalize_origin(value: str) -> str:
     try:
         port = parsed.port
     except ValueError as error:
-        raise ValueError(f"invalid LinkResume origin: {value!r}") from error
+        raise ValueError(f"invalid DrawOffer origin: {value!r}") from error
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise ValueError(f"invalid LinkResume origin: {value!r}")
+        raise ValueError(f"invalid DrawOffer origin: {value!r}")
     if parsed.path not in {"", "/"} or parsed.query or parsed.fragment or parsed.username or parsed.password:
-        raise ValueError(f"LinkResume origin must not contain path, credentials, query or fragment: {value!r}")
+        raise ValueError(f"DrawOffer origin must not contain path, credentials, query or fragment: {value!r}")
     authority = parsed.hostname
     if ":" in authority:
         authority = f"[{authority}]"
@@ -85,9 +85,9 @@ def validate_zip(path: Path, *, version: str, origin: str, environment: str) -> 
     if manifest.get("version") != version:
         raise ValueError("extension manifest version does not match package.json")
     expected_name = (
-        "LinkResume 岗位采集（开发版）"
+        "DrawOffer 岗位采集（开发版）"
         if environment == "development"
-        else "LinkResume 岗位采集"
+        else "DrawOffer 岗位采集"
     )
     if manifest.get("name") != expected_name:
         raise ValueError("extension name does not match the target environment")
@@ -107,8 +107,8 @@ def locate_wxt_zip() -> Path:
 def build_environment(environment: str, origin: str, version: str, destination: Path) -> tuple[str, str]:
     env = os.environ.copy()
     env["WXT_RELEASE_BUILD"] = "1"
-    env["WXT_PUBLIC_LINKRESUME_CHANNEL"] = environment
-    env["WXT_PUBLIC_LINKRESUME_ORIGIN"] = origin
+    env["WXT_PUBLIC_DRAWOFFER_CHANNEL"] = environment
+    env["WXT_PUBLIC_DRAWOFFER_ORIGIN"] = origin
     subprocess.run(
         ["npm", "--prefix", str(EXTENSION_ROOT), "run", "zip:release"],
         cwd=REPO_ROOT,
@@ -116,7 +116,7 @@ def build_environment(environment: str, origin: str, version: str, destination: 
         check=True,
     )
     source = locate_wxt_zip()
-    file_name = f"linkresume-job-capture-{environment}-v{version}.zip"
+    file_name = f"drawoffer-job-capture-{environment}-v{version}.zip"
     target = destination / file_name
     shutil.copyfile(source, target)
     validate_zip(target, version=version, origin=origin, environment=environment)
@@ -143,7 +143,7 @@ def main() -> int:
         "production": normalize_origin(args.production_origin),
     }
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="linkresume-extension-release-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="drawoffer-extension-release-") as temporary:
         staging = Path(temporary)
         built = [
             (*build_environment(environment, origin, version, staging), environment)

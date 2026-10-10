@@ -38,10 +38,10 @@ export function Nav({
       <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <a
           href="#top"
-          aria-label="返回 LinkResume 首页"
+          aria-label="返回 DrawOffer 首页"
           className="flex items-center gap-3"
         >
-          <Brand className="landing-nav-brand" label="LinkResume" />
+          <Brand className="landing-nav-brand" label="DrawOffer" />
           <span className="hidden font-mono text-[10px] font-normal tracking-[0.12em] text-zinc-400 dark:text-zinc-500 sm:inline">
             {t.nav.brandSub}
           </span>

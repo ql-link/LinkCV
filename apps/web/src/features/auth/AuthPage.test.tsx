@@ -50,7 +50,7 @@ describe("AuthPage environment-aware login", () => {
 
     const { rerender } = render(<AuthPage initialMode="login" />);
     await act(async () => {});
-    expect(screen.getByRole("heading", { name: "微信扫码登录 LinkResume。" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "微信扫码登录 DrawOffer。" })).toBeInTheDocument();
     expect(screen.getByAltText("微信扫码登录二维码")).toBeInTheDocument();
     expect(screen.getByText("扫码后在微信中确认登录，保障账号安全")).toBeInTheDocument();
     expect(screen.getByText("登录即表示同意《用户协议》与《隐私政策》")).toBeInTheDocument();
@@ -77,7 +77,7 @@ describe("AuthPage environment-aware login", () => {
     render(<AuthPage initialMode="login" />);
     await act(async () => {});
 
-    expect(screen.getByRole("heading", { name: "登录 LinkResume。" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "登录 DrawOffer。" })).toBeInTheDocument();
     expect(screen.getByText("仅开发环境")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "邮箱" })).toBeInTheDocument();
     expect(screen.getByLabelText("密码")).toBeInTheDocument();
@@ -120,7 +120,7 @@ describe("AuthPage environment-aware login", () => {
     render(<AuthPage initialMode="register" />);
     await act(async () => {});
 
-    expect(screen.getByRole("heading", { name: "注册 LinkResume。" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "注册 DrawOffer。" })).toBeInTheDocument();
     expect(screen.getByLabelText("密码")).toHaveAttribute("autocomplete", "new-password");
     fireEvent.change(screen.getByRole("textbox", { name: "邮箱" }), {
       target: { value: "new@example.test" },

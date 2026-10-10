@@ -10,10 +10,10 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from linkresume.application.resumes.service import create_resume_from_template
-from linkresume.core.migration_sql import execute_sql_file
-from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import ResumeTemplate
+from drawoffer.application.resumes.service import create_resume_from_template
+from drawoffer.core.migration_sql import execute_sql_file
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.resumes.models import ResumeTemplate
 
 @pytest.fixture(params=["0101", "0102"])
 def migration(request):
@@ -29,11 +29,11 @@ def migration(request):
 @pytest.fixture
 def db(migration):
     _, renames = migration
-    raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
+    raw = os.environ.get("DRAWOFFER_TEST_MYSQL_URL")
     if not raw:
-        pytest.skip("Set LINKRESUME_TEST_MYSQL_URL to a disposable MySQL at head")
+        pytest.skip("Set DRAWOFFER_TEST_MYSQL_URL to a disposable MySQL at head")
     url = make_url(raw)
-    assert url.database == "linkresume_curation_0104" and url.host in {"localhost", "127.0.0.1"}
+    assert url.database == "drawoffer_curation_0104" and url.host in {"localhost", "127.0.0.1"}
     engine = create_engine(raw)
     with engine.connect() as connection:
         transaction = connection.begin()

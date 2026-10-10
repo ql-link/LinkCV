@@ -7,7 +7,7 @@
   flex-direction: column;
   box-sizing: border-box;
   font-family:
-    "LinkResume Career UI",
+    "DrawOffer Career UI",
     -apple-system,
     "PingFang SC",
     sans-serif;

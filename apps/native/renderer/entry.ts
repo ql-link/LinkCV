@@ -5,7 +5,7 @@
 // renderResumePrintDocument 与同一份模板样式。字体、换行与分页仍受渲染引擎影响。
 //
 // 与原生层的协议（protocol_version 1）：
-//   原生 → 页面：调用 window.linkresume.render(request)，request 同 ResumeRenderRequestV1
+//   原生 → 页面：调用 window.drawoffer.render(request)，request 同 ResumeRenderRequestV1
 //   页面 → 原生：postMessage({ type: "ready" }) / { type: "rendered", heightPx } / { type: "error", message }
 import applicationStyles from "../../web/src/app.css?raw";
 import baseStyles from "../../web/src/styles.css?raw";
@@ -42,17 +42,17 @@ const BUNDLED_ASSETS: Record<string, string> = {
 
 declare global {
   interface Window {
-    webkit?: { messageHandlers?: { linkresume?: { postMessage(message: unknown): void } } };
+    webkit?: { messageHandlers?: { drawoffer?: { postMessage(message: unknown): void } } };
     chrome?: { webview?: { postMessage(message: unknown): void } };
-    linkresume: { render(request: ResumeRenderRequestV1): void; clear(): void };
+    drawoffer: { render(request: ResumeRenderRequestV1): void; clear(): void };
   }
 }
 
 function post(message: NativeMessage) {
   // WKWebView 走 messageHandlers，WebView2 走 chrome.webview；两者都没有时（浏览器里调试）打到控制台
-  if (window.webkit?.messageHandlers?.linkresume) window.webkit.messageHandlers.linkresume.postMessage(message);
+  if (window.webkit?.messageHandlers?.drawoffer) window.webkit.messageHandlers.drawoffer.postMessage(message);
   else if (window.chrome?.webview) window.chrome.webview.postMessage(message);
-  else console.info("[linkresume-renderer]", message);
+  else console.info("[drawoffer-renderer]", message);
 }
 
 let generation = 0;
@@ -96,11 +96,11 @@ async function render(request: ResumeRenderRequestV1) {
 }
 
 const style = document.createElement("style");
-style.textContent = `${baseStyles}\n${applicationStyles}\n${printStyles}\n${museStyles}\nhtml,body{margin:0;background:transparent}\nhtml[data-linkresume-native-renderer] [data-resume-print-document]{height:auto;overflow:visible}`;
+style.textContent = `${baseStyles}\n${applicationStyles}\n${printStyles}\n${museStyles}\nhtml,body{margin:0;background:transparent}\nhtml[data-drawoffer-native-renderer] [data-resume-print-document]{height:auto;overflow:visible}`;
 document.head.appendChild(style);
 
 // 原生 evaluateJavaScript 不接受 Promise 返回值，桥接入口保持同步 void。
-window.linkresume = {
+window.drawoffer = {
   render(request) { void render(request); },
   clear() {
     generation += 1;

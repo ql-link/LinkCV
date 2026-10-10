@@ -6,7 +6,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError as SchemaValidationError
 from pydantic import ValidationError
 
-from linkresume.domain.resume import (
+from drawoffer.domain.resume import (
     CanonicalResumeDocument,
     LayoutPlan,
     ResumePresentation,

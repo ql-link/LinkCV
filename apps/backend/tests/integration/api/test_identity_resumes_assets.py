@@ -6,12 +6,12 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkresume.core.config import Settings
-from linkresume.core.security import parse_refresh_token, session_key
-from linkresume.main import create_app
-from linkresume.modules.identity.models import User
-from linkresume.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
-from linkresume.modules.resumes.models import (
+from drawoffer.core.config import Settings
+from drawoffer.core.security import parse_refresh_token, session_key
+from drawoffer.main import create_app
+from drawoffer.modules.identity.models import User
+from drawoffer.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
+from drawoffer.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
     Resume,

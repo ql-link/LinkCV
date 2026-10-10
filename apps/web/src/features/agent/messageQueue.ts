@@ -26,7 +26,7 @@ export type MessageQueue = {
 };
 export const QUEUE_CHANGE_EVENT = "agent-message-queue-change";
 const PREFIX = "linkresume:agent-queue:v1:";
-const DATABASE = "linkresume-agent-queues";
+const DATABASE = "drawoffer-agent-queues";
 const STORE = "queues";
 const observedKeys = new Set<string>();
 const freshKeys = new Set<string>();

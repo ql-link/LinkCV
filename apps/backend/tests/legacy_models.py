@@ -3,9 +3,9 @@ from datetime import datetime
 from typing import Any
 from sqlalchemy import CheckConstraint, ForeignKey, Index, JSON, PrimaryKeyConstraint, String, UniqueConstraint, desc, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from linkresume.core.database import Base as RuntimeBase
-from linkresume.modules.resumes.models import unsigned_bigint_type, unsigned_int_type, timestamp_type
-from linkresume.modules.job_descriptions.models import ascii_char
+from drawoffer.core.database import Base as RuntimeBase
+from drawoffer.modules.resumes.models import unsigned_bigint_type, unsigned_int_type, timestamp_type
+from drawoffer.modules.job_descriptions.models import ascii_char
 
 class Base(DeclarativeBase):
     pass

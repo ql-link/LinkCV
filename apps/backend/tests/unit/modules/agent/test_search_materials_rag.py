@@ -2,7 +2,7 @@
 
 import pytest
 
-from linkresume.modules.agent.resume_tools import search_materials
+from drawoffer.modules.agent.resume_tools import search_materials
 from tests.fakes import FakeLinkRag
 from tests.unit.services.test_rag_sync_service import add_dataset, add_user, env, record  # noqa: F401
 

@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, call
 import pytest
 from pydantic import ValidationError
 
-from linkresume.core.mq.kafka import KafkaPublisher
-from linkresume.core.mq.message import DatasetParseMessage, ResumeImportMessage
-from linkresume.core.mq.publisher import MQPublishError
-from linkresume.core.mq.rabbitmq import RabbitMQPublisher
+from drawoffer.core.mq.kafka import KafkaPublisher
+from drawoffer.core.mq.message import DatasetParseMessage, ResumeImportMessage
+from drawoffer.core.mq.publisher import MQPublishError
+from drawoffer.core.mq.rabbitmq import RabbitMQPublisher
 
 
 def test_resume_import_message_uses_canonical_string_identifiers() -> None:
@@ -127,7 +127,7 @@ def test_kafka_publish_uses_import_id_as_partition_key(
     def constructor(**_kwargs):
         return producer
 
-    monkeypatch.setattr("linkresume.core.mq.kafka.AIOKafkaProducer", constructor)
+    monkeypatch.setattr("drawoffer.core.mq.kafka.AIOKafkaProducer", constructor)
     publisher = KafkaPublisher(
         bootstrap_servers="broker:9092",
         topic="tolink.resume.resume_import.v2",
@@ -159,7 +159,7 @@ def test_kafka_publish_wraps_broker_failure(monkeypatch: pytest.MonkeyPatch) -> 
     def constructor(**_kwargs):
         return producer
 
-    monkeypatch.setattr("linkresume.core.mq.kafka.AIOKafkaProducer", constructor)
+    monkeypatch.setattr("drawoffer.core.mq.kafka.AIOKafkaProducer", constructor)
     publisher = KafkaPublisher(
         bootstrap_servers="broker:9092",
         topic="tolink.resume.resume_import.v2",
@@ -186,7 +186,7 @@ def test_kafka_publish_uses_dataset_task_id_as_partition_key(
     def constructor(**_kwargs):
         return producer
 
-    monkeypatch.setattr("linkresume.core.mq.kafka.AIOKafkaProducer", constructor)
+    monkeypatch.setattr("drawoffer.core.mq.kafka.AIOKafkaProducer", constructor)
     publisher = KafkaPublisher(
         bootstrap_servers="broker:9092",
         topic="tolink.resume.resume_import.v2",
@@ -217,7 +217,7 @@ def test_kafka_concurrent_first_publish_starts_only_one_producer(
         producers.append(producer)
         return producer
 
-    monkeypatch.setattr("linkresume.core.mq.kafka.AIOKafkaProducer", constructor)
+    monkeypatch.setattr("drawoffer.core.mq.kafka.AIOKafkaProducer", constructor)
     publisher = KafkaPublisher(
         bootstrap_servers="broker:9092",
         topic="tolink.resume.resume_import.v2",
@@ -262,7 +262,7 @@ def test_rabbitmq_publish_uses_fixed_routing_key(
         close=AsyncMock(),
     )
     monkeypatch.setattr(
-        "linkresume.core.mq.rabbitmq.aio_pika.connect_robust",
+        "drawoffer.core.mq.rabbitmq.aio_pika.connect_robust",
         AsyncMock(return_value=connection),
     )
     publisher = RabbitMQPublisher(

@@ -116,7 +116,7 @@ export function createHarness(t, {
   const run = async (overrides = {}) => {
     const controller = overrides.controller ?? new AbortController();
     return executeAgentRun({
-      config: { linkresumeBaseUrl: "http://app.test", linkresumeToken: "fictional-token", toolTimeoutMs: 10000 },
+      config: { drawofferBaseUrl: "http://app.test", drawofferToken: "fictional-token", toolTimeoutMs: 10000 },
       runId: "run", userSequenceNo: 1, submissionKey: "initial_1", content: "请诊断这份简历", history: [], contextMaterials: [],
       signal: controller.signal, emit: (type, data) => events.push({ type, ...data }),
       onReady: (value) => { handle = value; },

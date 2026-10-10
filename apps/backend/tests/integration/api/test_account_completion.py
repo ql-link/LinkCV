@@ -5,12 +5,12 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select
 
-from linkresume.core.database import utc_now
-from linkresume.core.security import verify_password
-from linkresume.modules.identity.models import AccountDeletionJob, AccountPreference, User
-from linkresume.modules.identity import wechat_action_service as actions
-from linkresume.modules.resumes.models import ResumeTemplate
-from linkresume.workers.account_deletion_worker import AccountDeletionProcessor
+from drawoffer.core.database import utc_now
+from drawoffer.core.security import verify_password
+from drawoffer.modules.identity.models import AccountDeletionJob, AccountPreference, User
+from drawoffer.modules.identity import wechat_action_service as actions
+from drawoffer.modules.resumes.models import ResumeTemplate
+from drawoffer.workers.account_deletion_worker import AccountDeletionProcessor
 from tests.integration.api.test_account_routes import build_test_app, FakeWechatClient
 
 
@@ -156,7 +156,7 @@ def test_deletion_denies_sessions_and_share_then_cleans_only_owner():
         created = client.post("/api/resumes", json={"title": "张三的简历", "template_id": app.state.test_template_id}).json()["resume"]
         share = client.post(f"/api/resumes/{created['id']}/share", json={}).json()
         with app.state.session_factory() as db:
-            from linkresume.modules.resumes.models import Resume
+            from drawoffer.modules.resumes.models import Resume
             token = db.get(Resume, int(created["id"])).share_token
         app.state.storage.objects[f"users/{uid}/assets/example.png"] = b"fictional"
         app.state.storage.objects[f"users/{other_uid}/assets/example.png"] = b"other"
@@ -267,8 +267,8 @@ def test_expired_refreshed_and_logged_out_wechat_proofs_are_rejected():
 
 
 def test_admin_active_ai_and_shared_resource_accounts_cannot_be_deleted():
-    from linkresume.modules.agent.models import AgentSession, AgentRun
-    from linkresume.modules.announcements.models import Announcement
+    from drawoffer.modules.agent.models import AgentSession, AgentRun
+    from drawoffer.modules.announcements.models import Announcement
     app = build_test_app()
     with TestClient(app) as client:
         uid = register(client); enable_deletion(app)
@@ -299,7 +299,7 @@ def test_password_revocation_failure_rolls_back_password(monkeypatch):
     with TestClient(app, raise_server_exceptions=False) as client:
         uid = register(client)
         def broken(*args, **kwargs): raise ConnectionError("fictional unavailable")
-        monkeypatch.setattr("linkresume.modules.identity.account_routes.revoke_user_sessions", broken)
+        monkeypatch.setattr("drawoffer.modules.identity.account_routes.revoke_user_sessions", broken)
         response = client.post("/api/account/change-password", json={"current_password": "password-123", "new_password": "fictional456", "confirm_password": "fictional456"})
         assert response.status_code == 500
         with app.state.session_factory() as db:
@@ -307,8 +307,8 @@ def test_password_revocation_failure_rolls_back_password(monkeypatch):
 
 
 def test_rag_failure_attention_retry_and_receipt_retention():
-    from linkresume.modules.datasets.models import UserDatasetRagSync
-    from linkresume.workers.account_deletion_worker import retry_job
+    from drawoffer.modules.datasets.models import UserDatasetRagSync
+    from drawoffer.workers.account_deletion_worker import retry_job
     from tests.fakes import FakeLinkRag
     app = build_test_app(); enable_deletion(app)
     with TestClient(app) as client:
@@ -371,7 +371,7 @@ def test_lost_cleanup_lease_cannot_report_completion_and_expired_job_recovers():
 
 def test_deletion_removes_rows_that_used_to_rely_on_database_cascades():
     """Without database foreign keys, cleanup must delete these rows explicitly."""
-    from linkresume.modules.interviews.models import (
+    from drawoffer.modules.interviews.models import (
         InterviewRecordingTranscription,
         InterviewReviewQuestionNote,
         JobApplicationOfferMaterial,

@@ -48,7 +48,7 @@ const TEMPLATE_PDF_ASSETS: Record<string, string> = {
   "/templates/avatar-creative.png": creativeAvatar,
   "/templates/avatar-creative.svg": creativeAvatar,
 };
-const FONT_ORIGIN = "https://linkresume-render.local";
+const FONT_ORIGIN = "https://drawoffer-render.local";
 const FONT_ASSETS = new Map([
   [fontUrl(serifRegularAsset), serifRegularAsset],
   [fontUrl(sansVariableAsset), sansVariableAsset],
@@ -59,7 +59,7 @@ const EMBEDDED_FONT_STYLES = `
 @font-face{font-family:"Source Han Serif SC";src:url(${fontUrl(serifRegularAsset)}) format("opentype");font-weight:400;font-style:normal}
 @font-face{font-family:"Source Han Sans SC";src:url(${fontUrl(sansVariableAsset)}) format("woff2-variations");font-weight:250 900;font-style:normal}
 @font-face{font-family:"LXGW WenKai";src:url(${fontUrl(wenkaiMediumAsset)}) format("truetype");font-weight:400;font-style:normal}
-@font-face{font-family:"LinkResume Noto Sans SC";src:url(${fontUrl(sansRegularAsset)}) format("opentype");font-weight:400;font-style:normal}
+@font-face{font-family:"DrawOffer Noto Sans SC";src:url(${fontUrl(sansRegularAsset)}) format("opentype");font-weight:400;font-style:normal}
 `;
 
 function fontUrl(asset: string) {

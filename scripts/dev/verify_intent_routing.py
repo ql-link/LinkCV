@@ -4,15 +4,15 @@ import asyncio
 import json
 from pathlib import Path
 
-from linkresume.core.config import load_settings
-from linkresume.core.database import build_engine, build_session_factory
-from linkresume.modules.agent.intent_schemas import INTENT_POLICY, IntentDecision
-from linkresume.modules.agent.systemone_intent import ACTIONS
-from linkresume.modules.llm.crypto import CredentialCipher
-from linkresume.modules.llm.gateway import LiteLLMGateway
-from linkresume.modules.llm.resolver import ASSISTANT_INTENT
-from linkresume.modules.llm.schemas import ChatMessage
-from linkresume.modules.llm.service import LLMError, LLMService
+from drawoffer.core.config import load_settings
+from drawoffer.core.database import build_engine, build_session_factory
+from drawoffer.modules.agent.intent_schemas import INTENT_POLICY, IntentDecision
+from drawoffer.modules.agent.systemone_intent import ACTIONS
+from drawoffer.modules.llm.crypto import CredentialCipher
+from drawoffer.modules.llm.gateway import LiteLLMGateway
+from drawoffer.modules.llm.resolver import ASSISTANT_INTENT
+from drawoffer.modules.llm.schemas import ChatMessage
+from drawoffer.modules.llm.service import LLMError, LLMService
 
 
 async def verify(args, cases):

@@ -7,13 +7,13 @@ import pytest
 from aiokafka.structs import TopicPartition
 from pydantic import BaseModel, ValidationError
 
-from linkresume.core.config import Settings
-from linkresume.core.mq.message import DatasetParseMessage, ResumeImportMessage
-from linkresume.workers.document_parse_consumer import (
+from drawoffer.core.config import Settings
+from drawoffer.core.mq.message import DatasetParseMessage, ResumeImportMessage
+from drawoffer.workers.document_parse_consumer import (
     _handle_kafka_message,
     _handle_rabbit_message,
 )
-from linkresume.workers.resume_import_worker import (
+from drawoffer.workers.resume_import_worker import (
     WorkerDependencyUnavailable,
     WorkerTaskRetryable,
 )

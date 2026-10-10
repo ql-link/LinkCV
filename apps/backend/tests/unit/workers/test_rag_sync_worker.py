@@ -2,8 +2,8 @@
 
 import asyncio
 
-from linkresume.workers import rag_sync_worker
-from linkresume.workers.rag_sync_worker import LOCK_KEY, run_rag_sync_loop, run_rag_sync_once
+from drawoffer.workers import rag_sync_worker
+from drawoffer.workers.rag_sync_worker import LOCK_KEY, run_rag_sync_loop, run_rag_sync_once
 
 
 class LockRedis:

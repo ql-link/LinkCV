@@ -32,7 +32,7 @@ describe("WorkspaceNavigation", () => {
     const { rerender } = render(<WorkspaceNavigation active="applications" email="user@example.test" onItemIntent={onItemIntent} />);
 
     expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
-    const brandLink = screen.getByRole("link", { name: "LinkResume 首页" });
+    const brandLink = screen.getByRole("link", { name: "DrawOffer 首页" });
     expect(brandLink).toHaveClass("no-underline", "hover:no-underline");
     expect(brandLink.querySelector(".ui-brand-wordmark")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "岗位库" })).not.toBeInTheDocument();

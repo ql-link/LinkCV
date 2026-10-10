@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
-import { LinkResumeApiError } from "../../src/api/linkresume";
+import { DrawOfferApiError } from "../../src/api/drawoffer";
 
 const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
@@ -27,8 +27,8 @@ vi.mock("wxt/browser", () => ({
   },
 }));
 
-vi.mock("../../src/api/linkresume", () => ({
-  LinkResumeApiError: class LinkResumeApiError extends Error {
+vi.mock("../../src/api/drawoffer", () => ({
+  DrawOfferApiError: class DrawOfferApiError extends Error {
     constructor(
       readonly status: number,
       readonly code: string,
@@ -41,9 +41,9 @@ vi.mock("../../src/api/linkresume", () => ({
       return this.details.duplicate ?? null;
     }
   },
-  connectToLinkResume: mocks.connect,
+  connectToDrawOffer: mocks.connect,
   importJob: mocks.importJob,
-  linkResumeUrl: (origin: string, path: string) => `${origin}${path}`,
+  drawOfferUrl: (origin: string, path: string) => `${origin}${path}`,
 }));
 
 let root: Root | null = null;
@@ -51,7 +51,7 @@ let root: Root | null = null;
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.readLogo.mockRejectedValue(new Error("no image"));
-  mocks.connect.mockResolvedValue({ origin: "https://linkresume.example.test", user: { id: "7" } });
+  mocks.connect.mockResolvedValue({ origin: "https://drawoffer.example.test", user: { id: "7" } });
   mocks.saveLogo.mockResolvedValue("");
   document.body.innerHTML = '<div id="root"></div>';
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -110,9 +110,9 @@ describe("extension popup", () => {
     expect(document.querySelector("input")).toBeNull();
     expect(document.body.textContent).toContain("后端工程师");
     expect(document.body.textContent).toContain("编辑");
-    expect(document.querySelector("img.mark")?.getAttribute("src")).toBe("/linkresume-mark.png");
+    expect(document.querySelector("img.mark")?.getAttribute("src")).toBe("/drawoffer-mark.png");
     await clickButton("保存到求职记录");
-    expect(mocks.importJob).toHaveBeenCalledWith("https://linkresume.example.test", expect.objectContaining({
+    expect(mocks.importJob).toHaveBeenCalledWith("https://drawoffer.example.test", expect.objectContaining({
       capture: expect.objectContaining({ logo_url: "https://cdn.example.test/company.png", work_schedule_text: "5天/周 6个月", skills: ["Python"] }),
     }));
   });
@@ -180,7 +180,7 @@ describe("extension popup", () => {
     expect(document.querySelectorAll("button")).toHaveLength(1);
     expect(document.querySelector('[aria-label="示例公司公司图标"]')).not.toBeNull();
     await clickButton("查看求职记录");
-    expect(mocks.create).toHaveBeenLastCalledWith({ url: "https://linkresume.example.test/career/applications/application-42" });
+    expect(mocks.create).toHaveBeenLastCalledWith({ url: "https://drawoffer.example.test/career/applications/application-42" });
   });
 
   it("keeps a saved job usable when its logo cannot be saved", async () => {
@@ -189,9 +189,9 @@ describe("extension popup", () => {
     await renderApp();
     await clickButton("保存到求职记录");
     expect(document.body.textContent).toContain("公司图标未保存，岗位已保存");
-    expect(mocks.saveLogo).toHaveBeenCalledWith("https://linkresume.example.test", expect.objectContaining({ id: "42" }), "https://cdn.example.test/company.png");
+    expect(mocks.saveLogo).toHaveBeenCalledWith("https://drawoffer.example.test", expect.objectContaining({ id: "42" }), "https://cdn.example.test/company.png");
     await clickButton("查看岗位详情");
-    expect(mocks.create).toHaveBeenCalledWith({ url: "https://linkresume.example.test/career/jobs/42" });
+    expect(mocks.create).toHaveBeenCalledWith({ url: "https://drawoffer.example.test/career/jobs/42" });
   });
 
   it.each([undefined, null])("supports an older response with application=%s", async (application) => {
@@ -201,7 +201,7 @@ describe("extension popup", () => {
     expect(document.body.textContent).toContain("岗位已保存");
     expect(document.body.textContent).not.toContain("已加入求职记录");
     await clickButton("查看岗位详情");
-    expect(mocks.create).toHaveBeenLastCalledWith({ url: "https://linkresume.example.test/career/jobs/job-42" });
+    expect(mocks.create).toHaveBeenLastCalledWith({ url: "https://drawoffer.example.test/career/jobs/job-42" });
   });
 
   it("does not lose edits on a failed save and allows retry", async () => {
@@ -239,12 +239,12 @@ describe("extension popup", () => {
   it("requests the selected BOSS list detail", async () => {
     mocks.query.mockResolvedValue([{ id: 9, url: "https://www.zhipin.com/web/geek/jobs?ka=header-jobs" }]);
     await renderApp();
-    expect(mocks.sendMessage).toHaveBeenCalledWith(9, { type: "LINKRESUME_CAPTURE_BOSS_JOB" });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(9, { type: "DRAWOFFER_CAPTURE_BOSS_JOB" });
     expect(document.body.textContent).toContain("保存到求职记录");
   });
 
   it("keeps the legacy duplicate resolution and lock version", async () => {
-    mocks.importJob.mockRejectedValueOnce(new LinkResumeApiError(409, "JD_SOURCE_DUPLICATE", { duplicate: {
+    mocks.importJob.mockRejectedValueOnce(new DrawOfferApiError(409, "JD_SOURCE_DUPLICATE", { duplicate: {
       existing: { id: "42", job_title: "后端工程师", company_name: "示例公司", lock_version: 3 }, allowed_actions: ["update", "cancel"],
     } }));
     mocks.importJob.mockResolvedValueOnce({ job_description: { id: "42", job_title: "后端工程师" } });

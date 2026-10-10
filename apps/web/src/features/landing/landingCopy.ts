@@ -11,7 +11,7 @@ const en: Record<string, string> = {
   "准备机会": "Chase the offer", "管理求职进程": "Track applications", "练习项目追问": "Practice follow-ups",
   "顺手准备": "Small helpers", "资料随手引用": "Quick references", "岗位快速收集": "Quick job capture", "求职偏好": "Job preferences",
   "探索": "Explore", "产品能力": "Capabilities", "常见问题": "FAQ", "从哪里开始": "Where to start",
-  "免费开始": "Start free", "跳到主要内容": "Skip to main content", "主导航": "Main navigation", "LinkResume 首页": "LinkResume home",
+  "免费开始": "Start free", "跳到主要内容": "Skip to main content", "主导航": "Main navigation", "DrawOffer 首页": "DrawOffer home",
   "打开导航菜单": "Open navigation menu", "关闭导航菜单": "Close navigation menu", "切换语言": "Switch language",
   // Hero
   "懂你经历的求职搭档": "The job-search partner that knows your story",
@@ -19,15 +19,15 @@ const en: Record<string, string> = {
   "每处修改都由你确认后再写入简历。": "No edit reaches your resume until you approve it.",
   "看 2 分钟演示": "Watch the 2-min demo",
   "免费使用 · 支持导入 PDF / Word / Markdown 简历": "Free to use · Import PDF / Word / Markdown resumes",
-  "LinkResume 产品首页演示": "LinkResume product demo", "互动演示 · 示例数据": "Interactive demo · Sample data",
+  "DrawOffer 产品首页演示": "DrawOffer product demo", "互动演示 · 示例数据": "Interactive demo · Sample data",
   "示例数据": "Sample data", "演示侧栏": "Demo sidebar", "查看对话记录": "View chat", "新建对话": "New chat",
   "首页": "Home", "我的简历": "My resumes", "简历模板": "Templates", "面试日程": "Interview schedule", "资料库": "Library",
   // CTA
   "简历、岗位和面试，从这里开始准备": "Prepare your resume, roles and interviews here",
   // FAQ
   "加入用户交流群": "Join the user group", "使用问题、功能建议，都可以在群里反馈。": "Ask questions or share feature ideas in the group.",
-  "QQ 扫码加入": "Scan with QQ to join", "LinkResume 交流群 QQ 二维码": "QR code for the LinkResume QQ group",
-  "LinkResume 免费吗？": "Is LinkResume free?",
+  "QQ 扫码加入": "Scan with QQ to join", "DrawOffer 交流群 QQ 二维码": "QR code for the DrawOffer QQ group",
+  "DrawOffer 免费吗？": "Is DrawOffer free?",
   "简历编辑、导出和岗位看板都可以免费使用；AI 相关能力按用量提供免费额度，后续会推出更多方案。": "Resume editing, export and the job board are free. AI features include a free usage allowance, and more plans are on the way.",
   "我的简历数据安全吗？": "Is my resume data safe?",
   "简历、岗位和资料保存在你自己的账号里，只在你发起编辑、分析或模拟面试时使用；不需要的内容可以随时删除。": "Resumes, jobs and notes stay in your own account and are used only when you start an edit, analysis or mock interview. Delete anything at any time.",
@@ -38,7 +38,7 @@ const en: Record<string, string> = {
   "可以导出成什么格式？": "What can I export to?",
   "简历导出为 PDF，可以按标准 A4 分页，也可以用智能一页把内容收进一张连续页面。": "Resumes export to PDF, either paginated as standard A4 or fitted onto one continuous page with Smart One Page.",
   // Footer
-  "产品功能": "Product", "了解 LinkResume": "About LinkResume", "返回顶部": "Back to top", "页脚导航": "Footer navigation",
+  "产品功能": "Product", "了解 DrawOffer": "About DrawOffer", "返回顶部": "Back to top", "页脚导航": "Footer navigation",
   "岗位与简历联动": "Jobs linked to resumes", "求职进程管理": "Application tracking", "面试准备": "Interview prep",
   // Feature showcase
   "从改简历到准备面试，在一个工作台完成": "From resume edits to interview prep, in one workspace",

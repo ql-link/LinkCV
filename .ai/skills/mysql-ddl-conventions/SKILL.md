@@ -1,6 +1,6 @@
 ---
 name: mysql-ddl-conventions
-description: 按阿里巴巴 MySQL 规约为 LinkResume 设计和审查 MySQL 8.4 表、字段、主键、唯一约束、索引、时间、状态与字符集，并把概念数据模型落成可评审的物理 schema 和规约自检结果。适用于新建业务表、调整字段类型与约束、设计查询索引或评审 DDL，通常由 solution-generator 在方案文档的数据库变更章节调用以定稿；真正写入 SQLAlchemy 模型和 Alembic revision 时转 alembic-migration。
+description: 按阿里巴巴 MySQL 规约为 DrawOffer 设计和审查 MySQL 8.4 表、字段、主键、唯一约束、索引、时间、状态与字符集，并把概念数据模型落成可评审的物理 schema 和规约自检结果。适用于新建业务表、调整字段类型与约束、设计查询索引或评审 DDL，通常由 solution-generator 在方案文档的数据库变更章节调用以定稿；真正写入 SQLAlchemy 模型和 Alembic revision 时转 alembic-migration。
 ---
 
 # MySQL 表结构规范
@@ -9,9 +9,9 @@ description: 按阿里巴巴 MySQL 规约为 LinkResume 设计和审查 MySQL 8.
 
 把已确认的业务实体和访问模式转换为物理 schema 设计，输出结构片段、设计依据和规约自检结果。本技能不直接连接数据库、不执行 DDL，也不把示例 SQL 当成已经落库的事实。
 
-表结构和字段的唯一规范是 [alibaba-mysql-rules.md](alibaba-mysql-rules.md)，它整理了《阿里巴巴 Java 开发手册》MySQL 章节的建表、索引、SQL 和 ORM 规约，以及 LinkResume 的落地解释。本文件只补充流程和项目特有约定，与规约冲突时以规约为准。
+表结构和字段的唯一规范是 [alibaba-mysql-rules.md](alibaba-mysql-rules.md)，它整理了《阿里巴巴 Java 开发手册》MySQL 章节的建表、索引、SQL 和 ORM 规约，以及 DrawOffer 的落地解释。本文件只补充流程和项目特有约定，与规约冲突时以规约为准。
 
-LinkResume 使用 MySQL 8.4、SQLAlchemy 和 SQL-first Alembic。现有 ORM 与迁移链共同约束当前 schema，但不能证明每个目标环境都已迁移到 head。
+DrawOffer 使用 MySQL 8.4、SQLAlchemy 和 SQL-first Alembic。现有 ORM 与迁移链共同约束当前 schema，但不能证明每个目标环境都已迁移到 head。
 
 ## 2. 新表与存量表
 

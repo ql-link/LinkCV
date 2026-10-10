@@ -10,7 +10,7 @@ export const WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM = 6;
 export const workbenchFontOptions = [
   { get label() { return t("思源宋体"); }, value: resumeSerifFontStack },
   { get label() { return t("霞鹜文楷"); }, value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
-  { get label() { return t("系统黑体"); }, value: '"LinkResume Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
+  { get label() { return t("系统黑体"); }, value: '"DrawOffer Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
 ];
 
 export function steppedSettingValue(value: number, direction: -1 | 1, min: number, max: number, step: number) {

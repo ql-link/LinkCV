@@ -6,7 +6,7 @@ import logging
 import httpx
 import pytest
 
-from linkresume.integrations.linkrag_client import LinkRagClient, LinkRagError
+from drawoffer.integrations.linkrag_client import LinkRagClient, LinkRagError
 
 SECRET = "fictional-linkrag-secret"
 

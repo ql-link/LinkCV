@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from linkresume.integrations.wechat_client import WechatApiError, WechatClient
+from drawoffer.integrations.wechat_client import WechatApiError, WechatClient
 
 
 def client(handler, *, login_page: str | None = None):

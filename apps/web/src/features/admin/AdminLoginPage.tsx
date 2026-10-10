@@ -69,7 +69,7 @@ export function AdminLoginPage({ next = null }: { next?: string | null }) {
     <main className="adm-login">
       <div className="adm-login-stack">
         <section className="adm-login-card" aria-labelledby="adm-login-title">
-          <a className="adm-login-brand" href="/" aria-label="返回 LinkResume">
+          <a className="adm-login-brand" href="/" aria-label="返回 DrawOffer">
             <Brand />
           </a>
           <h1 id="adm-login-title">管理员登录</h1>
@@ -103,7 +103,7 @@ export function AdminLoginPage({ next = null }: { next?: string | null }) {
             </button>
           </form>
         </section>
-        <p className="adm-login-foot">仅限管理员账号 · 普通用户请前往 <a href="/">LinkResume 主站</a></p>
+        <p className="adm-login-foot">仅限管理员账号 · 普通用户请前往 <a href="/">DrawOffer 主站</a></p>
       </div>
     </main>
   );

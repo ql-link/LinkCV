@@ -1,6 +1,6 @@
 Open-source resume layout adaptations
 
-These six layouts adapt the listed MIT-licensed sources to LinkResume canonical content and shared editor/print CSS. They are not pixel-identical ports. Upstream photographs, sample personal data, fonts, icon packs and JavaScript dependencies are not included.
+These six layouts adapt the listed MIT-licensed sources to DrawOffer canonical content and shared editor/print CSS. They are not pixel-identical ports. Upstream photographs, sample personal data, fonts, icon packs and JavaScript dependencies are not included.
 
 灰阶章节索引 (open-even-cn)
 Source: https://github.com/rbardini/jsonresume-theme-even/tree/8231a31977aa7bfc7c1724713b523a85f32a760d
