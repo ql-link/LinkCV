@@ -14,7 +14,10 @@ contracts:
         pattern: 'oss_secret_env="\$\{deploy_dir\}/\.env\.oss-cdn\.local"[\s\S]*WEB_ASSET_OSS_PREFIX[\s\S]*--build-arg "VITE_ASSET_BASE_URL=\$\{web_asset_oss_url\}"[\s\S]*publish-web-assets-to-oss\.sh[\s\S]*python /app/scripts/db/init_mysql\.py'
         message: Production 必须使用独立凭据文件并在数据库与应用切换前发布静态资源
       - path: deploy/scripts/publish-web-assets-to-oss.sh
-        pattern: 'ossutil cp -r[\s\S]*--acl default[\s\S]*max-age=31536000,immutable[\s\S]*access-control-allow-origin'
+        pattern: 'expected_oss_url[\s\S]*python3 "\$\{script_dir\}/publish_web_assets\.py" "\$\{asset_dir\}" "\$\{favicon_path\}"'
+        message: 静态资源入口必须核对 OSS 目标并调用增量发布助手
+      - path: deploy/scripts/publish_web_assets.py
+        pattern: 'access-control-allow-origin[\s\S]*content_matches\(headers, path, checksums\[relative\], url\)[\s\S]*ThreadPoolExecutor\(max_workers=WORKERS\)[\s\S]*ossutil[\s\S]*--acl[\s\S]*default[\s\S]*max-age=31536000,immutable[\s\S]*pool\.map\(verify, changed\)'
         message: 静态资源必须只上传指定前缀、长期缓存并验证跨域模块加载头
       - path: .env.production
         pattern: '(?m)^WEB_ASSET_OSS_URL=https://qingluo-public\.oss-cn-shanghai\.aliyuncs\.com/LinkResume/$[\s\S]*^WEB_ASSET_OSS_PREFIX=LinkResume$'
