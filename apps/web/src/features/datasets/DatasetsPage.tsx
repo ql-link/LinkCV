@@ -11,12 +11,17 @@ import {
   type DatasetFolder,
   type DatasetLimits,
   type DatasetRecord,
+  type InterviewSessionSummary,
+  type JobApplicationSummary,
 } from "../../api/client";
-import { datasetsPath, navigateTo } from "../../routing";
+import { datasetsLocationFromSearch, datasetsPath, navigateTo } from "../../routing";
 import { Icon } from "../../v3/Icon";
-import { ConfirmDialog, Dialog, DialogFooter, Menu, SearchBox, type MenuItem, PageEyebrow } from "../../v3/primitives";
+import { ConfirmDialog, Dialog, DialogFooter, Menu, SearchBox, type MenuItem } from "../../v3/primitives";
 import { DeleteDatasetArt, EmptyLibraryArt, FormatSquare, LoadFailedArt, datasetFormatTone } from "./components/DatasetArt";
-import { CreateFolderCard, FolderCard, relativeUploadDay } from "./components/FolderCard";
+import { CreateFolderCard, FolderCard } from "./components/FolderCard";
+import { JobProjectCard } from "./components/JobProjectCard";
+import { buildJobProjects, datasetProjectLabels } from "./jobProjects";
+import { JobProjectView } from "./JobProjectView";
 import {
   datasetUploadErrorMessage,
   DEFAULT_DATASET_LIMITS,
@@ -30,6 +35,7 @@ import "./datasets.css";
 const DatasetPreviewDialog = lazy(() => import("./DatasetPreviewDialog").then((module) => ({ default: module.DatasetPreviewDialog })));
 const DatasetUploadDialog = lazy(() => import("./DatasetUploadDialog").then((module) => ({ default: module.DatasetUploadDialog })));
 const MoveToFolderDialog = lazy(() => import("./components/MoveToFolderDialog").then((module) => ({ default: module.MoveToFolderDialog })));
+const LibraryPickerDialog = lazy(() => import("./components/LibraryPickerDialog").then((module) => ({ default: module.LibraryPickerDialog })));
 const ManageAssociationDialog = lazy(() => import("./components/ManageAssociationDialog").then((module) => ({ default: module.ManageAssociationDialog })));
 
 export const MAX_DATASET_BYTES = DEFAULT_DATASET_LIMITS.max_file_bytes;
@@ -70,9 +76,9 @@ function datasetActionErrorMessage(error: unknown, fallback: string) {
     case "DATASET_NOT_FOUND":
       return t("这份资料不存在或你无权操作。");
     case "FOLDER_NOT_FOUND":
-      return t("文件夹不存在或已被删除，请重新选择。");
+      return t("项目不存在或已被删除，请重新选择。");
     case "FOLDER_DELETE_CONFIRMATION_REQUIRED":
-      return t("文件夹内包含资料，请确认后再删除。");
+      return t("项目内包含资料，请确认后再删除。");
     case "DATASET_IN_PROGRESS":
     case "DATASET_BUSY":
       return t("资料正在解析，处理完成后再删除。");
@@ -149,7 +155,7 @@ function datasetStatusReason(dataset: DatasetRecord) {
 // 资料行副标题：可用时写格式名（音视频提示点击下载），解析中 / 失败写状态
 const FORMAT_NAMES: Record<string, string> = { md: "Markdown", pdf: "PDF", docx: "Word", get txt() { return t("纯文本"); } };
 
-function datasetRowMeta(dataset: DatasetRecord): { text: string; tone?: "processing" | "failed"; status: DatasetVisualStatus } {
+export function datasetRowMeta(dataset: DatasetRecord): { text: string; tone?: "processing" | "failed"; status: DatasetVisualStatus } {
   const status = datasetVisualStatus(dataset);
   if (isMediaDataset(dataset)) {
     const kind = datasetAssetKindLabel(dataset) ?? t("媒体");
@@ -225,8 +231,11 @@ function DatasetRow({
   onAssociate,
   onRetry,
   onDelete,
+  projectLabel,
 }: {
   dataset: DatasetRecord;
+  /** 全部文件视图：关联列改为显示所在项目 */
+  projectLabel?: string;
   batchMode: boolean;
   selected: boolean;
   selectionDisabled: boolean;
@@ -259,7 +268,7 @@ function DatasetRow({
   const items: MenuItem[] = [
     { label: media ? t("下载文件") : t("查看文件"), icon: media ? "dl" : "eye", disabled: !available, onSelect: () => onOpen(dataset, moreRef.current ?? document.body) },
     { label: t("重命名"), icon: "edit", onSelect: () => onRename(dataset) },
-    { label: t("移动到文件夹"), icon: "folder", onSelect: () => onMove(dataset) },
+    { label: t("移动到项目"), icon: "folder", onSelect: () => onMove(dataset) },
     { label: t("管理关联"), icon: "cal", disabled: !canAssociate, title: canAssociate ? undefined : t("上传完成后才能关联面试"), onSelect: () => onAssociate(dataset) },
     ...(meta.status === "failed" && !media ? [{ label: t("重新解析"), icon: "refresh", onSelect: () => onRetry(dataset) } satisfies MenuItem] : []),
     { kind: "separator" },
@@ -283,7 +292,12 @@ function DatasetRow({
         </small>
       </div>
       <div className="ds-row-link">
-        {dataset.interview_label && (
+        {projectLabel !== undefined ? (
+          <>
+            <Icon name={dataset.interview_session_id ? "brief" : "folder"} size={13} />
+            <span title={projectLabel}>{projectLabel}</span>
+          </>
+        ) : dataset.interview_label && (
           <>
             <Icon name="cal" size={13} />
             <span title={t("面试 · {value0}", { value0: dataset.interview_label })}>{t("面试 · ")}{dataset.interview_label}</span>
@@ -416,6 +430,38 @@ export function DatasetsPage({
 
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<DatasetFolder | null>(null);
   const [deletingFolder, setDeletingFolder] = useState(false);
+  const [newFolderDescription, setNewFolderDescription] = useState("");
+
+  // 我的项目详情：「添加资料」菜单、从资料库选择、项目说明编辑
+  const addMenuRef = useRef<HTMLButtonElement>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState<string | null>(null);
+  const [savingDescription, setSavingDescription] = useState(false);
+
+  // 求职进程项目：由求职进程与面试场次聚合，读取失败不影响「我的项目」
+  const [jobApplications, setJobApplications] = useState<JobApplicationSummary[]>([]);
+  const [jobSessions, setJobSessions] = useState<InterviewSessionSummary[]>([]);
+  const [jobState, setJobState] = useState<"loading" | "ready" | "failed">("loading");
+  const jobRequest = useRef(0);
+
+  const loadJobProjects = useCallback(async ({ background = false }: { background?: boolean } = {}) => {
+    const request = ++jobRequest.current;
+    if (!background) setJobState("loading");
+    try {
+      const [applications, sessions] = await Promise.all([
+        api.listJobApplications({ scope: "all" }),
+        api.listInterviewSessions({ include_archived: true }),
+      ]);
+      if (!pageMounted.current || request !== jobRequest.current) return;
+      setJobApplications(applications.items);
+      setJobSessions(sessions.items);
+      setJobState("ready");
+    } catch {
+      if (!pageMounted.current || request !== jobRequest.current) return;
+      if (!background) setJobState("failed");
+    }
+  }, []);
 
   const refreshFolders = useCallback(async () => {
     try {
@@ -431,9 +477,9 @@ export function DatasetsPage({
 
   const validateFolderName = (name: string): string | null => {
     const trimmed = name.trim();
-    if (!trimmed) return t("文件夹名称不能为空");
-    if (trimmed.includes("/") || trimmed.includes("\\")) return t("文件夹名称不能包含斜杠符号");
-    if (trimmed.length > 64) return t("文件夹名称不能超过 64 个字符");
+    if (!trimmed) return t("项目名称不能为空");
+    if (trimmed.includes("/") || trimmed.includes("\\")) return t("项目名称不能包含斜杠符号");
+    if (trimmed.length > 64) return t("项目名称不能超过 64 个字符");
     return null;
   };
 
@@ -446,17 +492,20 @@ export function DatasetsPage({
     setCreatingFolder(true);
     setCreateFolderError(null);
     try {
-      await api.createDatasetFolder(newFolderName.trim());
+      await api.createDatasetFolder(newFolderName.trim(), newFolderDescription.trim() || undefined);
       await refreshFolders();
       setCreateFolderDialogOpen(false);
       setNewFolderName("");
-      setNotice({ kind: "success", message: t("文件夹「{value0}」已创建。", { value0: newFolderName.trim() }) });
+      setNewFolderDescription("");
+      setNotice({ kind: "success", message: t("项目「{value0}」已创建。", { value0: newFolderName.trim() }) });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === "FOLDER_NAME_DUPLICATE") {
-        setCreateFolderError(t("已存在同名文件夹，请使用其他名称"));
+        setCreateFolderError(t("已存在同名项目，请使用其他名称"));
       } else if (msg === "FOLDER_LIMIT_EXCEEDED") {
-        setCreateFolderError(t("最多创建 50 个文件夹"));
+        setCreateFolderError(t("最多创建 50 个项目"));
+      } else if (msg === "INVALID_FOLDER_DESCRIPTION") {
+        setCreateFolderError(t("项目说明最多 500 字，且不能包含特殊控制字符"));
       } else {
         setCreateFolderError(t("创建失败，请检查名称后重试"));
       }
@@ -478,11 +527,11 @@ export function DatasetsPage({
       await api.renameDatasetFolder(renameFolderTarget.id, renameFolderName.trim());
       await refreshFolders();
       setRenameFolderTarget(null);
-      setNotice({ kind: "success", message: t("文件夹名称已更新。") });
+      setNotice({ kind: "success", message: t("项目名称已更新。") });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === "FOLDER_NAME_DUPLICATE") {
-        setRenameFolderError(t("已存在同名文件夹，请使用其他名称"));
+        setRenameFolderError(t("已存在同名项目，请使用其他名称"));
       } else {
         setRenameFolderError(t("重命名失败，请重试"));
       }
@@ -503,7 +552,7 @@ export function DatasetsPage({
       await refreshFolders();
       await refreshDatasets();
       setDeleteFolderTarget(null);
-      setNotice({ kind: "success", message: t("文件夹及其中的资料已删除。") });
+      setNotice({ kind: "success", message: t("项目及其中的资料已删除。") });
     } catch (error) {
       setDeleteFolderTarget(null);
       setNotice({ kind: "error", message: datasetActionErrorMessage(error, t("删除失败，请稍后重试。")) });
@@ -594,7 +643,16 @@ export function DatasetsPage({
     updatePageCache<DatasetsSnapshot>(DATASETS_CACHE_KEY, { datasets, limits, folders, totalCount, uncategorizedCount });
   }, [datasets, folders, limits, loadFailed, loading, totalCount, uncategorizedCount]);
 
-  const canUploadHere = selectedFolderId !== "all" && selectedFolderId !== "uncategorized";
+  // 页面视图：首页两个标签 / 全部文件 / 求职进程项目 / 我的项目（文件夹）
+  const viewKind: "home" | "files" | "job" | "folder" = selectedFolderId === "all" || selectedFolderId === "jobs"
+    ? "home"
+    : selectedFolderId === "files"
+      ? "files"
+      : selectedFolderId.startsWith("app:")
+        ? "job"
+        : "folder";
+  const homeTab: "mine" | "jobs" = selectedFolderId === "jobs" ? "jobs" : "mine";
+  const canUploadHere = viewKind === "folder" && selectedFolderId !== "uncategorized";
   const effectiveUploadFolderId = canUploadHere
     ? selectedFolderId
     : null;
@@ -612,12 +670,17 @@ export function DatasetsPage({
     pageMounted.current = true;
     const cached = readPageCache<DatasetsSnapshot>(DATASETS_CACHE_KEY);
     if (!cached?.fresh) void loadInitialData({ background: Boolean(cached) });
+    void loadJobProjects();
     return () => {
       pageMounted.current = false;
       initialRequest.current += 1;
+      jobRequest.current += 1;
     };
-  }, [loadInitialData]);
-  useRevalidateOnFocus(() => { if (!loading) void loadInitialData({ background: true }); });
+  }, [loadInitialData, loadJobProjects]);
+  useRevalidateOnFocus(() => {
+    if (!loading) void loadInitialData({ background: true });
+    void loadJobProjects({ background: true });
+  });
 
   useEffect(() => {
     const nextFolderId = initialFolderId || "all";
@@ -628,7 +691,7 @@ export function DatasetsPage({
     const syncRouteFromState = () => {
       const url = new URL(window.location.href);
       if (url.pathname === "/datasets") {
-        const queryFolderId = url.searchParams.get("folder") || "all";
+        const queryFolderId = datasetsLocationFromSearch(url.search) || "all";
         setSelectedFolderId((current) => (current === queryFolderId ? current : queryFolderId));
       }
     };
@@ -753,7 +816,7 @@ export function DatasetsPage({
     const files = Array.from(e.dataTransfer?.files ?? []);
     if (files.length > 0) {
       if (!canUploadHere || !effectiveUploadFolderId) {
-        setNotice({ kind: "error", message: t("请先进入文件夹再上传资料。") });
+        setNotice({ kind: "error", message: t("请先进入项目再上传资料。") });
         return;
       }
       setNotice(null);
@@ -923,7 +986,9 @@ export function DatasetsPage({
   const keyword = query.trim().toLocaleLowerCase();
   const filteredDatasets = useMemo(() => {
     return datasets.filter((dataset) => {
-      if (selectedFolderId === "all" || selectedFolderId === "uncategorized") {
+      if (viewKind === "files") {
+        // 全部文件：所有资料都列出
+      } else if (viewKind !== "folder" || selectedFolderId === "uncategorized") {
         return false;
       } else if (dataset.folder_id !== selectedFolderId) {
         return false;
@@ -931,7 +996,7 @@ export function DatasetsPage({
       if (!keyword) return true;
       return datasetDisplayName(dataset).toLocaleLowerCase().includes(keyword);
     });
-  }, [datasets, keyword, selectedFolderId]);
+  }, [datasets, keyword, selectedFolderId, viewKind]);
   // 进入 / 退出文件夹、搜索结果变化时，主体区浮上淡入（不重新挂载，滚动位置和选中状态保留）
   const bodyMotionRef = useContentMotion<HTMLDivElement>(loading ? "" : `${selectedFolderId}|${filteredDatasets.map((item) => item.id).join(",")}`, { initial: false });
 
@@ -1027,7 +1092,7 @@ export function DatasetsPage({
   };
 
   const currentFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
-  const currentFolderName = currentFolder?.name ?? t("文件夹");
+  const currentFolderName = currentFolder?.name ?? t("项目");
 
   // 首页「最近上传」与文件夹卡片缩略纸张：前端按上传时间倒序排，不需要新接口
   const datasetsByRecent = useMemo(
@@ -1054,12 +1119,27 @@ export function DatasetsPage({
       .filter((folder) => !keyword || folder.name.toLocaleLowerCase().includes(keyword))
       .sort((a, b) => stamp(b) - stamp(a));
   }, [folders, keyword, recentByFolder]);
-  const recentUploads = useMemo(
-    () => datasetsByRecent
-      .filter((dataset) => !keyword || datasetDisplayName(dataset).toLocaleLowerCase().includes(keyword))
-      .slice(0, 3),
-    [datasetsByRecent, keyword],
+  const jobProjects = useMemo(
+    () => buildJobProjects(jobApplications, jobSessions, datasets),
+    [datasets, jobApplications, jobSessions],
   );
+  const visibleJobProjects = useMemo(
+    () => jobProjects.filter((project) => !keyword || project.name.toLocaleLowerCase().includes(keyword)),
+    [jobProjects, keyword],
+  );
+  const currentJobProject = viewKind === "job"
+    ? jobProjects.find((project) => project.id === selectedFolderId.slice(4)) ?? null
+    : null;
+  const projectLabels = useMemo(() => {
+    const labels = datasetProjectLabels(jobProjects);
+    for (const dataset of datasets) {
+      if (labels.has(dataset.id)) continue;
+      const folderName = dataset.folder_id ? folders.find((folder) => folder.id === dataset.folder_id)?.name : null;
+      labels.set(dataset.id, folderName ?? dataset.interview_label ?? t("未归入"));
+    }
+    return labels;
+  }, [datasets, folders, jobProjects]);
+  const projectCount = folders.length + jobProjects.length;
   const folderLinkedCount = filteredDatasets.filter((dataset) => dataset.interview_session_id || dataset.interview_label).length;
   const folderDatasetCount = datasets.filter((dataset) => dataset.folder_id === selectedFolderId).length;
   const libraryCount = Math.max(totalCount, datasets.length);
@@ -1067,8 +1147,55 @@ export function DatasetsPage({
 
   const openCreateFolder = () => {
     setNewFolderName("");
+    setNewFolderDescription("");
     setCreateFolderError(null);
     setCreateFolderDialogOpen(true);
+  };
+
+  // 切换项目时丢弃未保存的说明草稿
+  useEffect(() => { setDescriptionDraft(null); }, [selectedFolderId]);
+
+  const saveDescription = async () => {
+    if (!currentFolder || descriptionDraft === null || savingDescription) return;
+    const next = descriptionDraft.trim();
+    if (next === (currentFolder.description ?? "")) {
+      setDescriptionDraft(null);
+      return;
+    }
+    setSavingDescription(true);
+    try {
+      const updated = await api.updateDatasetFolderDescription(currentFolder.id, next);
+      setFolders((items) => items.map((item) => item.id === updated.id ? { ...item, description: updated.description ?? next } : item));
+      setDescriptionDraft(null);
+      setNotice({ kind: "success", message: t("项目说明已保存。") });
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        message: error instanceof ApiRequestError && error.message === "INVALID_FOLDER_DESCRIPTION"
+          ? t("项目说明最多 500 字，且不能包含特殊控制字符")
+          : datasetActionErrorMessage(error, t("保存失败，请稍后重试。")),
+      });
+    } finally {
+      setSavingDescription(false);
+    }
+  };
+
+  // 从资料库选择：一份资料只属于一个项目，关联面试的资料归求职进程，不能移入
+  const libraryCandidates = useMemo(
+    () => viewKind === "folder"
+      ? datasets.filter((dataset) => dataset.folder_id !== selectedFolderId && !dataset.interview_session_id && dataset.upload_status === "succeeded")
+      : [],
+    [datasets, selectedFolderId, viewKind],
+  );
+
+  const confirmLibraryPick = async (ids: string[]) => {
+    if (!canUploadHere) return;
+    await api.batchMoveDatasets(ids, selectedFolderId);
+    const moved = new Set(ids);
+    setDatasets((items) => items.map((item) => moved.has(item.id) ? { ...item, folder_id: selectedFolderId } : item));
+    await refreshFolders();
+    setLibraryPickerOpen(false);
+    setNotice({ kind: "success", message: t("已移入 {value0} 份资料。", { value0: ids.length }) });
   };
 
   const RootTag = embedded ? "section" : "div";
@@ -1093,41 +1220,115 @@ export function DatasetsPage({
       )}
 
       <div className="ds-page">
-        {selectedFolderId === "all" ? (
+        {viewKind === "home" ? (
           <header className="ds-head">
-            <PageEyebrow className="ds-eyebrow" segments={["DATASETS", <Reveal inline loading={loading} placeholder={<LoadingText width={36} />}>{t("{value0} 份", { value0: libraryCount })}</Reveal>]} />
             <h1 className="ds-title">{t("资料库")}</h1>
             <p className="ds-sub">
-              <Reveal inline loading={loading} placeholder={<LoadingText width={230} />}>{loadFailed ? null : libraryCount > 0 || folders.length > 0
-                ? <span className="v3-num">{libraryCount}{t(" 份资料 · ")}{folders.length}{t(" 个文件夹")}</span>
-                : t("把履历、项目记录和参考资料集中在这里，写简历时随时调用。")}</Reveal>
+              <Reveal inline loading={loading} placeholder={<LoadingText width={160} />}>{loadFailed ? null : (
+                <span className="v3-num">{t("{value0} 个项目 · {value1} 份资料", { value0: projectCount, value1: libraryCount })}</span>
+              )}</Reveal>
             </p>
             <div className="ds-actions">
-              <SearchBox value={query} onChange={setQuery} placeholder={t("搜索资料…")} label={t("搜索资料")} />
-              <button type="button" className="v3-btn v3-btn-dark" style={{ width: 120 }} disabled={batchMode} onClick={openCreateFolder}>{t("新建文件夹")}</button>
+              <SearchBox value={query} onChange={setQuery} placeholder={t("搜索项目…")} label={t("搜索项目")} />
+              <button type="button" className="v3-btn v3-btn-ghost" disabled={batchMode} onClick={() => handleSelectFolder("files")}>{t("全部文件")}</button>
+              <button type="button" className="v3-btn v3-btn-dark" style={{ width: 96 }} disabled={batchMode} onClick={openCreateFolder}>{t("新建项目")}</button>
             </div>
-            <div className="ds-divider" />
+            <div className="ds-tabs" role="tablist" aria-label={t("项目类型")}>
+              <button type="button" role="tab" aria-selected={homeTab === "mine"} className={homeTab === "mine" ? "is-active" : undefined} onClick={() => handleSelectFolder("all")}>
+                {t("我的项目")}<span className="v3-num">{folders.length}</span>
+              </button>
+              <button type="button" role="tab" aria-selected={homeTab === "jobs"} className={homeTab === "jobs" ? "is-active" : undefined} onClick={() => handleSelectFolder("jobs")}>
+                {t("求职进程")}{jobState === "ready" && <span className="v3-num">{jobProjects.length}</span>}
+              </button>
+            </div>
           </header>
-        ) : (
+        ) : viewKind === "job" ? null : (
           <header className="ds-head has-crumb">
-            <nav aria-label={t("资料库路径")}>
-              <PageEyebrow className="ds-eyebrow" segments={[{ label: "DATASETS", onClick: handleBackToAll, ariaLabel: t("返回全部资料") }, <span aria-current="page"><Reveal inline loading={loading} placeholder={<LoadingText />}>{currentFolderName}</Reveal></span>]} />
+            <nav className="ds-crumb" aria-label={t("资料库路径")}>
+              <button type="button" className="ds-crumb-back" onClick={handleBackToAll}>{t("资料库")}</button>
+              <span className="ds-crumb-sep" aria-hidden="true">/</span>
+              <span className="ds-crumb-current" aria-current="page">{viewKind === "files" ? t("全部文件") : t("我的项目")}</span>
             </nav>
-            <h1 className="ds-title" title={loading ? undefined : currentFolderName}><Reveal inline loading={loading} placeholder={<LoadingText width={180} />}>{currentFolderName}</Reveal></h1>
+            <h1 className="ds-title" title={loading || viewKind === "files" ? undefined : currentFolderName}>
+              {viewKind === "files" ? t("全部文件") : <Reveal inline loading={loading} placeholder={<LoadingText width={180} />}>{currentFolderName}</Reveal>}
+            </h1>
             <p className="ds-sub">
-              <Reveal inline loading={loading} placeholder={<LoadingText width={160} />}>{!loadFailed && <>{t("共 ")}<span className="v3-num">{folderDatasetCount}</span>{t(" 份资料")}{folderLinkedCount > 0 && <> · <span className="v3-num">{folderLinkedCount}</span>{t("份已关联面试")}</>}</>}</Reveal>
+              <Reveal inline loading={loading} placeholder={<LoadingText width={160} />}>{!loadFailed && (viewKind === "files"
+                ? <>{t("共 ")}<span className="v3-num">{datasets.length}</span>{t(" 份资料，来自 ")}<span className="v3-num">{projectCount}</span>{t(" 个项目")}</>
+                : <>{t("共 ")}<span className="v3-num">{folderDatasetCount}</span>{t(" 份资料")}{folderLinkedCount > 0 && <> · <span className="v3-num">{folderLinkedCount}</span>{t("份已关联面试")}</>}</>
+              )}</Reveal>
             </p>
             <div className="ds-actions is-folder">
               <SearchBox value={query} onChange={setQuery} placeholder={t("搜索资料…")} label={t("搜索资料")} />
               <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 92 }} disabled={batchDeleteBusy} onClick={toggleBatchMode}>
                 {batchMode ? t("取消操作") : t("批量操作")}
               </button>
-              <button type="button" className="v3-btn v3-btn-dark" style={{ width: 108 }} disabled={batchMode} onClick={openUploadDialog}>{t("上传资料")}</button>
+              {viewKind === "folder" && (
+                <>
+                  <button
+                    ref={addMenuRef}
+                    type="button"
+                    className="v3-btn v3-btn-dark ds-add-btn"
+                    aria-haspopup="menu"
+                    aria-expanded={addMenuOpen}
+                    disabled={batchMode}
+                    onClick={() => setAddMenuOpen((open) => !open)}
+                  >
+                    <Icon name="plus" size={13} />{t("添加资料")}
+                  </button>
+                  <Menu
+                    anchorRef={addMenuRef}
+                    open={addMenuOpen}
+                    onClose={() => setAddMenuOpen(false)}
+                    placement="bottom-end"
+                    width={184}
+                    label={t("添加资料")}
+                    items={[
+                      { label: t("上传本地文件"), icon: "upload", onSelect: () => { setAddMenuOpen(false); openUploadDialog(); } },
+                      { label: t("从资料库选择"), icon: "folder", onSelect: () => { setAddMenuOpen(false); setLibraryPickerOpen(true); } },
+                    ]}
+                  />
+                </>
+              )}
             </div>
+            {viewKind === "folder" && currentFolder && !loading && !loadFailed && (
+              descriptionDraft === null ? (
+                <div className="ds-desc">
+                  {currentFolder.description
+                    ? <p className="ds-desc-text">{currentFolder.description}</p>
+                    : <p className="ds-desc-text is-empty">{t("还没有项目说明。写下这个项目是做什么的，方便以后回来时快速想起。")}</p>}
+                  <button type="button" className="v3-link ds-desc-edit" onClick={() => setDescriptionDraft(currentFolder.description ?? "")}>
+                    {currentFolder.description ? t("编辑说明") : t("添加说明")}
+                  </button>
+                </div>
+              ) : (
+                <div className="ds-desc is-editing">
+                  <textarea
+                    className="v3-input ds-desc-input"
+                    aria-label={t("项目说明")}
+                    value={descriptionDraft}
+                    maxLength={500}
+                    rows={Math.min(6, Math.max(2, descriptionDraft.split("\n").length))}
+                    placeholder={t("例如：三面前的行为面试准备，重点复盘项目经历")}
+                    disabled={savingDescription}
+                    data-autofocus
+                    onChange={(event) => setDescriptionDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") setDescriptionDraft(null);
+                      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void saveDescription();
+                    }}
+                  />
+                  <div className="ds-desc-actions">
+                    <span className="v3-num">{descriptionDraft.length}/500</span>
+                    <button type="button" className="v3-btn v3-btn-ghost" disabled={savingDescription} onClick={() => setDescriptionDraft(null)}>{t("取消")}</button>
+                    <button type="button" className="v3-btn v3-btn-dark" disabled={savingDescription} onClick={() => void saveDescription()}>{savingDescription ? t("正在保存…") : t("保存")}</button>
+                  </div>
+                </div>
+              )
+            )}
             <div className="ds-divider" />
           </header>
         )}
-
         <Reveal
           loading={loading}
           className="ds-body-slot"
@@ -1141,7 +1342,7 @@ export function DatasetsPage({
           <section className="v3-empty is-error ds-error" aria-labelledby="ds-error-title">
             <div className="v3-stage has-dots"><LoadFailedArt /></div>
             <h3 id="ds-error-title">{t("资料加载失败")}</h3>
-            <p>{t("请稍后重试。资料和文件夹都还在，刷新一下试试。")}</p>
+            <p>{t("请稍后重试。资料和项目都还在，刷新一下试试。")}</p>
             <div className="v3-empty-actions">
               <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 96 }} onClick={() => void loadInitialData()}>
                 <Icon name="refresh" size={13} />{t("重新加载")}</button>
@@ -1149,80 +1350,91 @@ export function DatasetsPage({
           </section>
         ) : (
           <div ref={bodyMotionRef} className="ds-body">
-            {selectedFolderId === "all" ? (
-              folders.length === 0 && datasets.length === 0 ? (
-                <section className="v3-empty ds-empty" aria-labelledby="ds-empty-title">
-                  <div className="v3-stage has-dots"><EmptyLibraryArt /></div>
-                  <h3 id="ds-empty-title">{t("还没有文件夹")}</h3>
-                  <p>{t("建议先新建文件夹分类整理，后续写简历时可以快速检索和引用相关资料。")}</p>
-                </section>
+            {viewKind === "home" && homeTab === "mine" ? (
+              keyword && sortedFolders.length === 0 ? (
+                <p className="ds-no-match">{t("没有匹配的项目。")}</p>
               ) : (
-                <>
-                  <div className="ds-section-head"><strong>{t("文件夹")}</strong><span>{t("按最近更新")}</span></div>
-                  <div className="ds-folder-grid" aria-label={t("资料与文件夹列表")}>
-                    {sortedFolders.map((folder) => (
-                      <FolderCard
-                        key={folder.id}
-                        folder={folder}
-                        recent={recentByFolder.get(folder.id) ?? []}
-                        onClick={() => handleSelectFolder(folder.id)}
-                        onRename={(f) => {
-                          setRenameFolderTarget(f);
-                          setRenameFolderName(f.name);
-                          setRenameFolderError(null);
-                        }}
-                        onDelete={(f) => setDeleteFolderTarget(f)}
-                      />
-                    ))}
-                    <CreateFolderCard disabled={batchMode} onClick={openCreateFolder} />
-                  </div>
-                  {recentUploads.length > 0 && (
-                    <>
-                      <h2 className="ds-recent-head">{t("最近上传")}</h2>
-                      <div className="ds-recent" role="list" aria-label={t("最近上传")}>
-                        {recentUploads.map((dataset) => {
-                          const folderName = folders.find((folder) => folder.id === dataset.folder_id)?.name ?? t("未分类");
-                          const available = isMediaDataset(dataset)
-                            ? dataset.upload_status === "succeeded"
-                            : datasetVisualStatus(dataset) === "succeeded";
-                          return (
-                            <button
-                              key={dataset.id}
-                              type="button"
-                              role="listitem"
-                              className="ds-recent-row"
-                              aria-label={t("{value0}，位于「{value1}」", { value0: dataset.file_name, value1: folderName })}
-                              onClick={(event) => {
-                                if (available) openDataset(dataset, event.currentTarget, true);
-                                else if (dataset.folder_id) handleSelectFolder(dataset.folder_id);
-                              }}
-                            >
-                              <FormatSquare dataset={dataset} tinted={false} />
-                              <span className="ds-recent-name">
-                                <strong title={dataset.file_name}>{dataset.file_name}</strong>
-                                <span className="ds-folder-chip"><Icon name="folder" size={13} /><span>{folderName}</span></span>
-                              </span>
-                              <span className="ds-recent-time">{relativeUploadDay(dataset.created_at, true)}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                  <p className="ds-foot-note">{t("写简历或和 AI 助手对话时，可以通过「添加资料」选择要引用的文件。")}</p>
-                </>
+                <div className="ds-folder-grid" aria-label={t("我的项目")}>
+                  {sortedFolders.map((folder) => (
+                    <FolderCard
+                      key={folder.id}
+                      folder={folder}
+                      recent={recentByFolder.get(folder.id) ?? []}
+                      onClick={() => handleSelectFolder(folder.id)}
+                      onRename={(f) => {
+                        setRenameFolderTarget(f);
+                        setRenameFolderName(f.name);
+                        setRenameFolderError(null);
+                      }}
+                      onDelete={(f) => setDeleteFolderTarget(f)}
+                    />
+                  ))}
+                  {!keyword && <CreateFolderCard disabled={batchMode} onClick={openCreateFolder} />}
+                </div>
               )
-            ) : folderDatasetCount === 0 ? (
+            ) : viewKind === "home" ? (
+              jobState === "loading" ? (
+                <div className="v3-sk-folders" aria-hidden="true">{[0, 1, 2].map((index) => <Sk key={index} h={172} r={12} />)}</div>
+              ) : jobState === "failed" ? (
+                <section className="v3-empty is-error ds-error" aria-labelledby="ds-job-error-title">
+                  <div className="v3-stage has-dots"><LoadFailedArt /></div>
+                  <h3 id="ds-job-error-title">{t("求职进程加载失败")}</h3>
+                  <p>{t("资料都还在，刷新一下试试。")}</p>
+                  <div className="v3-empty-actions">
+                    <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 96 }} onClick={() => void loadJobProjects()}>
+                      <Icon name="refresh" size={13} />{t("重新加载")}</button>
+                  </div>
+                </section>
+              ) : jobProjects.length === 0 ? (
+                <section className="v3-empty ds-empty" aria-labelledby="ds-job-empty-title">
+                  <div className="v3-stage has-dots"><EmptyLibraryArt /></div>
+                  <h3 id="ds-job-empty-title">{t("还没有求职进程")}</h3>
+                  <p>{t("投递岗位后会自动生成项目，面试录音和笔记按场次归在这里。")}</p>
+                </section>
+              ) : visibleJobProjects.length === 0 ? (
+                <p className="ds-no-match">{t("没有匹配的项目。")}</p>
+              ) : (
+                <div className="ds-folder-grid" aria-label={t("求职进程")}>
+                  {visibleJobProjects.map((project) => (
+                    <JobProjectCard key={project.id} project={project} onOpen={() => handleSelectFolder(`app:${project.id}`)} />
+                  ))}
+                </div>
+              )
+            ) : viewKind === "job" ? (
+              currentJobProject ? (
+                <JobProjectView
+                  project={currentJobProject}
+                  datasetMeta={datasetRowMeta}
+                  onBack={() => handleSelectFolder("jobs")}
+                  onOpenDataset={(dataset, trigger) => openDataset(dataset, trigger, true)}
+                  onChanged={async () => { await Promise.all([refreshDatasets({ accepted: true }), loadJobProjects({ background: true })]); }}
+                  onNotice={setNotice}
+                />
+              ) : jobState === "loading" ? (
+                <SkeletonRows rows={4} header={false} label={t("正在加载项目…")} />
+              ) : (
+                <section className="v3-empty ds-empty" aria-labelledby="ds-job-missing-title">
+                  <div className="v3-stage has-dots"><LoadFailedArt /></div>
+                  <h3 id="ds-job-missing-title">{jobState === "failed" ? t("求职进程加载失败") : t("这个求职进程不存在或已删除")}</h3>
+                  <div className="v3-empty-actions">
+                    <button type="button" className="v3-btn v3-btn-ghost" onClick={() => handleSelectFolder("jobs")}>{t("返回资料库")}</button>
+                  </div>
+                </section>
+              )
+            ) : viewKind === "folder" && folderDatasetCount === 0 ? (
               <section className="v3-empty ds-empty" aria-labelledby="ds-empty-title">
                 <div className="v3-stage has-dots"><EmptyLibraryArt /></div>
                 <h3 id="ds-empty-title">{t("还没有资料")}</h3>
-                <p>{t("建议先上传一份与当前分类相关的资料，后续写简历时可以快速检索和引用。")}</p>
+                <p>{t("把与这个项目相关的文件拖到这里，或点击「上传资料」。")}</p>
+                <div className="v3-empty-actions">
+                  <button type="button" className="v3-btn v3-btn-dark" disabled={batchMode} onClick={openUploadDialog}>{t("上传资料")}</button>
+                </div>
               </section>
             ) : (
-              <section className="ds-table" aria-label={t("文件夹内部资料列表")}>
+              <section className="ds-table" aria-label={viewKind === "files" ? t("全部资料列表") : t("项目资料列表")}>
                 <div className="ds-table-head ds-cols" role="presentation">
                   <span className="is-name">{t("名称")}</span>
-                  <span>{t("关联")}</span>
+                  <span>{viewKind === "files" ? t("所在项目") : t("关联")}</span>
                   <span className="is-right">{t("大小")}</span>
                   <span className="is-right">{t("上传日期")}</span>
                   {batchMode ? (
@@ -1238,7 +1450,7 @@ export function DatasetsPage({
                   ) : <span />}
                 </div>
                 {filteredDatasets.length === 0 ? (
-                  <p className="ds-no-match">{t("没有匹配的资料。")}</p>
+                  <p className="ds-no-match">{keyword ? t("没有匹配的资料。") : t("还没有资料。")}</p>
                 ) : (
                   <div className="ds-rows">
                     {filteredDatasets.map((dataset) => (
@@ -1259,14 +1471,17 @@ export function DatasetsPage({
                         onAssociate={startAssociation}
                         onRetry={(item) => void startRetry(item)}
                         onDelete={startDelete}
+                        projectLabel={viewKind === "files" ? projectLabels.get(dataset.id) ?? t("未归入") : undefined}
                       />
                     ))}
                   </div>
                 )}
-                <button type="button" className="ds-dropzone" disabled={batchMode} onClick={openUploadDialog}>
-                  <strong><Icon name="upload" size={16} />{t("拖入文件，或点击上传到「")}{currentFolderName}」</strong>
-                  <small>{t("PDF、DOCX、Markdown、TXT 最大 ")}{formatDatasetFileSize(limits.max_file_bytes)}{t("；音视频最大 ")}{mediaLimit}</small>
-                </button>
+                {viewKind === "folder" && (
+                  <button type="button" className="ds-dropzone" disabled={batchMode} onClick={openUploadDialog}>
+                    <strong><Icon name="upload" size={16} />{t("拖入文件，或点击上传到「")}{currentFolderName}」</strong>
+                    <small>{t("PDF、DOCX、Markdown、TXT 最大 ")}{formatDatasetFileSize(limits.max_file_bytes)}{t("；音视频最大 ")}{mediaLimit}</small>
+                  </button>
+                )}
               </section>
             )}
           </div>
@@ -1275,7 +1490,7 @@ export function DatasetsPage({
 
       {uploading && !dialogOpen && (
         <div className="ds-uploading" role="status" aria-live="polite">
-          <span className="ds-spinner" aria-hidden="true" />{t("正在上传资料至「")}{effectiveUploadFolderId ? folders.find((f) => f.id === effectiveUploadFolderId)?.name ?? t("当前文件夹") : t("未分类")}」…
+          <span className="ds-spinner" aria-hidden="true" />{t("正在上传资料至「")}{effectiveUploadFolderId ? folders.find((f) => f.id === effectiveUploadFolderId)?.name ?? t("当前项目") : t("未归入")}」…
         </div>
       )}
 
@@ -1342,15 +1557,17 @@ export function DatasetsPage({
 
       <MotionPresence>{createFolderDialogOpen && (
         <NameDialog
-          title={t("新建文件夹")}
-          description={t("创建分类文件夹，整理和归类求职资料。")}
-          label={t("文件夹名称")}
+          title={t("新建项目")}
+          description={t("把同一件事的资料放进一个项目，例如一次面试冲刺或一份作品集。")}
+          label={t("项目名称")}
           value={newFolderName}
           maxLength={64}
-          placeholder={t("例如：核心项目、工作复盘、资格证书")}
+          placeholder={t("例如：系统设计复习、英文简历与求职信")}
           error={createFolderError}
           busy={creatingFolder}
-          confirmLabel={t("创建文件夹")}
+          descriptionValue={newFolderDescription}
+          onDescriptionChange={(value) => { setNewFolderDescription(value); setCreateFolderError(null); }}
+          confirmLabel={t("创建项目")}
           busyLabel={t("正在创建…")}
           onChange={(value) => { setNewFolderName(value); setCreateFolderError(null); }}
           onCancel={() => { if (!creatingFolder) setCreateFolderDialogOpen(false); }}
@@ -1360,9 +1577,9 @@ export function DatasetsPage({
 
       <MotionPresence>{renameFolderTarget && (
         <NameDialog
-          title={t("重命名文件夹")}
-          description={t("修改文件夹名称，内部资料归属将自动同步。")}
-          label={t("文件夹名称")}
+          title={t("重命名项目")}
+          description={t("只修改项目名称，项目内的资料不受影响。")}
+          label={t("项目名称")}
           value={renameFolderName}
           maxLength={64}
           error={renameFolderError}
@@ -1377,10 +1594,12 @@ export function DatasetsPage({
 
       <MotionPresence>{deleteFolderTarget && (
         <ConfirmDialog
-          title={t("确认删除文件夹「{value0}」？", { value0: deleteFolderTarget.name })}
-          description={t("将永久删除该文件夹及其中的 {value0} 份资料，包括源文件和解析结果，删除后无法恢复。", { value0: deleteFolderTarget.dataset_count })}
+          title={t("删除项目「{value0}」及其中的资料？", { value0: deleteFolderTarget.name })}
+          description={deleteFolderTarget.dataset_count > 0
+            ? t("项目里的 {value0} 份资料会和项目一起永久删除（包括源文件和解析结果），无法恢复。想保留的资料，请先移到其他项目。", { value0: deleteFolderTarget.dataset_count })
+            : t("这个项目里没有资料，删除后无法恢复。")}
           art={<DeleteDatasetArt tag="DIR" color="var(--v3-sub)" />}
-          confirmLabel={t("确认删除")}
+          confirmLabel={deleteFolderTarget.dataset_count > 0 ? t("连同资料一起删除") : t("确认删除")}
           busyLabel={t("正在删除…")}
           busy={deletingFolder}
           onConfirm={() => void handleDeleteFolder()}
@@ -1410,6 +1629,16 @@ export function DatasetsPage({
             currentFolderId={canUploadHere ? selectedFolderId : null}
             itemCount={selectedDatasetCount}
             onMove={confirmBatchMove}
+          />
+        )}</MotionPresence>
+
+        <MotionPresence>{libraryPickerOpen && canUploadHere && (
+          <LibraryPickerDialog
+            datasets={libraryCandidates}
+            projectName={currentFolderName}
+            sourceLabel={(dataset) => projectLabels.get(dataset.id) ?? t("未归入")}
+            onClose={() => setLibraryPickerOpen(false)}
+            onConfirm={confirmLibraryPick}
           />
         )}</MotionPresence>
 
@@ -1461,10 +1690,10 @@ export function DatasetsPage({
             type="button"
             className="v3-btn v3-btn-ghost"
             disabled={selectedDatasetCount === 0 || batchDeleteBusy}
-            aria-label={t("移动到文件夹（已选择 {value0} 份）", { value0: selectedDatasetCount })}
+            aria-label={t("移动到项目（已选择 {value0} 份）", { value0: selectedDatasetCount })}
             onClick={() => setBatchMoveOpen(true)}
           >
-            <Icon name="folder" size={13} />{t("移动到文件夹")}</button>
+            <Icon name="folder" size={13} />{t("移动到项目")}</button>
           <button
             type="button"
             className="v3-btn v3-btn-danger"
@@ -1498,7 +1727,12 @@ function NameDialog({
   onChange,
   onCancel,
   onSubmit,
+  descriptionValue,
+  onDescriptionChange,
 }: {
+  /** 新建项目时额外填写项目说明 */
+  descriptionValue?: string;
+  onDescriptionChange?: (value: string) => void;
   title: string;
   description: string;
   label: string;
@@ -1540,6 +1774,21 @@ function NameDialog({
           />
           {error && <small className="v3-field-error" role="alert">{error}</small>}
         </label>
+        {onDescriptionChange && (
+          <label className="v3-field ds-field">
+            <span className="v3-field-label">{t("项目说明（可选）")}</span>
+            <textarea
+              className="v3-input ds-desc-input"
+              rows={3}
+              maxLength={500}
+              value={descriptionValue ?? ""}
+              placeholder={t("例如：三面前的行为面试准备，重点复盘项目经历")}
+              aria-label={t("项目说明")}
+              disabled={busy}
+              onChange={(event) => onDescriptionChange(event.target.value)}
+            />
+          </label>
+        )}
       </div>
       <DialogFooter>
         <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} disabled={busy} onClick={onCancel}>{t("取消")}</button>

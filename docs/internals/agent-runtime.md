@@ -111,7 +111,7 @@ Pi 复用 SDK 的 `steer()` 和 `prepareNextTurnWithContext` 包装钩子，在�
 - `llm_provider_connections`：接入商代码、独立凭据、受控设置、配置版本与目录同步状态。推理地址由接入商适配器确定，后台不能提交任意 URL；AIHubMix 的 model 目标支持 `openai_chat` 与 `openai_responses`，可选择官方默认或备用地址，切换会让旧探测失效。
 - `llm_models`：供用户选择的稳定逻辑模型名称；`user_selectable` 决定它能否出现在对话页，隐藏不影响系统能力绑定。
 - `llm_model_routes`：逻辑模型在某连接上的实际 `invoke_target`、目标类型、目录元数据、价格规则和启停状态。同一逻辑模型可配置多条线路。线路、逻辑模型一旦被 `agent_runs` 冻结或被 `agent_sessions` 选中，管理端就无法删除，只能停用；因此 Agent 历史里记录的模型和线路始终能查到。
-- `llm_use_case_routes`：系统能力和对话列表共用的线路绑定，保存场景、协议、优先级及成功探针指纹。当前场景为职位文本提取、简历结构化、职位图片识别、模拟面试、识别稿修正、简历匹配度（`job_match`）、面试准备清单（`interview_prep`）、语音识别（`speech_to_text`）、语音合成（`text_to_speech`）和用户对话；场景代码由后端注册，不建字典表。语音支持百炼连接的 `aliyun_asr_realtime`、`aliyun_tts_realtime`，以及 AIHubMix 连接的 `openai_asr_file`、`openai_tts`；协议不能跨场景或跨接入商使用。除意图识别外，其他非对话场景支持接入商声明的 `openai_chat`、`openai_responses`。语音探针通过同一个服务商适配器发送固定测试录音、一秒静音或合成一句固定文本；调用日志在 `usage_json` 记录音频秒数或字符数，不记录音频与正文，也不把缺少计费依据的语音请求估成零费用。
+- `llm_use_case_routes`：系统能力和对话列表共用的线路绑定，保存场景、协议、优先级及成功探针指纹。当前场景为职位文本提取、简历结构化、职位图片识别、模拟面试、识别稿修正、简历匹配度（`job_match`）、面试准备清单（`interview_prep`）、编辑器段落精修（`section_review`）、语音识别（`speech_to_text`）、语音合成（`text_to_speech`）和用户对话；场景代码由后端注册，不建字典表。语音支持百炼连接的 `aliyun_asr_realtime`、`aliyun_tts_realtime`，以及 AIHubMix 连接的 `openai_asr_file`、`openai_tts`；协议不能跨场景或跨接入商使用。除意图识别外，其他非对话场景支持接入商声明的 `openai_chat`、`openai_responses`。语音探针通过同一个服务商适配器发送固定测试录音、一秒静音或合成一句固定文本；调用日志在 `usage_json` 记录音频秒数或字符数，不记录音频与正文，也不把缺少计费依据的语音请求估成零费用。
 - `llm_call_logs`：每次实际模型请求的线路、配置版本、用量、价格快照、费用和安全错误分类；失败后切换线路会产生多条记录，不保存提示词或正文。Pi 的模型请求由内部服务令牌回传；运行费用由这些记录汇总。
 - FastAPI 写入调用日志时按 ORM 字段上限校验上游模型和请求编号；Pi 在计量回传前也按 `PiCallRecord` 的 256/128 字符上限处理这两个可选字段。超长编号记为 `null`，保留调用终态、用量和费用，避免 MySQL 或内部请求校验拒绝计量后使成功请求失败。不会截断编号后冒充完整上游标识。
 - 计价由 `modules/llm/pricing.py` 统一计算，Pi 只回传用量。AIHubMix 目录优先保存 `pricing_lines`，完整保留计费项、单位、上下文阶梯和分时条件；有明细时不混用旧摘要。上下文阶梯作用于整次请求，分时区间按供应商时区取左闭右开。输入、缓存读、缓存写互斥；推理 Token 已在输出内，不重复收费。普通 Chat/Responses 网关保留缓存细分，Pi 用 `providerReported` 区分供应商真实用量和 SDK 初始零值；探针的多次模型请求分别计量。未知促销、语音单位、缺少缓存或请求时间均返回具体原因，不能视作免费。
@@ -151,7 +151,7 @@ Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的
 
 ## 故障与降级
 
-首页匹配岗位卡的后台分析使用统一 LLM 的 `job_match` 场景和进程内任务，不经过 Pi 运行时；模型未配置或失败时卡片显示不可用说明，不影响助手对话。
+首页匹配岗位卡的后台分析使用统一 LLM 的 `job_match` 场景和进程内任务，不经过 Pi 运行时；模型未配置或失败时卡片显示不可用说明，不影响助手对话。编辑器段落精修同样直接使用统一 LLM 的 `section_review` 场景，不经过 Pi 运行时，也不创建会话、运行或提案。
 
 - Pi readiness 失败时 FastAPI 仍可提供非 Agent 业务，但助手入口显示不可用且不能创建假成功运行。
 - 会话标题和置顶状态由 FastAPI 在用户归属校验后直接持久化；这些 PATCH 操作不进入消息/模型调用链。Web 根据返回的 `pinned` 状态把置顶会话投影到独立 `Pinned` 分组；选择会话时只原位刷新详情，发起新用户消息时才把会话提升到所在分组首位。工作台内简历、模板、求职记录、面试排期和资料库的路由切换、简历选择与工作台嵌入、整块侧栏显隐，以及桌面端会话栏宽度拖动和 `Pinned` 与“最近对话”的独立展开或收起都只属于客户端呈现。它们复用既有资料、简历和求职接口，不改变 Agent API、PATCH 或 DELETE 契约；提案卡片确认按钮改用描边样式同样只是呈现调整。删除会话会锁住目标会话及其运行，运行中时返回 `AGENT_RUN_IN_PROGRESS`，否则按 proposal、tool call、message、run、session 顺序事务清理。
@@ -201,3 +201,5 @@ Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的
 ### Canonical 原生目标
 
 任务启动后由 Pi 运行时从镜像内已注册 Markdown 注入工作流规则，模型不读取文件。简历读取使用 canonical 节点：整份读取返回全部可编辑节点及其稳定 ID，章节下的段落可以直接属于章节而没有 entry。修改计划按节点 ID 或带父范围的逐字摘录定位；`rewrite_entry_star` 的目标没有 entry 时，运行时把被修改节点冻结为一个连续 range（服务端记录授权收据）后再诊断和创建提案。读取超过上限时 `truncated=true`：诊断和修改只针对已读取部分并向模型说明，整份翻译因缺少完整数据直接失败为 `RESUME_TOO_LARGE_TO_TRANSLATE`。模型提交的修改在服务端仍复验授权、版本、节点归属和范围。
+
+结构化字段的 `replace_target_text` 在 `canonical_targets.py` 中按纯文字偏移替换 `runs`，保留行内媒体及 `prefix_runs`；图片 alt 不参与字段的预期文字匹配。文字清空后仍包含图片的经历字段不会被删除。完整行内契约见[语义简历契约](../api/http-contracts.md#语义简历契约)。

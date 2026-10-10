@@ -37,7 +37,7 @@ export function FolderCard({ folder, recent, onClick, onRename, onDelete }: Fold
   const count = folder.dataset_count;
   const latest = recent[0];
   const meta = count === 0
-    ? t("空文件夹 · 进入后上传资料")
+    ? t("还没有资料")
     : latest
       ? t("{value0} 份资料 · 最近上传 {value1}", { value0: count, value1: relativeUploadDay(latest.created_at) })
       : t("{value0} 份资料", { value0: count });
@@ -47,7 +47,7 @@ export function FolderCard({ folder, recent, onClick, onRename, onDelete }: Fold
       className="ds-folder"
       role="button"
       tabIndex={0}
-      aria-label={t("打开文件夹「{value0}」", { value0: folder.name })}
+      aria-label={t("打开项目「{value0}」", { value0: folder.name })}
       onClick={onClick}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -64,7 +64,7 @@ export function FolderCard({ folder, recent, onClick, onRename, onDelete }: Fold
         ref={moreRef}
         type="button"
         className="v3-icon-btn ds-folder-more"
-        aria-label={t("文件夹「{value0}」操作菜单", { value0: folder.name })}
+        aria-label={t("项目「{value0}」操作菜单", { value0: folder.name })}
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         onClick={(event) => {
@@ -87,7 +87,7 @@ export function FolderCard({ folder, recent, onClick, onRename, onDelete }: Fold
           items={[
             { label: t("重命名"), icon: "edit", onSelect: () => onRename(folder) },
             { kind: "separator" },
-            { label: t("删除文件夹"), icon: "trash", danger: true, onSelect: () => onDelete(folder) },
+            { label: t("删除项目及资料"), icon: "trash", danger: true, title: t("项目里的资料会一起永久删除"), onSelect: () => onDelete(folder) },
           ]}
         />
       </span>
@@ -99,10 +99,10 @@ export function FolderCard({ folder, recent, onClick, onRename, onDelete }: Fold
 export function CreateFolderCard({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
   useLocale();
   return (
-    <button type="button" className="ds-new-folder" aria-label={t("新建文件夹")} disabled={disabled} onClick={onClick}>
+    <button type="button" className="ds-new-folder" aria-label={t("新建项目")} disabled={disabled} onClick={onClick}>
       <span className="ds-new-folder-plus" aria-hidden="true"><Icon name="plus" size={16} /></span>
-      <strong>{t("新建文件夹")}</strong>
-      <small>{t("按求职用途分类，最多 50 个")}</small>
+      <strong>{t("新建项目")}</strong>
+      <small>{t("把同一件事的资料放在一起")}</small>
     </button>
   );
 }

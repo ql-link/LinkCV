@@ -36,6 +36,12 @@ def _validate_optional_https_url(value: str | None) -> str | None:
     return normalized
 
 
+def _validate_optional_logo_url(value: str | None) -> str | None:
+    if value and re.fullmatch(r"/api/company-logos/[0-9a-f]{64}\.webp", value.strip()):
+        return value.strip()
+    return _validate_optional_https_url(value)
+
+
 class JobDescriptionDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -238,7 +244,7 @@ class JobDescriptionCreateRequest(BaseModel):
     @field_validator("logo_url")
     @classmethod
     def validate_logo_url(cls, value: str | None) -> str | None:
-        return _validate_optional_https_url(value)
+        return _validate_optional_logo_url(value)
 
     @field_validator("skills")
     @classmethod
@@ -351,7 +357,7 @@ class JobDescriptionUpdateRequest(BaseModel):
     @field_validator("logo_url")
     @classmethod
     def validate_logo_url(cls, value: str | None) -> str | None:
-        return _validate_optional_https_url(value)
+        return _validate_optional_logo_url(value)
 
     @field_validator("skills")
     @classmethod
@@ -400,6 +406,7 @@ class JobDescriptionSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     id: str
+    global_job_id: str | None = None
     job_title: str
     company_name: str
     logo_url: str | None
@@ -418,6 +425,11 @@ class JobDescriptionSummary(BaseModel):
     @classmethod
     def stringify_id(cls, value: object) -> str:
         return str(value)
+
+    @field_validator("global_job_id", mode="before")
+    @classmethod
+    def stringify_global_id(cls, value: object) -> str | None:
+        return str(value) if value is not None else None
 
     @field_validator("updated_at", mode="before")
     @classmethod

@@ -12,13 +12,14 @@ import { useActiveSessionStore, useSessionStore } from "./sessionStore";
 import { DeleteSessionArt } from "./art";
 import "./v3.css";
 
-export type V3Section = "home" | "resumes" | "templates" | "jobs" | "schedule" | "mock" | "datasets" | "account" | "none";
+export type V3Section = "home" | "resumes" | "templates" | "opportunities" | "jobs" | "schedule" | "mock" | "datasets" | "account" | "none";
 
 const NAV: Array<{ key: V3Section; icon: V3IconName; label: string; href: string }> = [
   { key: "home", icon: "sun", get label() { return t("首页"); }, href: "/assistant" },
   { key: "resumes", icon: "doc", get label() { return t("我的简历"); }, href: "/resumes" },
   { key: "templates", icon: "layout", get label() { return t("简历模板"); }, href: "/templates" },
   { key: "jobs", icon: "brief", get label() { return t("岗位看板"); }, href: "/career/applications" },
+  { key: "opportunities", icon: "brief", get label() { return t("发现岗位"); }, href: "/career/opportunities" },
   { key: "schedule", icon: "cal", get label() { return t("面试日程"); }, href: "/career/schedule" },
   { key: "mock", icon: "mic", get label() { return t("模拟面试"); }, href: "/mock-interviews" },
   { key: "datasets", icon: "folder", get label() { return t("资料库"); }, href: "/datasets" },

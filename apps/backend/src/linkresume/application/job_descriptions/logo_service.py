@@ -110,6 +110,8 @@ def attach_logo(
                     raise
                 # Never delete this shared object as compensation on failure.
                 storage.put(object_name, normalized, "image/webp", cache_control="private, no-cache")
+            from linkresume.application.job_descriptions.company_service import publish_plugin_logo
+            publish_plugin_logo(db, storage, locked, normalized, digest)
         locked.logo_sha256 = digest
         locked.lock_version += 1
         locked.update_time = utc_now()

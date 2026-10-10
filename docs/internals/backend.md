@@ -1,5 +1,192 @@
 # FastAPI 后端
 
+## 官方岗位池
+
+`modules/job_pool` 提供普通 Cookie 登录用户的共享岗位查询与加入接口，以及管理员来源管理接口。`application/job_pool` 负责标准化、幂等写入、上下线判断和个人快照事务；`workers/job_pool_worker.py` 挂在现有 Worker 中，不新增队列或服务。同步开关默认关闭，来源首次登记默认停用。
+
+迁移 `0119` 接在 `0118` 后：新增 `global_job_source`（14 字段）、`global_job`（20 字段），给 `job_description` 增加可空 `global_job_id` 和 `(user_id, global_job_id)` 唯一约束，旧资料保持 NULL。来源仅有主键及 `(adapter_key, tenant_key)` 唯一索引；岗位使用 `(source_id, source_job_key)` 唯一索引、`(create_time,id)` 排序索引和标题/正文 `ngram` 全文索引。城市按版本化 JSON 数组精确过滤，未增加多值城市索引。无外部联网迁移、硬删除或 downgrade。
+
+岗位正文先去 HTML 标签与脚本，保持完整文本；白名单补充属性只存部门、学历、经验、毕业年份、批次及截止时间。招聘渠道与用工形式各用一轴，未明确的字段保持 unknown/null。时间保存 UTC，所支持国内官网的无时区时间按北京时间转换。个人城市字段仍为 100 字符；地点文本超长时，城市字段保存首个城市，同时在个人正文保留全部地点；追加后超过正文上限时，全部地点保存在个人备注，正文保持完整。
+
+来源采用递增 `sync_generation` 和 120 秒租约，30 秒续租；配置、启停和新任务使旧写入失效。Worker 最多并行两家，每个来源请求间隔至少 0.5 秒；HTTP 超时、响应大小、分页及总正文内存均有界，429 和临时服务错误最多尝试三次。配置只接受登记的官网、门户和 Moka 租户，不接受任意抓取 URL；拒绝非 HTTPS、跳转到其他 URL 和非公网 DNS 地址；Moka 和阿里 CPO 招聘页只允许收到匿名 Cookie 后重放同一 URL 的 GET 一次，不访问 Location 指向的其他地址。
+
+Logo 由 `application/job_pool/logos.py` 在岗位采集后独立识别，最多额外等待 8 秒：飞书站点读取租户页面的 `logoURL`/`pc_logo`/`navigation_bar_img_url`，排除通用 `saas_career` 图；北森读取页面租户配置 `Logo`，不使用招聘壳页 favicon；智谱飞书页没有公司图，改读登记的企业官网 `/zh` 页；企业自有站点优先读取明确 Logo 图片，再使用页面声明的品牌图标；招聘壳页缺少公司图或图源不可用时，使用已经验证的企业官网品牌图片/图标（腾讯、京东、小米、莉莉丝、沐瞳、微盟）。页面入口固定配置，图片仅接受该公司的官网或已确认 CDN 精确主机，拒绝 HTTP、内嵌凭据及非标准端口；不跟随页面跳转，也不使用分享海报或 ATS 通用 favicon。Moka 从页面 `init-data` 中读取租户导航 Logo，必须同时匹配登记的 org/siteId，且图片位于该租户的精确 CDN 路径（普通站 `public-cdn.mokahr.com`、唯品会区域站 `public-cdn-tc.mokahr.com`，两者不混用）；不使用 ATS 通用图。图标未找到或获取失败只记录 `latest.company_logo_error_code`，不改变岗位同步完整性和上下线判定。
+
+在有效代次及租约内，Logo 地址只补入关联 `global_company.logo_url` 的空值，使用公司行锁防止覆盖其他任务已经设置的图。官网返回经过白名单验证的 HTTPS 外链，并标记图标来源为 official。统一公司匹配与插件图标共享实现见下文「公司匹配与共享图标」。岗位池列表和详情返回 `company.logo_url`，列表预加载该字段避免逐条查询；新加入个人岗位时复制当时的图标地址，重复加入及后续同步不重写个人图标和求职快照。
+
+完整同步必须遍历所有登记门户并补齐必需详情，校验可靠总数且分页不重复。封顶、分页变化、缺失正文、详情失败、校验或网络错误均保留有效观察并记为 partial/failed，不能据此下线。飞书返回 10000 上限时也不能视为完整。有效基线至少 20 个且数量下降超过 50% 时进入 anomalous；管理员只可确认最新同代完整结果，确认幂等。缺失状态规则见 [求职中心功能](../features/career-center.md)。`last_sync_result` 保存有效 `baseline_count` 和最新 `latest` 摘要，不建立历史任务表。
+
+适配器由项目维护，不安装第三方抓取包；公开接口调研参考 [Hiring-Radar](https://github.com/simonlin1212/Hiring-Radar)、[JobHunt-CLI](https://github.com/Enzoding/JobHunt-CLI) 和 [job-pro](https://github.com/HA7CH/job-pro)，参数与完整性规则以本仓库实现为准。预置 190 个来源、183 个公司或招聘主体名称（阿里业务集团分别列出；得物、京东、网易、快手、贝壳、宁德时代、徐工有独立渠道来源）。已有公司及本次扩展的实际覆盖如下，不能将某个渠道可用等同于企业全部渠道已接入：
+
+| 企业 | 适配器 | 已实现门户 |
+| --- | --- | --- |
+| 腾讯 | tencent | 社招 |
+| 字节跳动 | feishu | 社招、校招门户（包含实习）；10000 结果上限保持部分同步 |
+| MiniMax | feishu | 当前官方门户 |
+| 美团 | meituan | 社招、校招、实习 |
+| 月之暗面 | moka | 社招门户 |
+| 百度 | baidu | SOCIAL、GRADUATE、INTERN |
+| 京东 | jd / jd-campus | 社招；campus.jd.com 应届及实习门户，保留 publishId 原生身份 |
+| 网易 | netease / netease-campus | hr.163.com 门户及 campus.163.com 互联网校招项目 69；其他校招项目未登记，未确认用工编码保持 unknown |
+| 阿里巴巴 | alibaba | 集团校招、实习门户 |
+| 快手 | kuaishou / kuaishou-social | 校招、社招、实习；社招接口使用公开浏览器签名，城市编码读取官方标签字典 |
+| 小红书 | xiaohongshu | 社招、校招、实习 |
+| 哔哩哔哩 | bilibili | 社招、校招、实习；匿名 CSRF 握手 |
+| 拼多多 | pdd | 校招、实习；官方每页固定 10 条 |
+| 滴滴 | didi | 社招 |
+| 携程 | ctrip | job.ctrip.com 社招、校招、实习 |
+| 小米 | feishu | 社招、校招、实习；此租户列表与详情使用 portal_type=6 |
+| 蚂蚁集团 | ant | 社招及校招门户；校招原始列表中的 trainee 归为实习，固定每页 10 条 |
+| 米哈游 | mihoyo | 社招、校招、实习；额外读取完整详情，保留岗位 hash 路由 |
+| 得物 | feishu | careers.dewu.com 社招/实习，campus.dewu.com 校招；两来源复用同一公司记录 |
+| 智谱 | feishu | 当前飞书社招/实习门户；未接入另行部署的校招站 |
+| 莉莉丝 | feishu | 当前 index 门户，招聘类型依官方返回字段 |
+| 库洛游戏 | feishu | 当前 index 门户，缺少招聘类型时保持 unknown |
+| 沐瞳科技 | feishu | 当前 index 门户，缺少招聘类型时保持 unknown |
+| 零一万物 | feishu | 当前 index 门户 |
+| DeepSeek | moka | high-flyer/140576 的 DeepSeek 招聘站；未接入幻方的其他站点 |
+
+
+| 新增公司或招聘主体 | 适配器 | 已实现门户及边界 |
+| --- | --- | --- |
+| 淘天、饿了么、飞猪、阿里国际数字商业、通义实验室、阿里云、钉钉、夸克、高德、虎鲸文娱、灵犀互娱、阿里健康 | alibaba-cpo | 各业务集团官网社招；没有把未确认的校招、实习过滤条件登记为可用门户 |
+| 生数科技、懂车帝、中科创达、MetaApp、心动网络、微派网络、脉脉、即构科技、黑湖科技、Cider、蓝色光标、荔枝 | feishu | 当前官方 index 门户；招聘渠道及用工类型依接口字段，缺失保持 unknown |
+| 电魂、恺英、盛趣、游族、乐元素、散爆、SHEIN、阶跃星辰、DolphinDB、迅雷、作业帮、新浪微博、满帮、东方财富 | moka | 当前官方社招门户；列表缺正文时读取完整详情 |
+| 知乎 | moka | 当前 apply/zhihu/78336 门户；旧 social/68321 入口不再使用 |
+| 鹰角网络 | moka | 官网指向的 jobs.hypergryph.com/apply/hypergryph/26325 社招；独立校招站暂未登记 |
+| 货拉拉、爱奇艺、阅文集团 | beisen | 当前官方社会招聘门户 |
+| 贝壳 | beisen | join.ke.com 社招，以及 campuske.zhiye.com 社招/校招；同名主体复用公司行 |
+| 360 | beisen | 360campus.zhiye.com 校招；不把 hr.360.cn 旧接口 404 当成空岗位 |
+| 科大讯飞、哈啰 | beisen | 当前官方社招/校招门户 |
+| 华为 | huawei | 社招 SR；校招 CR 的“详见岗位意向”不是完整 JD，暂未登记 |
+| 大疆 | dji | 非校招 N 与实习 Y；N 明确返回 0 时可作为空渠道，未确认独立校招门户 |
+| 联想 | lenovo | 应届、实习、Future Leaders（项目 1/2/3）；城市编码从当前官方字典解析，未接入其他社招站 |
+| 搜狐 | moka | 官网指向的 campus_apply/sohu/5682 校招，读取详情完整正文；旧 hr.sohu.com 入口未接入 |
+| 腾讯音乐 | tme | 社招及校园门户（包含日常实习）；列表实际每页 20 条，逐条读取详情 |
+
+| 百川智能、面壁智能、无问芯穹、爱诗科技、句子互动、得到、掌阅科技、椰岛游戏 | feishu | 官网声明的自定义门户 baichuanzhaopin / career / infinigence / join / juzibot / shezhao / zhangyue / coconut_jobs；使用各门户自己的列表、详情及跳转路径，未接入其他独立校招站 |
+| 爱笔智能、拾象科技、BoomingTech、Soul | feishu | 当前官方 index 门户；Soul 的入口由公司工作机会页声明 |
+| 易娱网络、博乐科技、乐府互娱、诗悦网络、尚游游戏、思谋科技 | moka | 当前官方社招门户；招聘类型按岗位字段识别 |
+| 途虎养车 | moka | campus-recruitment/tuhu/28398 校招站，未接入独立社招站 |
+| 唯品会 | moka | app-tc.mokahr.com/social-recruitment/vipshophr/10038 社招站；列表和详情使用同一区域 API，未接入独立校招站 |
+| 微盟 | weimob | 官网公开岗位列表（positionNature 不设过滤）；按 FULL / SCHOOL / INTERNSHIP 字段识别社招、校招、实习，未确认用工信息保持 unknown |
+
+
+### 硬件、汽车与制造业来源
+
+目录同时覆盖硬件、机器人、汽车、半导体、新能源、家电与工业制造，未设置“仅互联网岗位”限制。以下是各主体已登记的具体门户；门户登记不代表覆盖企业所有集团子公司或独立招聘渠道。
+
+| 公司或招聘主体 | 适配器 | 已登记门户 |
+| --- | --- | --- |
+| 理想汽车 | feishu | index |
+| 零一汽车 | feishu | campus |
+| 易咖智车 | feishu | index |
+| 亿咖通 | feishu | professional |
+| 德赛西威 | feishu | index |
+| 自变量机器人 | feishu | index |
+| 智元机器人 | feishu | campusrecruitment / index |
+| 星动纪元 | feishu | index |
+| 千寻智能 | feishu | index |
+| 它石智航 | feishu | index |
+| 非夕机器人 | feishu | index |
+| Sharpa | feishu | 668262 |
+| 库犸科技 | feishu | social_recruitment / campus_recruitment |
+| 小马智行 | feishu | ponyai |
+| 禾多科技 | feishu | index |
+| 智驾新程 | feishu | index |
+| 后摩智能 | feishu | career |
+| 光明之芯 | feishu | index |
+| 芯盟科技 | feishu | index |
+| 酷睿程 | feishu | index |
+| 禾赛科技 | feishu | index |
+| 万集科技 | feishu | index |
+| 安克创新 | feishu | index / campushirecn |
+| 影石Insta360 | feishu | socialENG / index / campus / campusENG |
+| xTool | feishu | index |
+| 道通智能 | feishu | index |
+| 和而泰 | feishu | index |
+| 科捷智能 | feishu | index |
+| 倍轻松 | feishu | index |
+| 壁仞科技 | moka | social；站点 44726 |
+| 太初 | moka | social；站点 47401 |
+| 岚图汽车 | moka | social；站点 146292 |
+| 吉利 | moka | social；站点 102042 |
+| 均胜集团 | moka | social；站点 94310 |
+| 艾罗能源 | moka | social；站点 151400 |
+| 天合光能 | moka | social；站点 39871 |
+| 三花智控 | moka | social；站点 56208 |
+| 时代新安 | moka | social；站点 58041 |
+| 思摩尔国际 | moka | social；站点 126055 |
+| 中兴 | moka | social；站点 47588 |
+| 追觅 | beisen | 社招 1、校招 2 |
+| 奇瑞汽车 | beisen | 社招 1、校招 2 |
+| 零跑汽车 | beisen | 社招 1、校招 2 |
+| 京东方 | beisen | 社招 1 |
+| 三一集团 | beisen | 社招 1、校招 2 |
+| 潍柴集团 | beisen | 社招 1、校招 2 |
+| 大华股份 | beisen | 社招 1、校招 2 |
+| 传音 | beisen | 社招 1、校招 2 |
+| 国轩高科 | beisen | 社招 1、校招 2 |
+| 宁德时代 | moka-campus | campus；站点 148948 |
+| 蔚来 | feishu | index / campus |
+| 小鹏汽车 | feishu | index / campus |
+| 拓竹科技 | feishu | experienced / campus |
+| Momenta | feishu | talent |
+| 长安汽车 | beisen | 社招 1、校招 2 |
+| 海信 | beisen | 社招 1、校招 2 |
+| 新华三 | beisen | 社招 1、校招 2 |
+| 长鑫存储 | beisen | 社招 1、校招 2 |
+| 长江存储 | beisen | 社招 1、校招 2 |
+| 汇川技术 | beisen | 社招 1 |
+| 迈瑞医疗 | beisen | 社招 1、校招 2 |
+| 思瑞浦 | moka | campus；站点 67894 |
+| 寒武纪 | moka | campus；站点 44201 |
+| 华虹集团 | moka | campus；站点 70000 |
+| 千里科技 | moka | campus；站点 147197 |
+| 九号公司 | moka | campus；站点 45627 |
+| 延锋 | moka | campus；站点 45086 |
+| 远景能源 | moka | campus；站点 43123 |
+| 宁德时代 | moka | social；站点 96144 |
+| 摩尔线程 | beisen | 社招 1、校招 2 |
+| vivo | beisen | 校招 2 |
+| 晶合集成 | beisen | 社招 1、校招 2 |
+| 德业股份 | beisen | 社招 1、校招 2 |
+| 派能科技 | beisen | 社招 1、校招 2 |
+| TCL中环 | beisen | 社招 1、校招 2 |
+| 海尔 | haier | 公开岗位池；未明确标注的招聘渠道与用工保持 unknown |
+| OPPO | oppo-campus | 校园岗位池（应届、博士、实习项目）；独立社招接口未登记 |
+| 比亚迪 | byd | 社招、应届生、实习生、博士生、外派专项；公开主题配置动态读取 |
+| 美的集团 | midea | 社招；独立校园站未登记 |
+| 格力电器 | gree | 校招 property=1、社招 property=2 |
+| 海康威视 | hikvision | 集团公开岗位池的社招及实习；独立校园站未登记 |
+| 荣耀 | dayee | 独立社招、校招 suite，归属同一公司来源 |
+| 隆基绿能 | dayee | 当前官方 suite 的社招、校招 |
+| 宇树科技、石头科技 | beisen | 社招 1、校招 2、实习 3 |
+| 徐工 | moka / moka-campus | 社招 siteId=148090、校招 siteId=148091 |
+
+宁德时代、徐工的校招与社招站点共用各自的 Moka 企业 orgId，但拥有不同 siteId。各公司的两来源分别登记为 moka-campus / moka，复用同一个 global_company；moka-campus 复用现有 Moka 采集逻辑。来源仍遵守 adapter_key + tenant_key 唯一约束，不新增表、字段或索引。列表、详情、原始岗位链接及 Logo 均按该来源登记的 siteId 选择，不串用另一渠道的页面；其他已登记 Moka 来源身份与配置保持兼容。
+
+`application/job_pool/manufacturing.py` 维护比亚迪、美的、格力、海康和大易的匿名公开接口，复用通用完整性保护和岗位结构。比亚迪社招 pageNum 是偏移量，校园主题从 postEntryConfig/list 动态读取当前主题 ID 与批次，主题缺失或重复保持 partial；校园详情核对外层岗位 ID，保留全部部门、研究方向的职责与要求，不被重叠的博士、外派门户覆盖成局部正文。校园 updateTime 不当作发布时间；列表重复 ID、去重数与上游总数不一致保持 partial，不触发岗位下线。
+
+美的、格力的公开列表已返回完整职责和要求，缺失时保持 partial，只映射岗位字段，不保存上游附带的员工、发布人等信息。海康按官网行为清空集团列表的 companyId，详情使用公开启动配置的 companyId；详情 adIdStr 必须匹配列表 postSecureId，不能改用 postIdStr。大易以白名单 suite 和 recruitType 访问公开列表、详情，采用响应真实 pageSize/currentPage/dataCount，兼容明确的零条结果；完整详情可将职责与要求合并在 workContent 中，但两者均为空、ID 不匹配或登录要求均不能视为成功全量。原始详情链接使用 posDetail.html 与 campus/society 参数。独立校园站、海外或实习门户只有明确登记后才计入覆盖。
+
+比亚迪、格力、荣耀、海康、徐工补充经过核实的公司官网 HTTPS 标识；隆基从企业官网读取标识，宇树与石头使用各自北森租户的 Logo。所有图片继续受精确域名白名单约束，复用共享公司 Logo 的填空规则，保留已有公司图标；Logo 失败不影响岗位采集完整性。
+
+海尔使用官网匿名列表的 page/pagesize/count 分页，再读取官方 HTML 详情中“职责描述”和“任职要求”两节；核对当前岗位的 collection data-id，缺段、重复段或 ID 不匹配均保留 partial，页面其他信息不写入岗位正文。列表 update_time 不当作发布时间，未明确的渠道、用工保持 unknown。
+
+OPPO 校园岗位池使用官网 pageNew / detail 匿名接口及固定公开 Tenant-Id=1000；按响应 current/size/total 遍历，详情 idRecruitPosition 必须与列表 idProjPosition 一致，不能替换为 atsProjectPositionId。完整正文包含职责、要求、知识技能、AI 能力要求与加分项；Graduate / doctor 识别为校招，Intern 只确认实习用工。未确认其他类型保持 unknown，不读取账号、申请进度或个人简历接口。
+
+标准岗位类别补充生产/制造、质量、供应链，供现有动态类别筛选使用；不认识的分类继续保持空值，不按标题推测。
+
+腾讯音乐按响应 `_meta.page_size/current_page/total_count` 遍历，不假定请求的 pageSize 生效；社招和校园接口的岗位原生 ID 带渠道前缀以免不同命名空间碰撞。腾讯音乐日常实习、京东实习和联想实习仅确认用工形式，不推测其属于应届校招。北森、华为、大疆、京东校招、网易校招和联想使用各自响应总数及真实分页起点；大疆只有明确 `totalCount=0` 才将 `datas=null` 视为空列表。北森返回的省份·城市保留在 raw，城市筛选仅使用其中明确的城市名；快手和联想的城市编码必须通过官网字典转换，未知编码视为异常岗位，不推测地点。飞书门户名称来自各官网实际声明，不默认全部使用 index；门户标识同时用于列表请求头、详情请求头和岗位详情 URL。微盟仅调用公开职位页使用的匿名列表/详情接口，使用官网浏览器签名；按返回的 currPage/pageSize/count 核对分页，并读取 positionDesc 与 positionRequire 完整正文，详情必须匹配岗位 id。Moka 区域 API 主机由登记官网的固定元数据决定，管理端不能覆盖 API 主机；已有普通 Moka 来源仍走 app.mokahr.com。Moka 缺少正文时请求 `website/job` 并核对岗位 id 和租户 orgId；其列表总数不可靠，必须走到最后一页。阿里 CPO 从登记的社招页建立匿名 Cookie/CSRF 会话，逐条取详情并核对 id；职责和要求同时为空或只有 `-` 等占位符的岗位记为 invalid，整个结果保持 partial，不能触发下线。
+
+目录只代表已实现入口，仍不等于“大厂及头部中厂全部渠道覆盖”。当前未确认稳定采集入口的目标包括 WPS、同程、有赞新版门户、阿里菜鸟与盒马，以及中芯国际等；这些公司的官网入口可能可访问，但尚未完成当前接口或完整正文验证，不能计入已接入公司数。360 社招、华为校招、联想社招、鹰角校招、美的校园站与海康校园站也尚未接入。接口暂时失败、官网迁移和正文缺失分别处理，不写入虚构来源或空岗位结果。所有新增来源仍默认停用，需管理员登记、启用后由后台执行实际同步。
+
+
+首次或再次执行管理端预置登记只补新增公司和来源，保留现有配置、启停与 Logo；新来源默认停用。
+
+配置与启用顺序见 [开发配置](../ops/development.md#官方岗位池同步)。MySQL 专项测试 `tests/integration/migrations/test_job_pool_mysql.py` 要求显式本地临时库，覆盖向前迁移、实际索引、中文全文/JSON 城市查询和并发重复加入；SQLite 测试不能证明这些 MySQL 行为，也不能证明官网全量采集完整。
+
 `modules/agent/service.py:confirm_proposal` 的普通修改只原子更新当前 Resume 与提案状态，不读取或新增历史版本；数据库提交失败会回滚两者。翻译仍走独立新建路径，并在 Proposal/Resume 之前锁定 User 以协调账户简历额度。迁移 `0084` 增加复制幂等字段、可空 scoped 全文及有界预览、求职 resume_id 外键并按所有者映射旧引用；旧历史表和求职旧外键暂不删除。部署需停止旧写入、备份、升级并切换消费方，不能直接回滚到依赖历史写入的旧代码。
 
 迁移 `0081` 在 `0080` 之后新增经典商务与活力，默认启用模板达到 85 套；无 schema 变化，不覆盖旧模板、简历或版本。`0080` 的卡片虚线、卡片分栏与 `0081` 两套模板均复用 `0079` 已验证的虚构产品经理样本，只新增独立呈现快照。重复执行保留启停状态，同 key 数据或定义冲突拒绝覆盖。发布先提供 Featured 主题的 Web/PDF 渲染器，再升级目录；需撤回时停用新增目录，历史简历快照保留。
@@ -9,6 +196,16 @@ Agent 范围读取的安全日志覆盖成功与 ApiError 失败，记录读取�
 
 
 LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验证成功并重新核对配置后启用；复用现有场景验证器和调用日志，无新迁移。
+
+### 公司匹配与共享图标
+
+`0120` 接在 `0119` 后。它仅为 `global_company` 增加 aliases（JSON 数组）、logo_source（unknown/official/plugin/admin）及 lock_version（BIGINT UNSIGNED），补充数组与来源 CHECK，并更新 logo_url 注释；不增加表、索引，不重写已有岗位或默认图。旧公司别名为空，旧图标来源为 unknown。
+
+`application/job_descriptions/company_service.py` 统一精确匹配展示名、规范名、工商全称和管理员别名。匹配规范化包含 NFKC、casefold 与空白合并，不推测集团子公司、简称或模糊名称。只有唯一候选才使用默认图片或共享插件图片；别名允许同名，不新增全局别名唯一约束，多个候选不会自动合并。新岗位缺图时复制当前默认图；外部导入携带 HTTPS 图标时以条件更新仅补空默认图，同步增加资料版本。重复导入只在用户确认替换后进入该链路，不处理历史批量匹配。
+
+插件上传沿用现有图像大小、解码、去元数据与 WebP 规范化，再唯一匹配公司。只有公司缺图或默认图恰好是此次导入的 plugin 外链时，才把规范化字节发布到 `public-company-logos/{sha256}.webp` 并更新默认 URL。其他默认图保留。发布失败仅记录不含 URL、正文或图片内容的警告，个人图片继续保存。共享图与个人图使用独立对象命名空间：新增公共读取路由只允许 SHA-256 文件名，不提供任意对象访问；原个人图片路由继续校验归属。旧公共版本不因管理员替换默认图而删除，保证个人快照 URL 可读。
+
+`modules/job_descriptions/company_routes.py` 提供管理员公司列表与更新接口、公共图片读取接口。管理保存使用公司行锁和 base_version，官网/插件默认图变更也增加版本；旧版本409要求重新读取。别名和默认图保存不重写用户岗位或求职快照。数据库兼容发布需先查询目标 current、备份并升级至0120，再启动包含新字段的 API/Worker；不执行 downgrade。
 
 ## 功能与架构导航
 
@@ -22,7 +219,7 @@ LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验�
 
 意图识别的上游调用与断开监控使用 AnyIO 任务组，与 FastAPI/Starlette 的取消作用域一致；`anyio>=4,<5` 已显式声明为直接依赖，锁文件沿用已有版本。场景与执行边界见 [Agent 运行时](agent-runtime.md#调用链)。
 
-结构化简历字段的局部文字样式保存在既有 canonical JSON 快照内，与正文共用 `TextRun` 和字号边界，无需新增数据库列或回填。读取、保存、版本与模板切换继续经过同一 Pydantic 解析边界，字段与文字样式的一致性规则见 [语义简历契约](../api/http-contracts.md#语义简历契约)。
+结构化简历字段的局部文字样式保存在既有 canonical JSON 快照内，与正文共用 `InlineContent`、字号和行内图片边界，姓名、标题、标签和联系方式也保留行内图片，无需新增数据库列或回填。读取、保存、版本与模板切换继续经过同一 Pydantic 解析边界，字段与文字样式的一致性规则见 [语义简历契约](../api/http-contracts.md#语义简历契约)。
 
 `apps/backend` 承接健康检查、Web/小程序/desktop 三渠道 Redis 会话鉴权、微信自动建号、网页扫码确认、小程序只读简历、语义简历生命周期、历史版本、简历分享链接、智能助手会话与修改提案、异步文件导入、私有对象资源、无状态结构化 JD 资料、面试求职进程与排期复盘、用户中心、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料异步解析，以及统一系统日志、业务审计和管理员日志查询。
 
@@ -236,6 +433,12 @@ FastAPI 的 OpenAI-compatible 请求使用 `LiteLLMGateway` 适配器，LiteLLM 
 
 `scripts/db/init_mysql.py` 只允许创建名为 `linkresume` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要，再只读核对 Alembic 当前版本与已知 revision 的表、字段标记。发现版本落后但后续对象已存在，或版本已应用但标记对象缺失时，runner 会在任何 DDL 前停止，要求先人工核实并对齐 schema 与 `alembic_version`。FastAPI 配置支持根 `.env`、显式 `LINKRESUME_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。Web Cookie 和小程序 Bearer 分别要求 `web` 与 `miniprogram` channel；上线前缺少 channel 的旧会话仅兼容为 Web，并在续期时补写 channel。对象存储配置仅使用 `MINIO_*`。
 
+编辑器段落精修由 `application/section_review/service.py` 实现，以 `source=section_review` 调用 `section_review` 场景的结构化输出，路由位于 `modules/resumes/section_review_routes.py`。流程分两步：
+1. 在短会话内校验简历归属，组装参照：分析风格取 `WRITING_METHODS`（STAR / XYZ / CAR）或细化后的 `GENERAL_STANDARD`；选填的 `job_id` 校验本人归属后把岗位要求（复用 `job_matches.service.job_text`）叠加在风格之后。旧的 `{kind:"job"}` 参照仍按通用写作标准加岗位处理。
+2. 关闭会话后调用模型；结构无效时重试一次。
+
+后端只校验和过滤模型输出：锚点必须回到请求文本，结构提案必须引用已发送的上下文。不写简历，不新增表或迁移。用户文本放在 `<data>` 中并声明不是指令。本段文字少于 20 个字时不调用模型。契约见 [HTTP 契约](../api/http-contracts.md#编辑器段落精修)。
+
 ## 导入与外部边界
 
 Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 以固定的 `output_formats=markdown/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`，PDF 在此基础上额外发送 `include_layout=true`。LinkParse 识别文件类型并决定 OpenDataLoader、OCR 选页和渲染 DPI；layout 模式内部即使公开 `include_bbox=false` 也应保留 OCR 坐标，并在 `meta.pdf.layout` 返回版本化物理行、归一化 bbox、来源顺序、语义角色、同行、续行和质量计数。LinkParse 响应在 JSON decode 前限制为 3 MiB，先校验 request ID、外层兼容 envelope、预期文件类型和空 assets，再独立尝试解析可选 layout；可安全解析的页码、bbox、源顺序和有界块作为精简模型提示，严格关系、计数、warning 和 Markdown 一致性检查只决定是否采用重建 Markdown。显式请求 layout 时若 LinkParse 返回 `413 LAYOUT_RESOURCE_LIMIT`，客户端在同一 deadline 内仅补发一次不含 `include_layout` 的 Markdown 请求，随后按原错误映射收口，不递归重试。layout 缺失、降级、畸形或不一致时保留原始 LinkParse Markdown，不产生 `RESUME_LAYOUT_UNSUPPORTED`；安全提示若仍可用可以继续传入模型，缺少 layout 的旧 LinkParse 版本保持兼容。PDF 始终关闭图片输出，文字与图片混排的 PDF 继续解析文字且不再检查原文件是否存在图片对象；图片不会被单独提取为资产，也不进入 SourceGraph、LLM 或简历快照，模板头像保持为空。完整原始 PDF（其中仍包含嵌入图片）会按现有导入任务生命周期保存在私有对象存储并发送给 LinkParse。含图片/表格/文本框的 DOCX，以及转换 Markdown 中仍存在图片、表格、嵌入或主动 HTML 时仍按既有不可承载内容边界失败。LinkParse 的 Word omitted-image/table 信号参与该严格检查，其余 Word 元数据只写入脱敏调用日志。
@@ -307,7 +510,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ## 小程序求职适配
 
-`modules/miniprogram/career_routes.py` 在专用 Bearer 渠道上复用 `application/interviews/service.py`，提供求职/场次详情、阶段追加、排期、文字记录、Offer 和终止操作。响应补齐阶段历史、当前场次完成状态，以及与 Web 路由共用同一实现的 `application_logo_url` 公司标识投影（只透传 `https://` 开头的绝对 URL，其余为空）；求职记录详情、求职记录列表和场次摘要都携带该值，客户端据此统一渲染公司标识。锁、幂等与归属检查沿用业务服务；排期允许时间重叠，不新建状态机或数据库表。投递简历预览仅从本人求职引用定位本人不可变简历版本，再复用小程序 PDF/PNG 渲染，不扩大简历中心的版本选择范围。
+`modules/miniprogram/career_routes.py` 在专用 Bearer 渠道上复用 `application/interviews/service.py`，提供求职/场次详情、阶段追加、排期、文字记录、Offer 和终止操作。响应补齐阶段历史、当前场次完成状态，以及与 Web 路由共用同一实现的 `application_logo_url` 公司标识投影（透传 HTTPS 外链、公共公司图片版本地址或关联岗位的受控图片路径；小程序客户端仍只渲染 HTTPS 外链）；求职记录详情、求职记录列表和场次摘要都携带该值，客户端据此统一渲染公司标识。锁、幂等与归属检查沿用业务服务；排期允许时间重叠，不新建状态机或数据库表。投递简历预览仅从本人求职引用定位本人不可变简历版本，再复用小程序 PDF/PNG 渲染，不扩大简历中心的版本选择范围。
 
 迁移 `0072` 追加六套 MIT 授权适配的 `open-*` 模板，默认目录达到 63 套；只插入新增模板，沿用 `0071` 的重复执行、停用保留与冲突拒绝规则，无表结构变化，不改用户快照。上游固定版本及声明见[模板来源](resume-template-sources.md)。
 
@@ -323,9 +526,13 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ## 当前 Muse 目录迁移
 
-当前迁移链 head 为 `0117`（`0099 → 0100 → … → 0110 → 0111 → 0112 → 0113 → 0114 → 0115 → 0116 → 0117`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。`0111–0115` 的内容见下文「阿里巴巴 MySQL 规约整改」。
+当前迁移链 head 为 `0121`（`0099 → 0100 → … → 0110 → 0111 → 0112 → 0113 → 0114 → 0115 → 0116 → 0117 → 0118 → 0119 → 0120 → 0121`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。`0111–0115` 的内容见下文「阿里巴巴 MySQL 规约整改」。
+
+`0118` 新增两张空表保存编辑器段落聚焦结果：`resume_section_review` 每段一行，`(resume_id, unit_id)` 唯一，保存最近一次分析的参照、原文与结果；`resume_section_review_item` 保存每条批注、自定义要求或起草的状态、回答、候选与采用时的改前改后，`status='done'` 当且仅当 `edit_json` 非空。两表都冗余 `user_id`、`resume_id`，不建外键；删除简历和注销账号时由应用层同事务清理。不修改存量表，回退依赖备份或新的向前迁移。
 
 `0117` 将内置 Muse 模板中仍匹配原始样本的示例姓名统一为“张三”，按已知模板 key 和原始姓名精确匹配，只修改 `data_json.identity.name.value`。管理员编辑过的姓名、自定义模板、已有用户简历与其他字段不修改；没有 schema 变化，重复执行不再改变数据。迁移为 forward-only，恢复原示例姓名依赖备份或新的向前迁移。
+
+`0121` 接在 `0120` 后，为 `user_dataset_folder` 增加 `description VARCHAR(500) NOT NULL DEFAULT ''`（Web 资料库“我的项目”的项目说明），存量文件夹为空字符串；纯增量字段，不回填、不改变其他列。迁移为 forward-only。
 
 `0116` 只扩展 LLM 计费结构：线路增加价格来源模式和价格版本 ID，调用增加明确 UTC 请求时间、互斥计费用量、费用状态和结算金额；新增 `llm_price_revision`、`llm_cost_operation`、`llm_call_cost_revision` 保存完整规则、管理员操作和不可变费用证据。金额使用十进制定点数，供应商账单 ID 使用大小写敏感唯一约束，不新增数据库外键。迁移不补算或覆盖历史金额，不改动旧 `create_time`。新增版本表的时间由应用显式写 UTC，避免依赖数据库会话时区。发布须先备份、停止旧服务并执行迁移，再启动新版 Backend/Pi/Web；恢复依赖备份或新的向前迁移。费用算法和接口见 [Agent/LLM 运行时](agent-runtime.md) 与 [HTTP 契约](../api/http-contracts.md)。
 

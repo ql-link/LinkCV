@@ -157,9 +157,9 @@ export function DatasetUploadDialog({
           <div className="ds-target">
             <div className="ds-target-copy">
               <strong>{t("上传到")}</strong>
-              <small>{t("当前文件夹，之后可以移动到别的文件夹")}</small>
+              <small>{t("当前项目，之后可以移动到别的项目")}</small>
             </div>
-            <span className="ds-target-folder"><Icon name="folder" size={14} /><span>{folderName ?? t("当前文件夹")}</span></span>
+            <span className="ds-target-folder"><Icon name="folder" size={14} /><span>{folderName ?? t("当前项目")}</span></span>
           </div>
         </div>
         <DialogFooter left={<span title={summary}>{summary}</span>}>

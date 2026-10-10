@@ -66,7 +66,7 @@ const audioRecord: DatasetRecord = {
 
 async function enterBatchFolder() {
   expect(screen.queryByRole("button", { name: "批量操作" })).not.toBeInTheDocument();
-  fireEvent.click(await screen.findByRole("button", { name: "打开文件夹「批量文件夹」" }));
+  fireEvent.click(await screen.findByRole("button", { name: "打开项目「批量文件夹」" }));
   return await screen.findByRole("button", { name: "批量操作" });
 }
 
@@ -83,6 +83,8 @@ beforeEach(() => {
   });
   vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [] });
   vi.spyOn(api, "listDatasetFolders").mockResolvedValue({ folders: [], total_count: 0, uncategorized_count: 0 });
+  vi.spyOn(api, "listJobApplications").mockResolvedValue({ items: [], next_cursor: null });
+  vi.spyOn(api, "listInterviewSessions").mockResolvedValue({ items: [], next_cursor: null });
 });
 
 afterEach(() => {
@@ -110,7 +112,8 @@ function submitUpload() {
 
 async function openUploadDialog() {
   await import("./DatasetUploadDialog");
-  fireEvent.click(screen.getByRole("button", { name: "上传资料" }));
+  fireEvent.click(screen.getByRole("button", { name: "添加资料" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "上传本地文件" }));
   await act(async () => {
     await Promise.resolve();
   });
@@ -127,16 +130,16 @@ describe("DatasetsPage", () => {
     vi.mocked(api.listDatasetFolders).mockResolvedValue({ folders: [batchFolder], total_count: 3, uncategorized_count: 0 });
     const remove = vi.spyOn(api, "deleteDatasetFolder").mockResolvedValue({ deleted: true, affected_dataset_count: 3 });
     render(<DatasetsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: `文件夹「${batchFolder.name}」操作菜单` }));
+    fireEvent.click(await screen.findByRole("button", { name: `项目「${batchFolder.name}」操作菜单` }));
     fireEvent.click(screen.getByRole("menuitem", { name: /删除/ }));
     const dialog = confirmDialog();
-    expect(dialog).toHaveTextContent("3 份资料，包括源文件和解析结果，删除后无法恢复");
+    expect(dialog).toHaveTextContent("项目里的 3 份资料会和项目一起永久删除");
     expect(remove).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
     expect(remove).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: `文件夹「${batchFolder.name}」操作菜单` }));
+    fireEvent.click(screen.getByRole("button", { name: `项目「${batchFolder.name}」操作菜单` }));
     fireEvent.click(screen.getByRole("menuitem", { name: /删除/ }));
-    fireEvent.click(within(confirmDialog()).getByRole("button", { name: "确认删除" }));
+    fireEvent.click(within(confirmDialog()).getByRole("button", { name: "连同资料一起删除" }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith(batchFolder.id));
   });
 
@@ -165,12 +168,12 @@ describe("DatasetsPage", () => {
   it("首页拖入文件只提示进入文件夹，不发起上传", async () => {
     const upload = vi.spyOn(api, "uploadDataset");
     render(<DatasetsPage />);
-    await screen.findByText("还没有文件夹");
+    expect(await screen.findAllByRole("button", { name: "新建项目" })).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "上传资料" })).not.toBeInTheDocument();
     fireEvent.drop(document.querySelector(".ds-root")!, {
       dataTransfer: { files: [new File(["test"], "test.md")], types: ["Files"] },
     });
-    expect(await screen.findByRole("alert")).toHaveTextContent("请先进入文件夹再上传资料");
+    expect(await screen.findByRole("alert")).toHaveTextContent("请先进入项目再上传资料");
     expect(upload).not.toHaveBeenCalled();
   });
   it("首次读取时在页头下方展示统一加载状态", () => {
@@ -202,7 +205,7 @@ describe("DatasetsPage", () => {
     vi.mocked(api.listDatasetFolders).mockRejectedValue(new Error("offline"));
     render(<DatasetsPage />);
     expect(await screen.findByRole("heading", { name: "资料加载失败" })).toBeInTheDocument();
-    expect(screen.queryByText("还没有文件夹")).not.toBeInTheDocument();
+    expect(document.querySelector(".ds-folder-grid")).not.toBeInTheDocument();
   });
 
   it("文件夹页头提供搜索、批量操作和唯一主按钮上传资料，列表展示名称、格式、大小与解析状态", async () => {
@@ -211,7 +214,7 @@ describe("DatasetsPage", () => {
     const { container } = render(<DatasetsPage initialFolderId={batchFolder.id} />);
 
     expect(await screen.findByRole("searchbox", { name: "搜索资料" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "上传资料" })).toHaveClass("v3-btn-dark");
+    expect(screen.getByRole("button", { name: "添加资料" })).toHaveClass("v3-btn-dark");
     expect(container.querySelectorAll(".ds-actions .v3-btn-dark")).toHaveLength(1);
 
     expect(screen.getByText("岗位要求")).toBeInTheDocument();
@@ -250,11 +253,11 @@ describe("DatasetsPage", () => {
     expect(screen.getByRole("checkbox", { name: "全选当前筛选结果" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "选择「岗位要求」" })).not.toBeChecked();
     expect(screen.getByRole("button", { name: "删除资料（已选择 0 份）" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "上传资料" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "添加资料" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "取消操作" }));
     expect(screen.getByRole("button", { name: "批量操作" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "上传资料" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "添加资料" })).not.toBeDisabled();
     expect(screen.queryByRole("checkbox", { name: "全选当前筛选结果" })).not.toBeInTheDocument();
   });
 
@@ -363,15 +366,15 @@ describe("DatasetsPage", () => {
     });
     render(<DatasetsPage />);
 
-    await screen.findByRole("button", { name: "打开文件夹「批量文件夹」" });
+    await screen.findByRole("button", { name: "打开项目「批量文件夹」" });
     expect(screen.queryByText("岗位要求")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "上传资料" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "批量操作" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "打开文件夹「批量文件夹」" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开项目「批量文件夹」" }));
     expect(screen.getByRole("button", { name: "批量操作" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "返回全部资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "资料库" }));
     expect(screen.queryByRole("button", { name: "批量操作" })).not.toBeInTheDocument();
   });
 
@@ -424,7 +427,7 @@ describe("DatasetsPage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "打开「岗位要求」操作菜单" }));
     const menu = screen.getByRole("menu");
-    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["查看文件", "重命名", "移动到文件夹", "管理关联", "删除资料"]);
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["查看文件", "重命名", "移动到项目", "管理关联", "删除资料"]);
     expect(within(menu).queryByRole("menuitem", { name: "重新解析" })).not.toBeInTheDocument();
     fireEvent.click(within(menu).getByRole("menuitem", { name: "删除资料" }));
     expect(getContent).not.toHaveBeenCalled();
@@ -731,7 +734,7 @@ describe("DatasetsPage", () => {
     render(<DatasetsPage />);
 
     // 进入「前端岗位」文件夹页面
-    fireEvent.click(await screen.findByRole("button", { name: "打开文件夹「前端岗位」" }));
+    fireEvent.click(await screen.findByRole("button", { name: "打开项目「前端岗位」" }));
     expect(screen.getByRole("heading", { name: "前端岗位" })).toBeInTheDocument();
 
     // 点击上传资料
@@ -903,7 +906,7 @@ describe("DatasetsPage", () => {
     render(<DatasetsPage />);
 
     // 首页渲染核心项目文件夹卡片，不再显示冗余的过滤按钮
-    expect(await screen.findByRole("button", { name: "打开文件夹「核心项目」" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "打开项目「核心项目」" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^全部资料/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^未分类/ })).not.toBeInTheDocument();
 
@@ -912,7 +915,7 @@ describe("DatasetsPage", () => {
     expect(screen.queryByText("杂项笔记")).not.toBeInTheDocument();
 
     // 点击进入“核心项目”文件夹卡片，URL 携带 folder 参数并记录历史
-    fireEvent.click(screen.getByRole("button", { name: "打开文件夹「核心项目」" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开项目「核心项目」" }));
     expect(window.location.search).toContain("folder=f1");
     expect(screen.getByText("项目经历")).toBeInTheDocument();
     expect(screen.queryByText("杂项笔记")).not.toBeInTheDocument();
@@ -925,9 +928,9 @@ describe("DatasetsPage", () => {
     expect(screen.queryByText("项目经历")).not.toBeInTheDocument();
 
     // 再次点击进入文件夹，然后通过返回按钮退出
-    fireEvent.click(screen.getByRole("button", { name: "打开文件夹「核心项目」" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开项目「核心项目」" }));
     expect(screen.queryByText("杂项笔记")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "返回全部资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "资料库" }));
     expect(window.location.search).toBe("");
     expect(screen.queryByText("杂项笔记")).not.toBeInTheDocument();
   });
@@ -948,13 +951,13 @@ describe("DatasetsPage", () => {
 
     render(<DatasetsPage />);
 
-    const addBtns = await screen.findAllByRole("button", { name: "新建文件夹" });
+    const addBtns = await screen.findAllByRole("button", { name: "新建项目" });
     fireEvent.click(addBtns[0]);
 
-    const input = screen.getByLabelText("文件夹名称");
+    const input = screen.getByLabelText("项目名称");
     fireEvent.change(input, { target: { value: "新分类" } });
 
-    const submitBtn = screen.getByRole("button", { name: "创建文件夹" });
+    const submitBtn = screen.getByRole("button", { name: "创建项目" });
     fireEvent.click(submitBtn);
 
     await waitFor(() => expect(createSpy).toHaveBeenCalledWith("新分类"));
@@ -986,12 +989,12 @@ describe("DatasetsPage", () => {
     fireEvent.click(menuBtn);
 
     // 点击移动到文件夹
-    const moveItemBtn = screen.getByRole("menuitem", { name: /移动到文件夹/ });
+    const moveItemBtn = screen.getByRole("menuitem", { name: /移动到项目/ });
     fireEvent.click(moveItemBtn);
 
     // 移动弹窗展示
     expect(screen.queryByRole("radio", { name: "未分类" })).not.toBeInTheDocument();
-    expect(await screen.findByRole("dialog", { name: /移动「个人履历」到文件夹/ })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: /移动「个人履历」到项目/ })).toBeInTheDocument();
 
     // 选择“工作经历”分类
     const folderOption = screen.getByRole("radio", { name: /工作经历/ });
@@ -1022,12 +1025,12 @@ describe("DatasetsPage", () => {
 
     render(<DatasetsPage />);
 
-    await screen.findByRole("button", { name: "打开文件夹「源文件夹」" });
+    await screen.findByRole("button", { name: "打开项目「源文件夹」" });
     expect(screen.queryByText("文件1")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "批量操作" })).not.toBeInTheDocument();
 
     // 进入“源文件夹”后展示批量操作
-    fireEvent.click(screen.getByRole("button", { name: "打开文件夹「源文件夹」" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开项目「源文件夹」" }));
 
     // 开启批量操作模式
     const batchBtn = screen.getByRole("button", { name: "批量操作" });
@@ -1038,7 +1041,7 @@ describe("DatasetsPage", () => {
     fireEvent.click(selectAllCheckbox);
 
     // 点击底部悬浮栏批量移动按钮
-    const batchMoveBtn = screen.getByRole("button", { name: /移动到文件夹（已选择 2 份）/ });
+    const batchMoveBtn = screen.getByRole("button", { name: /移动到项目（已选择 2 份）/ });
     fireEvent.click(batchMoveBtn);
 
     // 弹窗中选择“归档分类”
@@ -1052,21 +1055,16 @@ describe("DatasetsPage", () => {
     await waitFor(() => expect(batchMoveSpy).toHaveBeenCalledWith(["201", "202"], "f2"));
   });
 
-  it("首页展示文件夹卡片（数量 + 最近上传）与最近上传列表，点最近上传的文档打开预览", async () => {
+  it("首页只展示项目卡片（数量 + 最近上传），不再附带最近上传列表", async () => {
     const recentDoc = { ...record, id: "r1", file_name: "近期资料.md", created_at: new Date().toISOString() };
     vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [recentDoc] });
     vi.mocked(api.listDatasetFolders).mockResolvedValue({ folders: [{ ...batchFolder, dataset_count: 1 }], total_count: 1, uncategorized_count: 0 });
-    vi.spyOn(api, "getDatasetContent").mockResolvedValue({ id: "r1", file_name: "近期资料.md", file_format: "md", markdown: "正文" });
-    await import("./DatasetPreviewDialog");
     render(<DatasetsPage />);
 
-    const card = await screen.findByRole("button", { name: `打开文件夹「${batchFolder.name}」` });
+    const card = await screen.findByRole("button", { name: `打开项目「${batchFolder.name}」` });
     expect(card).toHaveTextContent("1 份资料 · 最近上传 今天");
-    const recent = screen.getByRole("list", { name: "最近上传" });
-    const item = within(recent).getByRole("listitem", { name: `近期资料.md，位于「${batchFolder.name}」` });
-    expect(item).toHaveTextContent(/今天 \d{2}:\d{2}/);
-    fireEvent.click(item);
-    expect(await screen.findByRole("dialog", { name: "近期资料" })).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "最近上传" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /我的项目/ })).toHaveAttribute("aria-selected", "true");
   });
 
   it("管理关联：选择一场面试后调用 attach；已关联时换场次先解绑旧场次，也可取消关联", async () => {
@@ -1125,7 +1123,7 @@ describe("DatasetsPage", () => {
     render(<DatasetsPage />);
     expect(await screen.findByRole("heading", { name: "资料加载失败" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
-    expect(await screen.findByText("还没有文件夹")).toBeInTheDocument();
+    expect(await screen.findAllByRole("button", { name: "新建项目" })).toHaveLength(2);
     expect(list).toHaveBeenCalledTimes(2);
   });
 
@@ -1150,5 +1148,78 @@ describe("DatasetsPage", () => {
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
     expect(upload.mock.calls[1]?.[0].name).toBe("同名 (1).md");
     expect(upload.mock.calls[1]?.[2]).toBe(batchFolder.id);
+  });
+
+  it("求职进程标签按岗位聚合面试资料，进入项目后按场次展示录音和文档", async () => {
+    const application = {
+      id: "a1", company_name_snapshot: "虚构甲公司", job_title_snapshot: "后端开发", phase: "applied", offer_status: "received",
+      offer_materials: [], offer_received_on: null, applied_at: "2026-09-12T02:00:00Z", archived_at: null,
+      created_at: "2026-09-10T02:00:00Z", updated_at: "2026-09-12T02:00:00Z",
+    };
+    const session = { id: "s1", application_id: "a1", stage_label: "一面", status: "completed", start_at: "2026-09-26T02:00:00Z" };
+    vi.mocked(api.listJobApplications).mockResolvedValue({ items: [application] as never, next_cursor: null });
+    vi.mocked(api.listInterviewSessions).mockResolvedValue({ items: [session] as never, next_cursor: null });
+    vi.mocked(api.listDatasets).mockResolvedValue({ datasets: [
+      { ...audioRecord, folder_id: null, interview_session_id: "s1" },
+      { ...record, id: "9", folder_id: null, file_name: "一面复盘.md", interview_session_id: "s1" },
+    ] });
+
+    render(<DatasetsPage initialFolderId="jobs" />);
+
+    expect(await screen.findByRole("tab", { name: /求职进程/ })).toHaveAttribute("aria-selected", "true");
+    const card = await screen.findByRole("button", { name: "打开求职进程项目「虚构甲公司 · 后端开发」" });
+    expect(card).toHaveTextContent("已获 Offer");
+    expect(card).toHaveTextContent("2 份资料");
+
+    fireEvent.click(card);
+    expect(window.location.search).toBe("?application=a1");
+    expect(await screen.findByRole("heading", { name: "虚构甲公司 · 后端开发" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "一面" })).toBeInTheDocument();
+    expect(screen.getByText(audioRecord.file_name)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开「一面复盘.md」解析预览" })).toBeInTheDocument();
+  });
+
+  it("全部文件列出所有资料并显示所在项目", async () => {
+    vi.mocked(api.listDatasetFolders).mockResolvedValue({ folders: [batchFolder], total_count: 2, uncategorized_count: 1 });
+    vi.mocked(api.listDatasets).mockResolvedValue({ datasets: [
+      batchRecord,
+      { ...record, id: "8", folder_id: null, file_name: "零散笔记.md" },
+    ] });
+
+    render(<DatasetsPage initialFolderId="files" />);
+
+    expect(await screen.findByRole("heading", { name: "全部文件" })).toBeInTheDocument();
+    const list = screen.getByRole("region", { name: "全部资料列表" });
+    expect(within(list).getByText("岗位要求")).toBeInTheDocument();
+    expect(within(list).getByText(batchFolder.name)).toBeInTheDocument();
+    expect(within(list).getByText("零散笔记")).toBeInTheDocument();
+    expect(within(list).getByText("未归入")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "添加资料" })).not.toBeInTheDocument();
+  });
+
+  it("我的项目可以编辑项目说明，并从资料库选择未归入的资料移入", async () => {
+    const loose = { ...record, id: "21", folder_id: null, file_name: "零散笔记.md" };
+    const linked = { ...record, id: "22", folder_id: null, file_name: "面试录音笔记.md", interview_session_id: "s1" };
+    vi.mocked(api.listDatasetFolders).mockResolvedValue({ folders: [{ ...batchFolder, description: "" }], total_count: 3, uncategorized_count: 2 });
+    vi.mocked(api.listDatasets).mockResolvedValue({ datasets: [batchRecord, loose, linked] });
+    const update = vi.spyOn(api, "updateDatasetFolderDescription").mockResolvedValue({ ...batchFolder, description: "三面前的准备" });
+    const move = vi.spyOn(api, "batchMoveDatasets").mockResolvedValue({ moved_count: 1 });
+    await import("./components/LibraryPickerDialog");
+    render(<DatasetsPage initialFolderId={batchFolder.id} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "添加说明" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "项目说明" }), { target: { value: "  三面前的准备 " } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(batchFolder.id, "三面前的准备"));
+    expect(await screen.findByText("三面前的准备")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "添加资料" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "从资料库选择" }));
+    const dialog = await screen.findByRole("dialog", { name: "从资料库选择" });
+    expect(within(dialog).queryByText("面试录音笔记.md")).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /零散笔记\.md/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "移入 1 份" }));
+    await waitFor(() => expect(move).toHaveBeenCalledWith(["21"], batchFolder.id));
+    expect(await screen.findByText("零散笔记")).toBeInTheDocument();
   });
 });

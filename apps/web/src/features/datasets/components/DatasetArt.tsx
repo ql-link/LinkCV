@@ -39,17 +39,18 @@ export function FormatSquare({ dataset, tinted = true }: { dataset: Pick<Dataset
 }
 
 // 文件夹卡片里的缩略纸张：60×78，标题条 + 四行灰条 + 左下角格式色块
-export function FolderSheet({ x, y, rotate, dataset }: { x: number; y: number; rotate?: number; dataset: Pick<DatasetRecord, "file_format" | "asset_kind"> }) {
-  const tone = datasetFormatTone(dataset);
+export function FolderSheet({ x, y, rotate, dataset }: { x: number; y: number; rotate?: number; dataset?: Pick<DatasetRecord, "file_format" | "asset_kind"> }) {
+  const tone = dataset ? datasetFormatTone(dataset) : null;
   const style: CSSProperties = { left: x, top: y, transform: rotate ? `rotate(${rotate}deg)` : undefined };
   return (
-    <span className="ds-sheet" aria-hidden="true" style={style}>
+    // 没有 dataset 时是空项目里的「待放入」纸张：同样的纸形，去掉格式色块并降低存在感
+    <span className={`ds-sheet${tone ? "" : " is-ghost"}`} aria-hidden="true" style={style}>
       <i className="is-title" />
       <i style={{ top: 23, width: 43 }} />
       <i style={{ top: 34, width: 43 }} />
       <i style={{ top: 44, width: 43 }} />
       <i style={{ top: 54, width: 24 }} />
-      <span className="ds-sheet-fmt" style={{ background: tone.color }}>{tone.label}</span>
+      {tone && <span className="ds-sheet-fmt" style={{ background: tone.color }}>{tone.label}</span>}
     </span>
   );
 }
@@ -60,7 +61,9 @@ export function FolderStage({ samples }: { samples: Array<Pick<DatasetRecord, "i
   return (
     <span className="ds-folder-stage" aria-hidden="true">
       <span className="ds-folder-stage-inner">
-        {shown.length === 0 && <span className="ds-folder-empty-sheet" />}
+        {shown.length === 0 && [-4, 4].map((rotate, index) => (
+          <FolderSheet key={rotate} x={79 + index * 40} y={19} rotate={rotate} />
+        ))}
         {shown.length === 1 && <FolderSheet x={98} y={16} dataset={shown[0]} />}
         {shown.length === 2 && shown.map((item, index) => (
           <FolderSheet key={item.id} x={79 + index * 40} y={19} rotate={index === 0 ? -4 : 4} dataset={item} />

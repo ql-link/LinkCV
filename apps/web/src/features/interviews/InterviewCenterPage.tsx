@@ -770,15 +770,33 @@ export function InterviewCenterPage({
               startAt: weekStart.toISOString(),
               endAt: addDays(weekStart, 7).toISOString(),
             };
-      const [nextSessions, nextApplications] = await Promise.all([
+      const [nextSessions, listedApplications, applicationRecord] = await Promise.all([
         listAllInterviewSessions({
           includeArchived: includeArchivedSessions,
           applicationId: applicationDetail || interviewDetail ? initialApplicationId : undefined,
           ...sessionRange,
         }),
         listAllJobApplications(applicationScope),
+        applicationDetail
+          ? api.getJobApplication(initialApplicationId as string)
+          : Promise.resolve(null),
       ]);
       if (requestId !== loadRequestRef.current) return;
+      // List summaries omit stage history. Always hydrate the detail route from
+      // the single-record endpoint, including after stage/schedule mutations.
+      const nextApplications = applicationRecord
+        ? [
+            ...listedApplications.filter((item) => item.id !== applicationRecord.application.id),
+            {
+              next_session_id: null,
+              next_session_start_at: null,
+              next_session_end_at: null,
+              next_session_mode: null,
+              ...listedApplications.find((item) => item.id === applicationRecord.application.id),
+              ...applicationRecord.application,
+            },
+          ]
+        : listedApplications;
       setSessions(nextSessions);
       if (view === "applications" && !initialApplicationId) {
         setApplicationBoardSessions(nextSessions);
@@ -823,6 +841,8 @@ export function InterviewCenterPage({
     } catch (error) {
       if (requestId === loadRequestRef.current) {
         showNotice(errorMessage(error));
+        if (view === "applications" && initialApplicationId)
+          setResolvedApplicationDetailId(initialApplicationId);
         if (detailRequestRef.current === invalidatedDetailRequest)
           setDetailLoading(false);
       }
@@ -1998,8 +2018,17 @@ function scheduleToolbarTitle(view: ScheduleGranularity, anchor: Date, weekStart
   return t("{value0}年{value1}", { value0: anchor.getFullYear(), value1: formatDate(anchor) });
 }
 
+// 周视图每小时 64px：不足 55 分钟放不下三行，不足 40 分钟只放得下一行；跨天横条没有分钟数，也按单行处理
+function interviewEventDensity(segment: EventCalendarRenderEventProps<Interview | null>["segment"]) {
+  const minutes = segment.startMin === undefined || segment.endMin === undefined ? 0 : segment.endMin - segment.startMin;
+  if (minutes >= 55) return "stack";
+  if (minutes >= 40) return "pair";
+  return minutes > 0 && minutes < 20 ? "tiny" : "row";
+}
+
 function renderInterviewCalendarEvent({
   occurrence,
+  segment,
   view,
   isSelected,
 }: EventCalendarRenderEventProps<Interview | null>) {
@@ -2038,7 +2067,12 @@ function renderInterviewCalendarEvent({
     );
   }
   return (
-    <span className="interview-calendar-event-content interview-calendar-event-stack">
+    <span
+      className="interview-calendar-event-content interview-calendar-event-stack"
+      data-density={interviewEventDensity(segment)}
+      // 短场次会按时长收起面试方式甚至改成单行，悬停仍能看到完整信息
+      title={`${visibleStart}–${visibleEnd} ${interview.company} · ${interview.stage}${interview.meetingLabel ? ` · ${interview.meetingLabel}` : ""}`}
+    >
       <span className="interview-calendar-event-time v3-num"><Icon name="clock" size={10} />{visibleStart}–{visibleEnd}</span>
       <strong className="interview-calendar-event-title">{interview.company} · {interview.stage}</strong>
       <span className="interview-calendar-event-meta">{interview.meetingLabel}</span>
@@ -2371,7 +2405,7 @@ function ScheduleView({
           snapDuration={15}
           interval={60}
           // 组件会在目标刻度上方多留 12px；补回这 12px，让起始刻度线正好贴着表头，不再露出一截空白
-          scrollToHour={weekDayStartHour + 12 / 56}
+          scrollToHour={weekDayStartHour + 12 / 64}
           fixedWeeks={false}
           showOutsideDays
           interactions={calendarInteractions}

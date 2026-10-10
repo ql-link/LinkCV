@@ -50,6 +50,13 @@ class UserDatasetFolder(Base):
         comment="所属用户 ID",
     )
     name: Mapped[str] = mapped_column(String(64), nullable=False, comment="文件夹名称")
+    description: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        default="",
+        server_default="",
+        comment="项目说明",
+    )
     create_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,

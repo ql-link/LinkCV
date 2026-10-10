@@ -1,5 +1,33 @@
 # HTTP 接口契约
 
+## 官网岗位池
+
+共享池接口使用 `get_current_user` 的 Cookie 登录，不接受浏览器插件 Career Bearer 令牌代替登录。管理端使用 `get_current_admin`，普通用户返回 403。所有标识和同步代次在 JSON 中均为十进制字符串。
+
+| 接口 | 请求与响应 |
+| --- | --- |
+| `GET /api/job-pool` | keyword（去空白后 2～100 字符）、company_id（兼容单企业）、company_ids（重复 Query，最多200项，去重后按企业并集过滤）、city、job_category、recruitment_type（campus/internship/experienced）、cursor、limit（1～100，默认20）；返回 items、next_cursor，仅展示 active/missing |
+| `GET /api/job-pool/filters` | 返回 companies（id/name/aliases/logo_url/logo_source/lock_version）、cities、categories、recruitment_types；城市与类别来自当前可见岗位 |
+| `GET /api/job-pool/{id}` | 返回完整共享岗位及本人的 joined_application_id；closed 仍可查看 |
+| `POST /api/job-pool/{id}/join` | 无请求正文；返回 job_id、application_id、created；新建 201，复用 200，已下线新加入 409 |
+| `GET /api/admin/job-pool/sources` | items、sync_enabled、catalog_counts{companies,sources}（服务端目录统计，与已登记/启用数量独立），含 company_logo_url、真实支持渠道、配置、代次、状态、摘要 |
+| `POST /api/admin/job-pool/sources/bootstrap` | 幂等登记预置来源，首次默认停用，不采集、不覆盖已有来源配置 |
+| `POST /api/admin/job-pool/sources` | company_id、adapter_key、portal_config、is_enabled；仅接受白名单来源，重复身份 409 |
+| `PATCH /api/admin/job-pool/sources/{id}` | base_generation 与 is_enabled/portal_config；旧代次 409，禁止更换租户或缩减现有门户覆盖，取消旧任务写入 |
+| `POST /api/admin/job-pool/sources/{id}/sync` | 同步与来源均需开启；新排队 202，已有活动任务 200 |
+| `POST /api/admin/job-pool/sources/{id}/sync/accept` | expected_generation；仅最新完整异常结果可确认，重复确认幂等，旧结果 409 |
+| `GET /api/admin/companies` | 管理员专用，返回 items：id、name、aliases、logo_url、logo_source（unknown/official/plugin/admin）、lock_version（十进制字符串） |
+| `PATCH /api/admin/companies/{id}` | 管理员专用；base_version + aliases（最多30个、每个1～200字符；按 NFKC/大小写/空白规范化去重）和/或 logo_url（无凭据 HTTPS 地址）；成功增加版本，过期409 COMPANY_CONFLICT，非法400 COMPANY_INVALID，缺失404 COMPANY_NOT_FOUND |
+| `GET /api/company-logos/{sha256}.webp` | 无需登录，只读取已发布共享命名空间中的规范化 WebP；未发布或格式非法404，存储读取失败503；public immutable 缓存、ETag/304；不能读取个人图片命名空间 |
+
+公司匹配将展示名、规范名、工商全称和管理员别名做 NFKC、大小写与空白规范化后的精确比较，仅唯一公司匹配时使用默认图或共享插件图片。多个公司同名/同别名时不自动匹配。官网和插件仅补空默认图；插件上传可将同一次导入的外链默认图升级为规范化共享 WebP，不能覆盖管理员或官网图。管理端修改默认图不会重写个人岗位和求职快照，也不会批量回填历史岗位。公共图片版本地址保持可读，以保留既有个人快照。共享存储失败不阻止个人图片保存。
+
+岗位摘要包含 id、company{id,name,logo_url}、title、category、recruitment_channel、employment_type、salary_text、locations{schema_version:1,cities,raw}、availability_status、published_at、first_seen_at、last_seen_at、source_url、joined_application_id，以及 source{name,is_enabled,sync_status,last_complete_at}；详情增加 description 和 source_attributes。`company.logo_url` 为可空 HTTPS 外链或 `/api/company-logos/{sha256}.webp` 公共托管地址，官网同步只补空，不覆盖已有公司图；新加入时复制到个人岗位和求职快照，重复加入不刷新。列表不返回正文或来源扩展属性。个人岗位响应兼容增加 `global_job_id: string|null`，不会自动刷新个人快照。同步摘要 `latest.company_logo_error_code` 单独表达图标未找到或请求失败，不改变岗位同步 `is_complete`、`error_code` 和上下线语义。
+
+来源 `portal_config` 为 `{schema_version:1,host,portals,site_id}`；未知键、非白名单 host/portal/site_id、重复门户都拒绝。来源状态为 idle/queued/running/succeeded/partial/failed/anomalous/cancelled。摘要 `{schema_version:1,baseline_count,latest}`，latest 含 generation、baseline_count、observed_count、counts{created,updated,missing,closed,restored,invalid}、is_complete、is_reviewed、error_code、started_at、finished_at。
+
+错误保持现有 JSON 错误结构：400 `JOB_POOL_INVALID_QUERY`/`JOB_POOL_INVALID_CURSOR`/`JOB_SOURCE_INVALID`/`JOB_SOURCE_COVERAGE_REDUCTION`；404 `JOB_POOL_NOT_FOUND`/`JOB_SOURCE_NOT_FOUND`；409 `JOB_POOL_CLOSED`/`JOB_POOL_SOURCE_CONFLICT`/`JOB_SOURCE_CONFLICT`/`JOB_SOURCE_EXISTS`/`JOB_POOL_SYNC_DISABLED`/`JOB_SOURCE_DISABLED`/`JOB_SYNC_STALE`/`JOB_SYNC_NOT_REVIEWABLE`。游标绑定筛选条件，改变筛选后不能复用。
+
 本文记录当前调用方可观察的 HTTP 行为。全部 `/api` 路径由 FastAPI 提供，Swagger UI 位于 `/api/docs`，OpenAPI JSON 位于 `/api/openapi.json`。未匹配的 `/api` 路径返回 JSON 404，不会被 SPA fallback 转成 HTML。
 
 客户端可以发送最长 64 字符、仅包含字母数字、下划线和连字符的 `X-Request-ID`；不合法或缺失时服务端生成新值。所有正常及受控错误响应回传最终 `X-Request-ID`。命中状态变更审计映射的响应还带 `X-Audit-Recorded: true|false`，表示本地日志 sink 是否接受该次审计；它不表示事件已经同步到 Loki。
@@ -98,7 +126,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 正文段落（包括 row 单元格内段落）和列表项支持可选 `align: left|center|right|null`；缺省或 `null` 不写入规范化快照，保留旧快照及内容摘要。对齐是内容级样式，不是模板布局；保存、读取、分享和 PDF 沿用该值。
 
-`TextValue`（姓名、职业定位、章节标题、经历字段）与 `Contact` 可携带可选的 `runs`，结构复用正文的 `TextRun`，用于保存局部字号等文字样式；`runs` 非 `null` 时，其中的文字拼接必须严格等于字段 `value`，否则保存返回 `400 INVALID_RESUME_DOCUMENT`。`runs` 最多 1000 项；`prefix_runs` 最多 100 项、合计不超过 101 字符，用于联系方式和经历字段的显示标签，渲染时仅在其文字与当前生成标签完全相符时采用。字号仍由 `InlineStyle.font_size_pt` 约束为 6–48 pt。缺少或为 `null` 的两个可选字段继续按旧数据读取，并在序列化时省略，避免改变未设置样式的历史内容摘要；有样式的新快照必须由支持该扩展的前后端及 PDF 渲染器共同读写。
+`TextValue`（姓名、职业定位、章节标题、经历字段）与 `Contact` 可携带可选的 `runs`，结构复用正文的 `InlineContent`（文字、图标、行内图片），用于保存局部文字样式和任意位置的行内图片；`runs` 非 `null` 时，仅文字项拼接必须严格等于字段 `value`，图片与图标不计入语义文本，否则保存返回 `400 INVALID_RESUME_DOCUMENT`。`runs` 最多 1000 项；`prefix_runs` 最多 100 项、合计不超过 101 字符，用于联系方式和经历字段的显示标签，渲染时仅在其文字与当前生成标签完全相符时采用。字号仍由 `InlineStyle.font_size_pt` 约束为 6–48 pt。缺少或为 `null` 的两个可选字段继续按旧数据读取，并在序列化时省略，避免改变未设置样式的历史内容摘要；有样式或图片的新快照必须由支持该扩展的前后端及 PDF 渲染器共同读写。标题、姓名、职业定位、经历标签与联系方式均允许插入行内图片，也允许仅包含图片；联系方式的空文本必须至少有一项行内图片。图片保留独立 node_id、尺寸和资源引用，继续接受现有上传限制与资源归属检查。图片扩展保存在现有 JSON 中，无数据库迁移；发布时后端与共用 Web/PDF 渲染器先支持扩展，再启用 Web 写入，旧严格解析器无法读取包含图片的新字段。
 
 简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`，数据库 ID 在 HTTP 中使用十进制字符串。维护窗口升级到 `0047` 后，运行期只接受 `schema_version=canonical-resume.v1` 的 `data` 和 `schema_version=resume-presentation.v1` 的 `style`；旧 `basics/semantic_sections/custom_sections` 与旧 `manifest` 只允许进入一次性迁移转换器，不能通过普通保存、模板切换、版本、Agent、分享或 PDF API 写回。`CanonicalResumeDocument` 使用稳定 `node_*`、identity、按语义排序的 sections、段落/列表/媒体以及章节内 `row`（`pair` 两格、`meta` 四格、`trio` 三格、`equal` 三或四格等分；等分行可选携带与格数等长的每栏宽度占比，缺省即等分且不写入该字段）和 `source_refs/source_dispositions` 保存唯一内容真值；row/cell 是模板无关的正文结构，禁止保存模板级 region、slot、sidebar/main、column、CSS、分页和编辑器 selection。`TemplateDefinition` 的严格 `avatar` 包含 `visibility`、`fallback_asset`、`size_px` 和已声明的 `region_id`；系统默认头像只在渲染投影中出现，不写回 canonical 正文。`ResumePresentation` 使用 `portable/template_scoped/template_snapshot` 保存展示设置与当前模板快照；`portable.smart_one_page` 控制连续单页或标准 A4 导出。模板切换只更换模板身份、presentation 与后端编译的 `LayoutPlan`，正文规范摘要必须保持不变。字段闭集、数量和长度、URL、node/source 唯一性与来源闭包均严格校验；LLM 只返回稀疏语义标注，未标注源块由确定性组合器保留，不生成“未分类内容”。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不是简历写契约。
 
@@ -201,6 +229,62 @@ Agent 目标解析、读取、诊断和提案以 canonical 原生节点为唯一
 
 Pi 服务令牌保护的 POST/GET `/internal/agent/runs/:runId/steer[/:submissionKey]` 只协调进程内输入。FastAPI 服务间 POST `/internal/agent/runs/:runId/steering:activate`、`steering:ack` 与 `messages:complete` 分别激活、确认消费和持久化完整回复。工具回调的可信 `X-Agent-User-Sequence` 必须对应当前活动用户消息；不匹配或多消息 run 缺失来源返回 `409 AGENT_REQUEST_SCOPE_STALE`，仍从 run 反查用户与会话，不能把序号当身份。
 
+## 编辑器段落精修
+
+编辑器的段落聚焦使用以下仅限 Web Cookie 会话的接口，不经过 Pi 运行时，也不写入简历。每段最近一次分析结果和处理进度保存在服务器（`resume_section_review`、`resume_section_review_item`）：
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `POST` | `/api/resumes/:resumeId/section-review:analyze` | 页边批注 `{reference_label,inferred_focus,too_thin,draft_questions,notes,review}` |
+| `POST` | `/api/resumes/:resumeId/section-review:rewrite` | 改写候选 `{variants,missing,item}` |
+| `GET` | `/api/resumes/:resumeId/section-reviews` | 本简历全部已保存分析 `{reviews:[review]}`，按 `unit_id` 排序 |
+| `PATCH` | `/api/resumes/:resumeId/section-reviews/:reviewId/items/:itemId` | 更新后的 `item` |
+
+两者的请求都包含：
+- `section`：`{entry_id,heading,lines:[{id,text}]}`，最多 20 行，每行 ≤ 500 字，合计 ≤ 4000 字，行 `id` 不得重复。
+- `context`：`[{id,label,text}]`，最多 6 段，每段 ≤ 1500 字，合计 ≤ 6000 字。
+- `reference` 是分析风格：`{kind:"general"}` 或 `{kind:"method",method}`，`method` 为 `star|xyz|car`；未传时按 `general`（通用写作标准：个人贡献、结果量化、具体、简洁、取舍与去重、写法一致六条）。旧形态 `{kind:"job",job_id}` 继续兼容，等于通用写作标准加该岗位。
+- `job_id`：选填的投递岗位，必须属于本人，否则 `404 JOB_NOT_FOUND`；在所选风格之上叠加岗位要求。与旧形态 `{kind:"job"}` 同传返回 422。`reference_label` 为风格名（「STAR 法则」「XYZ 公式」「CAR 法则」「通用写作标准」），有岗位时追加「 · 公司 · 职位」。
+
+`analyze` 另接受 `intent`（≤ 300 字）。`rewrite` 另接受以下字段，`instruction` 和 `answers` 至少提供一项：
+- `line_id`：必须是 `section.lines` 中的 id；为 `null` 表示起草新行。
+- `instruction`：≤ 300 字。
+- `answers`：`[{question,answer}]`，最多 3 条。
+- `review_id`：本段已保存分析的 id，其 `unit_id` 必须等于 `section.entry_id`。不传时只返回结果、不保存，响应 `item` 为 `null`，供保存功能上线前的旧客户端在滚动发布期间继续使用。
+- 传 `review_id` 时 `item_id` 与 `item_kind` 二选一：`item_id` 把结果写到已有条目（追问、再调语气、重试）；`item_kind` 为 `ask`（需 `instruction`）时新建一条自定义要求，为 `draft` 时替换本段未采用的起草条目。
+
+文本由前端按当前编辑器内容提交，节点 id 只回显，后端只校验简历和参照岗位属于本人。
+
+`notes` 最多 6 条，每条 `{id,kind,line_id,quote,title,detail,questions,variants,proposal}`：
+- `kind` 为 `missing`（只给 `questions`）、`wording`（只给 1–2 个 `variants`）或 `structure`（只给 `proposal:{context_id,summary,line_id,text}`）。
+- `variants` 的元素为 `{id,label,text,risky_terms}`；`risky_terms` 只保留出现在改写文本中、比原文更强、需要用户确认属实的词。
+
+服务端丢弃以下内容：
+- 锚点不在请求行中的批注；
+- 引用未发送上下文的结构提案；
+- 缺少追问或改写的批注。
+
+`quote` 不是该行原文片段时置为空字符串。`intent` 非空时 `inferred_focus` 固定为 `null`。本段可分析文字少于 20 个字时不调用模型，返回 `too_thin=true` 和固定的起草问题。
+
+**保存的结果**：
+- `review` 为 `{id,unit_id,analysis_no,reference,job_id,intent,context_ids,base_lines,result,items,update_time}`，`unit_id` 即 `section.entry_id`，`result` 为上述分析字段。同一简历同一段只保存一份；模型成功后才写入，失败不改变已保存内容。
+- 重新分析时 `analysis_no` 加一，除 `done` 外的条目全部替换；`done` 条目保留，连同当时的批注（`item.note`）和 `edit`。
+- `item` 为 `{id,review_id,note_id,note,kind,line_id,instruction,status,question_index,answers,draft,selected_index,edit,update_time}`。`kind` 为 `missing|wording|structure|ask|draft`；`status` 为 `todo|asking|pending|done|skipped`。分析产生的条目初始为 `todo`，`wording`、`structure` 带候选 `draft:{variants,missing,base_text,line_id}`；改写成功后条目为 `pending`。
+- `PATCH` 只改传入字段（`status`、`question_index`、`answers`、`selected_index`、`edit`，至少一项）。合法状态流转：`todo→asking|done|skipped`，`asking→done|skipped`，`pending→asking|done|skipped`，`done→pending`（有候选）或 `todo`；`skipped` 不可再改。采用（`done`）必须带 `edit:{line_id,before,after}`，撤销时清除；已采用条目不能改版本或回答。相同的重复请求按成功返回。
+- 起草条目的 `answers` 按起草问题的位置保存，未回答的位置为空字符串。
+- 每段最多 30 条未采用的条目，已采用的不计入。删除简历或注销账号时同事务删除。
+
+**错误**：
+- 简历不存在或不属于本人：`404 RESUME_NOT_FOUND`。
+- 参照岗位不存在或不属于本人：`404 JOB_NOT_FOUND`。
+- 已保存分析或条目不存在、不属于该简历，或已被重新分析替换：`404 SECTION_REVIEW_NOT_FOUND`。
+- 改写已采用的条目：`409 SECTION_REVIEW_ITEM_APPLIED`，不调用模型；改写期间被采用时结果不写入。
+- 新建条目会使未采用条目超过 30 条：`409 SECTION_REVIEW_ITEM_LIMIT`。
+- 状态流转或字段组合不合法，或改写已跳过的条目：`409 SECTION_REVIEW_INVALID_TRANSITION`。
+- 超出长度或数量限制、`line_id` 不属于本段、`instruction` 与 `answers` 都为空、传 `review_id` 时 `item_id` 与 `item_kind` 不是恰好一项、不传 `review_id` 却带了 `item_id` 或 `item_kind`，或 `PATCH` 请求为空：`422`。
+- `section_review` 场景未配置：`503 LLM_MODEL_NOT_CONFIGURED`。
+- 模型失败，或结构两次都无效：`502`，后者错误码为 `LLM_RESPONSE_INVALID`。
+
 ## 简历分享链接
 
 每份简历一个分享链接，分享状态直接落在 `resumes` 表的 `share_*` 字段，不单独建表。分享内容不另落快照：公开读取时实时取简历主记录中最近一次保存成功的 `data/style` 草稿；所有者自动保存成功后，已分享内容随之更新，不要求创建正式版本。管理接口全部要求登录且只能操作本人简历（`404 RESUME_NOT_FOUND`）；公开接口 `/api/share/{token}` 允许未登录访问。
@@ -275,7 +359,7 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.resume.resume_import.v2` exchange�
 
 `GET /api/datasets/:id/source` 流式返回资料的原始上传文件：音视频以 `inline` 分发支持播放，文档以附件下载；仅 `upload_status=succeeded` 的资料可读，否则返回 `409 DATASET_CONTENT_UNAVAILABLE`；资料不存在或越权返回 `404 DATASET_NOT_FOUND`，对象读取失败返回 `502`。
 
-`GET /api/datasets/folders` 列出当前用户自建的全部文件夹及其所含资料数，响应为 `{folders: [{id, name, dataset_count, created_at, updated_at}], total_count, uncategorized_count}`。`POST /api/datasets/folders` 接受 `{name: string}` 创建新文件夹（1~64 字符，去首尾空格，禁止斜杠与控制字符，用户内唯一，每用户上限 50 个；超限 `429 FOLDER_LIMIT_EXCEEDED`，重名 `409 FOLDER_NAME_DUPLICATE`，非法名称 `400 INVALID_FOLDER_NAME`）。`PATCH /api/datasets/folders/:id` 接受 `{name: string}` 重命名文件夹。`DELETE /api/datasets/folders/:id` 删除空文件夹；非空文件夹必须传 `confirm_contents=true`，否则返回 `409 FOLDER_DELETE_CONFIRMATION_REQUIRED`。确认后永久清理其中的源文件、转换对象、资料与解析任务，再删除文件夹，返回 `{deleted: true, affected_dataset_count}`。任一资料上传或解析中返回 `409 DATASET_BUSY`，清理对象失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录供重试。
+`GET /api/datasets/folders` 列出当前用户自建的全部文件夹及其所含资料数，响应为 `{folders: [{id, name, description, dataset_count, created_at, updated_at}], total_count, uncategorized_count}`。`POST /api/datasets/folders` 接受 `{name: string, description?: string}` 创建新文件夹（名称 1~64 字符，去首尾空格，禁止斜杠与控制字符，用户内唯一，每用户上限 50 个；超限 `429 FOLDER_LIMIT_EXCEEDED`，重名 `409 FOLDER_NAME_DUPLICATE`，非法名称 `400 INVALID_FOLDER_NAME`）。`description` 是 Web 资料库中的“项目说明”，缺省为空字符串，去首尾空格后最多 500 字符，允许换行与制表符，其他控制字符返回 `400 INVALID_FOLDER_DESCRIPTION`。`PATCH /api/datasets/folders/:id` 接受 `{name?: string, description?: string}`，两项可单独修改，至少提供一项，否则返回 `400 INVALID_FOLDER_UPDATE`；只传 `name` 的旧客户端行为不变。`DELETE /api/datasets/folders/:id` 删除空文件夹；非空文件夹必须传 `confirm_contents=true`，否则返回 `409 FOLDER_DELETE_CONFIRMATION_REQUIRED`。确认后永久清理其中的源文件、转换对象、资料与解析任务，再删除文件夹，返回 `{deleted: true, affected_dataset_count}`。任一资料上传或解析中返回 `409 DATASET_BUSY`，清理对象失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录供重试。
 
 `PATCH /api/datasets/:id/folder` 接受 `{folder_id: string}` 移动单份资料。`POST /api/datasets/move-batch` 接受 `{dataset_ids: string[], folder_id: string}` 批量移动资料，返回 `{moved_count: number}`。移动目标必填，缺失、null、空串返回 422；目标必须是当前用户拥有的现存文件夹。以上接口均要求登录（未登录返回 `401 UNAUTHORIZED`），响应不包含对象存储路径或 SHA-256。
 
@@ -327,7 +411,7 @@ Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和
 
 智能导入使用 `multipart/form-data`，必须且只能提交一个非空 `text` 或一个 `image`。文字去除首尾空白后最长 60,000 字符，使用 `job_text_extraction` 场景；图片只接受实际内容可解码的 PNG、JPEG 或 WebP，最大 10 MiB、最多 4,000 万像素，使用独立的 `job_image_extraction` 场景。响应中的 `draft` 与普通创建字段同构但全部可空，明确的币种别名规范化为三字母代码。文字仅对能与输入对应、币种及周期明确且已有值不冲突的薪资片段补全缺失数值；图片不做数值补全。`warnings` 提示未识别的核心字段、薪资来源/结构问题及模型识别出的岗位目标歧义，不阻止返回草稿，也不能代替最终创建校验；调用方必须先让用户核对或补充，再另行调用创建接口。规范化不增加模型调用。输入缺失或同时提供两种输入返回 `400 JD_IMPORT_INPUT_REQUIRED|JD_IMPORT_INPUT_AMBIGUOUS`，大小、格式或内容非法返回对应的 `JD_IMPORT_TEXT_TOO_LARGE`、`JD_IMPORT_IMAGE_TOO_LARGE`、`JD_IMPORT_IMAGE_UNSUPPORTED` 或 `JD_IMPORT_IMAGE_INVALID`。能力未绑定返回 `503 JD_IMPORT_MODEL_NOT_CONFIGURED`，超时返回 `504 JD_IMPORT_PARSE_TIMEOUT`，其他模型或结构化结果失败返回 `502 JD_IMPORT_PARSE_FAILED`；模型调用已建立记录时错误详情包含脱敏的 `callId` 和 `inputType`。
 
-创建必填 `job_title`、`company_name` 和 `source_type=manual|external_import`；手工创建的 `description` 可省略或留空，服务端统一保存为空字符串。普通更新同样允许把 `description` 清空为空字符串，但不接受 `null`；`job_title` 和 `company_name` 更新后仍必须非空。可选 `logo_url` 最长 2048 字符且必须是无内嵌凭据的 HTTPS 绝对 URL，此字段只保存外链；托管图片通过独立 Logo 上传接口写入。`external_import` 仍必须带非空 `description` 和 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
+创建必填 `job_title`、`company_name` 和 `source_type=manual|external_import`；手工创建的 `description` 可省略或留空，服务端统一保存为空字符串。普通更新同样允许把 `description` 清空为空字符串，但不接受 `null`；`job_title` 和 `company_name` 更新后仍必须非空。可选 `logo_url` 最长 2048 字符，允许无内嵌凭据的 HTTPS 绝对 URL 或严格匹配 `/api/company-logos/{sha256}.webp` 的公共公司版本地址；个人托管图片仍通过独立 Logo 上传接口写入。`external_import` 仍必须带非空 `description` 和 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
 
 浏览器导入请求使用 `source_url` 和嵌套 `capture`。当前只接受 `zhipin.com` 的 `/job_detail/{source_job_id}.html`；`capture.job_title`、`capture.company_name`、`capture.description_text` 清洗后必须非空。可选采集字段包括 `logo_url`、`skills`、就业类型原文、学历、经验、工作时间、城市、地址、薪资原文、公司字段/标签和招聘者字段。后端去除不可见字符、压缩空白、删除明确的详情标题与举报页尾，并确定性映射常见就业类型、远程/混合工作、`K·N薪` 和人民币时/日/月/年区间；无法可靠识别的字段保持为空，不做分析或模型推断。
 
@@ -347,7 +431,7 @@ Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和
 
 `GET /api/job-descriptions/{job_id}/logo?v={sha256}` 先检查登录、岗位归属和当前图片指纹，返回 `image/webp`、`Cache-Control: private, no-cache`、ETag 和 `nosniff`；命中 ETag 返回 304。越权、岗位不存在或指纹过期返回 404；未登录为 401；对象缺失为 `404 COMPANY_LOGO_NOT_FOUND`，存储故障为 `503 COMPANY_LOGO_READ_FAILED`。不会返回 MinIO 对象地址，也没有跨用户指纹查询接口。
 
-岗位响应增加 `resolved_logo_url` 和 `logo_revision`；原 `logo_url` 继续表达可编辑 HTTPS 外链。求职响应的 `company_logo_url` 允许 HTTPS 外链或本记录关联岗位的受控本站 Logo 路径。普通全量表单提交未变化的外链不清空托管图；明确改变外链才解除托管引用并同步图标。
+岗位响应增加 `resolved_logo_url` 和 `logo_revision`；原 `logo_url` 表达可编辑 HTTPS 外链或公共公司图片版本地址。求职响应的 `company_logo_url` 允许 HTTPS 外链、公共公司图片版本地址或本记录关联岗位的受控本站 Logo 路径。普通全量表单提交未变化的外链不清空托管图；明确改变外链才解除托管引用并同步图标。
 
 ## 求职中心
 

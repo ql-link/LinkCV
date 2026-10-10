@@ -78,15 +78,15 @@ class SourceReferenced(ClosedModel):
 
 class TextValue(SourceReferenced):
     value: str = Field(max_length=20_000)
-    runs: list[TextRun] | None = Field(default=None, max_length=1000)
-    prefix_runs: list[TextRun] | None = Field(default=None, max_length=100)
+    runs: list[InlineContent] | None = Field(default=None, max_length=1000)
+    prefix_runs: list[InlineContent] | None = Field(default=None, max_length=100)
     align: Literal["left", "center", "right"] | None = None
 
     @model_validator(mode="after")
     def validate_styled_value(self) -> "TextValue":
-        if self.runs is not None and "".join(run.text for run in self.runs) != self.value:
+        if self.runs is not None and "".join(run.text for run in self.runs if isinstance(run, TextRun)) != self.value:
             raise ValueError("text value runs must match value")
-        if self.prefix_runs is not None and sum(len(run.text) for run in self.prefix_runs) > 101:
+        if self.prefix_runs is not None and sum(len(run.text) for run in self.prefix_runs if isinstance(run, TextRun)) > 101:
             raise ValueError("text value prefix is too long")
         return self
 
@@ -104,8 +104,14 @@ class Contact(TextValue):
     contact_kind: Literal[
         "phone", "email", "website", "location", "github", "linkedin", "other"
     ]
-    value: str = Field(min_length=1, max_length=2048)
+    value: str = Field(max_length=2048)
     label: str | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_contact_content(self) -> "Contact":
+        if not self.value and not any(isinstance(run, InlineMedia) for run in (self.runs or []) + (self.prefix_runs or [])):
+            raise ValueError("contact requires text or inline media")
+        return self
 
 
 class Identity(ClosedModel):
@@ -255,6 +261,8 @@ InlineContent = Annotated[
 ]
 
 ParagraphBlock.model_rebuild()
+TextValue.model_rebuild()
+Contact.model_rebuild()
 
 
 # Identity is declared before MediaReference to keep the document structure near

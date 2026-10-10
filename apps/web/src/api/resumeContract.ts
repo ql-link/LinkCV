@@ -182,8 +182,8 @@ export type CanonicalTextAlign = "left" | "center" | "right";
 
 export type CanonicalTextValue = CanonicalSourceReferenced & {
   value: string;
-  runs?: CanonicalTextRun[] | null;
-  prefix_runs?: CanonicalTextRun[] | null;
+  runs?: (CanonicalTextRun | CanonicalInlineIcon | CanonicalInlineMedia)[] | null;
+  prefix_runs?: (CanonicalTextRun | CanonicalInlineIcon | CanonicalInlineMedia)[] | null;
   align?: CanonicalTextAlign | null;
 };
 
@@ -868,9 +868,9 @@ function canonicalBlockToMarkdown(block: CanonicalContentBlock): string {
 }
 
 function canonicalValueToMarkdown(value: CanonicalTextValue, prefix = "") {
-  const renderedPrefix = value.prefix_runs?.map((run) => run.text).join("") === prefix
+  const renderedPrefix = value.prefix_runs?.map((run) => run.inline_type === "text" ? run.text : "").join("") === prefix
     ? value.prefix_runs.map(canonicalRunToMarkdown).join("") : prefix;
-  const renderedValue = value.runs?.map((run) => run.text).join("") === value.value
+  const renderedValue = value.runs?.map((run) => run.inline_type === "text" ? run.text : "").join("") === value.value
     ? value.runs.map(canonicalRunToMarkdown).join("") : value.value;
   return renderedPrefix + renderedValue;
 }
@@ -878,10 +878,10 @@ function canonicalValueToMarkdown(value: CanonicalTextValue, prefix = "") {
 function canonicalDocumentToMarkdown(document: CanonicalResumeDocument) {
   const lines: string[] = [];
   const identity = document.identity;
-  if (identity.name?.value) {
+  if (identity.name) {
     lines.push(canonicalAlignedMarkdown(identity.name.align, `# ${canonicalValueToMarkdown(identity.name)}`));
   }
-  if (identity.headline?.value) {
+  if (identity.headline) {
     lines.push("", canonicalAlignedMarkdown(identity.headline.align, canonicalValueToMarkdown(identity.headline)));
   }
   if (identity.contacts.length) {
@@ -908,12 +908,12 @@ function canonicalDocumentToMarkdown(document: CanonicalResumeDocument) {
     }
     for (const entry of section.entries) {
       const heading = entry.fields.name ?? entry.fields.organization ?? entry.fields.role;
-      if (heading?.value) {
+      if (heading) {
         lines.push("", canonicalAlignedMarkdown(heading.align, `### ${canonicalValueToMarkdown(heading)}`));
       }
       for (const key of ["organization", "role", "location", "start_date", "end_date", "degree", "major", "url"] as const) {
         const field = entry.fields[key];
-        if (field?.value && field.value !== heading?.value) {
+        if (field && field !== heading) {
           lines.push(canonicalAlignedMarkdown(field.align, canonicalValueToMarkdown(field)));
         }
       }

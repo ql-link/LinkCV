@@ -148,7 +148,7 @@ function canonicalRunToEditor(
         width,
         height,
         aspectRatio: height && width ? width / height : 3,
-        alt: run.alt ?? "行内图片",
+        alt: run.alt,
         nodeId: run.node_id,
         sourceRefs: run.source_refs,
       },
@@ -277,10 +277,10 @@ const canonicalFieldLabels: Array<[CanonicalFieldKey, string]> = [
 ];
 
 function styledValueToEditor(value: CanonicalTextValue, prefix = ""): JSONContent[] {
-  const prefixNodes = !prefix ? [] : value.prefix_runs?.map((run) => run.text).join("") === prefix
+  const prefixNodes = !prefix ? [] : value.prefix_runs?.map((run) => run.inline_type === "text" ? run.text : "").join("") === prefix
     ? value.prefix_runs.map(canonicalRunToEditor)
     : [{ type: "text", text: prefix }];
-  const nodes = value.runs?.map((run) => run.text).join("") === value.value
+  const nodes = value.runs?.map((run) => run.inline_type === "text" ? run.text : "").join("") === value.value
     ? value.runs.map(canonicalRunToEditor)
     : value.value ? [{ type: "text", text: value.value }] : [];
   return [...prefixNodes, ...nodes];
@@ -808,12 +808,15 @@ function styledValueFromEditor(
   node: JSONContent,
   value: string,
   prefix = "",
+  context?: CanonicalV1ReverseContext,
+  seed = "field",
 ): Pick<CanonicalTextValue, "runs" | "prefix_runs" | "align"> {
   const nodes = (node.content ?? []).flatMap((child): JSONContent[] => (
     child.type === "text" ? [child] : child.type === "hardBreak" ? [{ type: "text", text: "\n" }] : []
   ));
   const text = nodes.map((child) => child.text ?? "").join("");
-  const start = text.lastIndexOf(value);
+  const start = value ? text.lastIndexOf(value)
+    : prefix && text.includes(prefix) ? text.indexOf(prefix) + prefix.length : 0;
   if (start < 0) return {};
   const sliceRuns = (from: number, to: number) => {
     let offset = 0;
@@ -832,6 +835,37 @@ function styledValueFromEditor(
     ? sliceRuns(prefixStart, prefixStart + prefix.length)
     : undefined;
   const align = canonicalTextAlignFromEditor(node);
+  if (hasInlineImage(node) && context) {
+    // Text offsets exclude atomic images. Slice text as before, but keep each
+    // image on its side of the label/value boundary, including image-only values.
+    const valueNodes: JSONContent[] = [];
+    const prefixNodes: JSONContent[] = [];
+    let offset = 0;
+    for (const child of node.content ?? []) {
+      if (child.type === "inlineImage") {
+        (prefix && offset < start ? prefixNodes : valueNodes).push(child);
+        continue;
+      }
+      const textChild = child.type === "hardBreak" ? { type: "text", text: "\n" } : child;
+      if (textChild.type !== "text") continue;
+      const text = textChild.text ?? "";
+      const appendSlice = (target: JSONContent[], from: number, to: number) => {
+        const part = text.slice(Math.max(0, from - offset), Math.max(0, Math.min(text.length, to - offset)));
+        if (part) target.push({ ...textChild, text: part });
+      };
+      appendSlice(valueNodes, start, start + value.length);
+      if (prefixStart >= 0) appendSlice(prefixNodes, prefixStart, prefixStart + prefix.length);
+      offset += text.length;
+    }
+    const richPrefix = canonicalV1RunsFromEditor(prefixNodes, context, seed + "-prefix");
+    const keepPrefix = richPrefix.some((run) => run.inline_type !== "text"
+      || run.marks.length || run.href || Object.values(run.style).some((style) => style != null));
+    return {
+      runs: canonicalV1RunsFromEditor(valueNodes, context, seed + "-value"),
+      ...(keepPrefix ? { prefix_runs: richPrefix } : {}),
+      ...(align ? { align } : {}),
+    };
+  }
   return {
     ...(runs ? { runs } : {}),
     ...(prefixRuns ? { prefix_runs: prefixRuns } : {}),
@@ -839,10 +873,14 @@ function styledValueFromEditor(
   };
 }
 
+function hasInlineImage(node: JSONContent): boolean {
+  return (node.content ?? []).some((child) => child.type === "inlineImage");
+}
+
 function canonicalV1AssertTextOnly(node: JSONContent, context: string) {
   for (const child of node.content ?? []) {
     const allowedIcon = context === "section-heading" && child.type === "inlineIcon";
-    if (child.type !== "resumeBlockAnchor" && child.type !== "text" && child.type !== "hardBreak" && !allowedIcon) {
+    if (child.type !== "resumeBlockAnchor" && child.type !== "text" && child.type !== "hardBreak" && child.type !== "inlineImage" && !allowedIcon) {
       throw new Error("RESUME_EDITOR_UNSUPPORTED_NESTED_STRUCTURE:" + context + ":" + String(child.type));
     }
   }
@@ -1362,7 +1400,7 @@ function canonicalV1EntryFromEditor(
   const nameAnchor = editorAnchorWithRole(heading, "entry-field")
     ?? directEditorAnchors(heading).find((anchor) => anchor !== entryAnchor);
   const nameValue = canonicalV1TextWithoutAnchors(heading).trim();
-  const nameId = nameValue
+  const nameId = (nameValue || hasInlineImage(heading))
     ? context.allocator.claimOrAllocate(
       nameAnchor?.attrs?.blockId,
       seed + "-field-name",
@@ -1374,7 +1412,7 @@ function canonicalV1EntryFromEditor(
       node_id: nameId,
       source_refs: canonicalV1SourceRefsForNode(nameAnchor ?? heading, nameId, context),
       value: nameValue,
-      ...styledValueFromEditor(heading, nameValue),
+      ...styledValueFromEditor(heading, nameValue, "", context, seed + "-name"),
     }
     : null;
   const values: Partial<Record<CanonicalFieldKey, CanonicalResumeEntry["fields"][CanonicalFieldKey]>> = { name };
@@ -1387,7 +1425,7 @@ function canonicalV1EntryFromEditor(
       if (seenFields.has(key)) throw new Error("RESUME_EDITOR_DUPLICATE_FIELD:" + key);
       seenFields.add(key);
       const value = canonicalV1FieldValue(node, key);
-      if (!value) {
+      if (!value && !hasInlineImage(node)) {
         values[key] = null;
         return;
       }
@@ -1401,7 +1439,7 @@ function canonicalV1EntryFromEditor(
         node_id: fieldId,
         source_refs: canonicalV1SourceRefsForNode(anchor ?? node, fieldId, context),
         value,
-        ...styledValueFromEditor(node, value, `${canonicalFieldLabels.find(([fieldKey]) => fieldKey === key)?.[1] ?? key}：`),
+        ...styledValueFromEditor(node, value, `${canonicalFieldLabels.find(([fieldKey]) => fieldKey === key)?.[1] ?? key}：`, context, seed + "-field-" + key),
       };
       return;
     }
@@ -1447,6 +1485,7 @@ function canonicalV1ContactsFromEditor(
       // shares the row alignment.
       const rowAlign = canonicalTextAlignFromEditor(node);
       const contacts: CanonicalContact[] = [];
+      const leadingImages: JSONContent[] = [];
       let current: { anchor: JSONContent; text: string; content: JSONContent[] } | null = null;
       const flush = () => {
         if (!current) return;
@@ -1454,7 +1493,7 @@ function canonicalV1ContactsFromEditor(
         const content = current.content;
         const raw = current.text.replace(/(?:\s*[|｜;；]\s*)$/u, "").trim();
         current = null;
-        if (!raw) return;
+        if (!raw && !content.some((child) => child.type === "inlineImage")) return;
         const anchorId = anchor.attrs?.blockId;
         const contactId = context.allocator.claimOrAllocate(
           anchorId,
@@ -1468,7 +1507,7 @@ function canonicalV1ContactsFromEditor(
         if (label && (value.startsWith(label + "：") || value.startsWith(label + ":"))) {
           value = value.slice(label.length + 1).trim();
         }
-        if (!value) return;
+        if (!value && !content.some((child) => child.type === "inlineImage")) return;
         const kind = anchor.attrs?.contactKind;
         const contactKind = ["phone", "email", "website", "location", "github", "linkedin", "other"].includes(String(kind))
           ? kind as CanonicalContact["contact_kind"]
@@ -1479,23 +1518,25 @@ function canonicalV1ContactsFromEditor(
           contact_kind: contactKind,
           value,
           label,
-          ...styledValueFromEditor({ type: "paragraph", content }, value, label ? `${label}：` : ""),
+          ...styledValueFromEditor({ type: "paragraph", content }, value, label ? `${label}：` : "", context, contactId),
           ...(rowAlign ? { align: rowAlign } : {}),
         });
       };
       for (const child of node.content ?? []) {
         if (child.type === "resumeBlockAnchor" && child.attrs?.role === "contact") {
           flush();
-          current = { anchor: child, text: "", content: [] };
+          current = { anchor: child, text: "", content: leadingImages.splice(0) };
         } else if (current) {
           current.content.push(child);
           if (child.type === "text") current.text += child.text ?? "";
           else if (child.type === "hardBreak") current.text += "\n";
-          else if (child.type !== "resumeBlockAnchor") {
+          else if (child.type !== "resumeBlockAnchor" && child.type !== "inlineImage") {
             throw new Error("RESUME_EDITOR_UNSUPPORTED_NESTED_STRUCTURE:contact");
           }
         } else if (child.type === "text" && child.text?.trim()) {
           throw new Error("RESUME_EDITOR_UNANCHORED_CONTACT_TEXT");
+        } else if (child.type === "inlineImage") {
+          leadingImages.push(child);
         }
       }
       flush();
@@ -1512,9 +1553,24 @@ function canonicalV1ContactsFromEditor(
   let previousIndex = 0;
   return fallbackNodes.flatMap((node, nodeIndex) => {
     canonicalV1AssertTextOnly(node, "contact");
-    return canonicalV1TextWithoutAnchors(node).split(/\s*[|｜;；]\s*/u).map((raw) => {
-      const text = raw.trim();
-      if (!text) return null;
+    // Old projections may omit contact anchors. Split the actual inline nodes,
+    // so an image belongs to one contact rather than every text fragment.
+    const segments: JSONContent[][] = [[]];
+    for (const child of node.content ?? []) {
+      if (child.type === "resumeBlockAnchor") continue;
+      if (child.type !== "text") {
+        segments[segments.length - 1].push(child);
+        continue;
+      }
+      (child.text ?? "").split(/[|｜;；]/u).forEach((part, partIndex) => {
+        if (partIndex) segments.push([]);
+        if (part) segments[segments.length - 1].push({ ...child, text: part });
+      });
+    }
+    return segments.map((content) => {
+      const segment = { ...node, content };
+      const text = canonicalV1TextWithoutAnchors(segment).trim();
+      if (!text && !hasInlineImage(segment)) return null;
       const previous = previousContacts[previousIndex];
       previousIndex += 1;
       const contactId = context.allocator.claimOrAllocate(
@@ -1531,7 +1587,7 @@ function canonicalV1ContactsFromEditor(
         contact_kind: previous?.contact_kind ?? canonicalV1InferContactKind(value),
         value,
         label: previous?.label ?? null,
-        ...styledValueFromEditor(node, value, previous?.label ? `${previous.label}：` : ""),
+        ...styledValueFromEditor(segment, value, previous?.label ? `${previous.label}：` : "", context, contactId),
       };
     }).filter((contact) => contact !== null);
   }) as CanonicalContact[];
@@ -1576,7 +1632,7 @@ function canonicalV1SectionFromEditor(
     : oldSection?.semantic_kind ?? "custom";
   const titleAnchor = editorAnchorWithRole(heading, "section-title")
     ?? directEditorAnchors(heading).find((anchor) => anchor !== headingAnchor);
-  const titleId = titleValue
+  const titleId = (titleValue || hasInlineImage(heading))
     ? context.allocator.claimOrAllocate(
       titleAnchor?.attrs?.blockId,
       seed + "-section-title",
@@ -1588,7 +1644,7 @@ function canonicalV1SectionFromEditor(
       node_id: titleId,
       source_refs: canonicalV1SourceRefsForNode(titleAnchor ?? heading, titleId, context),
       value: titleValue,
-      ...styledValueFromEditor(heading, titleValue),
+      ...styledValueFromEditor(heading, titleValue, "", context, seed + "-title"),
     }
     : null;
   const entryPositions = body
@@ -1731,7 +1787,7 @@ function canonicalV1Reverse(
       ?? directEditorAnchors(identityHeading).find((anchor) => anchor.attrs?.role !== "identity")
     : null;
   const nameValue = identityHeading ? canonicalV1TextWithoutAnchors(identityHeading).trim() : "";
-  const nameId = nameValue
+  const nameId = (nameValue || (identityHeading && hasInlineImage(identityHeading)))
     ? context.allocator.claimOrAllocate(
       nameAnchor?.attrs?.blockId,
       "identity-name",
@@ -1743,7 +1799,7 @@ function canonicalV1Reverse(
       node_id: nameId,
       source_refs: canonicalV1SourceRefsForNode(nameAnchor ?? identityHeading!, nameId, context),
       value: nameValue,
-      ...styledValueFromEditor(identityHeading!, nameValue),
+      ...styledValueFromEditor(identityHeading!, nameValue, "", context, "identity-name"),
     }
     : null;
   const identityParagraphs = identityNodes.filter((node) => node.type === "paragraph");
@@ -1767,7 +1823,7 @@ function canonicalV1Reverse(
   const headlineAnchor = headlineNode
     ? editorAnchorWithRole(headlineNode, "identity-headline") ?? directEditorAnchors(headlineNode)[0]
     : null;
-  const headlineId = headlineValue
+  const headlineId = (headlineValue || (headlineNode && hasInlineImage(headlineNode)))
     ? context.allocator.claimOrAllocate(
       headlineAnchor?.attrs?.blockId,
       "identity-headline",
@@ -1779,7 +1835,7 @@ function canonicalV1Reverse(
       node_id: headlineId,
       source_refs: canonicalV1SourceRefsForNode(headlineAnchor ?? headlineNode!, headlineId, context),
       value: headlineValue,
-      ...styledValueFromEditor(headlineNode!, headlineValue),
+      ...styledValueFromEditor(headlineNode!, headlineValue, "", context, "identity-headline"),
     }
     : null;
   const contactNodes = identityParagraphs.filter((node) => node !== headlineNode && looksLikeOldContact(node));

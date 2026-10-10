@@ -42,6 +42,7 @@ export const V3_ICON_PATHS = {
   "edit": "<path d=\"M4 20h4l10-10-4-4L4 16z\"/><path d=\"M13 7l4 4\"/>",
   "trash": "<path d=\"M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6\"/>",
   "clock": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path d=\"M12 7.5V12l3 2\"/>",
+  "target": "<circle cx=\"12\" cy=\"12\" r=\"8\"/><circle cx=\"12\" cy=\"12\" r=\"2.5\" fill=\"CUR\"/>",
   "pin": "<path d=\"M12 21s-6.5-5.6-6.5-11A6.5 6.5 0 0 1 18.5 10c0 5.4-6.5 11-6.5 11z\"/><circle cx=\"12\" cy=\"10\" r=\"2.3\"/>",
   "flag": "<path d=\"M5 21V4M5 4h11l-2 4 2 4H5\"/>",
   "home": "<path d=\"M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z\"/>",

@@ -444,6 +444,103 @@ export type AgentSelectionContext = {
   selected_text_hash: string;
 };
 
+export type SectionReviewLine = { id: string; text: string };
+export type SectionReviewSection = { entry_id: string; heading: string; lines: SectionReviewLine[] };
+export type SectionReviewContext = { id: string; label: string; text: string };
+export type SectionReviewWritingMethod = "star" | "xyz" | "car";
+export type SectionReviewReference =
+  | { kind: "general" }
+  | { kind: "job"; job_id: string }
+  | { kind: "method"; method: SectionReviewWritingMethod };
+export type SectionReviewQuestion = { id: string; prompt: string; options: string[] };
+export type SectionReviewVariant = { id: string; label: string; text: string; risky_terms: string[] };
+export type SectionReviewProposal = { context_id: string; summary: string; line_id: string; text: string };
+export type SectionReviewNoteKind = "missing" | "wording" | "structure";
+export type SectionReviewNote = {
+  id: string;
+  kind: SectionReviewNoteKind;
+  line_id: string | null;
+  quote: string;
+  title: string;
+  detail: string;
+  questions: SectionReviewQuestion[];
+  variants: SectionReviewVariant[];
+  proposal: SectionReviewProposal | null;
+};
+export type SectionReviewAnalyzeRequest = {
+  section: SectionReviewSection;
+  context: SectionReviewContext[];
+  intent?: string | null;
+  reference: SectionReviewReference;
+  /** Optional job the resume is aimed at, applied on top of the style. */
+  job_id?: string | null;
+};
+export type SectionReviewAnalyzeResult = {
+  reference_label: string;
+  inferred_focus: string | null;
+  too_thin: boolean;
+  draft_questions: SectionReviewQuestion[];
+  notes: SectionReviewNote[];
+};
+export type SectionReviewItemKind = SectionReviewNoteKind | "ask" | "draft";
+export type SectionReviewItemStatus = "todo" | "asking" | "pending" | "done" | "skipped";
+export type SectionReviewEdit = { line_id: string; before: string; after: string };
+export type SectionReviewDraft = { variants: SectionReviewVariant[]; missing: string[]; base_text: string; line_id: string };
+/** One saved note, request or draft of a paragraph's analysis. */
+export type SectionReviewItem = {
+  id: string;
+  review_id: string;
+  note_id: string | null;
+  note: SectionReviewNote | null;
+  kind: SectionReviewItemKind;
+  line_id: string | null;
+  instruction: string;
+  status: SectionReviewItemStatus;
+  question_index: number;
+  answers: string[];
+  draft: SectionReviewDraft | null;
+  selected_index: number;
+  edit: SectionReviewEdit | null;
+  update_time: string;
+};
+/** The latest saved analysis of one paragraph. */
+export type SectionReviewRecord = {
+  id: string;
+  unit_id: string;
+  analysis_no: number;
+  reference: SectionReviewReference;
+  job_id: string | null;
+  intent: string;
+  context_ids: string[];
+  base_lines: Record<string, string>;
+  result: SectionReviewAnalyzeResult;
+  items: SectionReviewItem[];
+  update_time: string;
+};
+export type SectionReviewAnalyzeResponse = SectionReviewAnalyzeResult & { review: SectionReviewRecord };
+export type SectionReviewRewriteRequest = {
+  section: SectionReviewSection;
+  context: SectionReviewContext[];
+  reference: SectionReviewReference;
+  job_id?: string | null;
+  line_id: string | null;
+  instruction?: string | null;
+  answers: Array<{ question: string; answer: string }>;
+  /** The saved analysis; without it the result is returned but not saved. */
+  review_id?: string | null;
+  /** The item the result belongs to; otherwise `item_kind` creates one. */
+  item_id?: string | null;
+  item_kind?: "ask" | "draft" | null;
+};
+export type SectionReviewRewriteResponse = { variants: SectionReviewVariant[]; missing: string[]; item: SectionReviewItem | null };
+export type SectionReviewItemUpdate = {
+  status?: SectionReviewItemStatus;
+  question_index?: number;
+  answers?: string[];
+  selected_index?: number;
+  edit?: SectionReviewEdit | null;
+};
+
 export type AgentContextType =
   | "user_profile"
   | "resume"
@@ -647,6 +744,8 @@ export type DatasetRecord = {
 export type DatasetFolder = {
   id: string;
   name: string;
+  /** 项目说明；旧接口响应没有该字段 */
+  description?: string;
   dataset_count: number;
   created_at: string;
   updated_at: string;
@@ -751,6 +850,7 @@ export type JobMatchRecommendations = {
 };
 
 export type JobDescriptionSummary = {
+  global_job_id?: string | null;
   id: string;
   job_title: string;
   company_name: string;
@@ -1647,7 +1747,58 @@ export {
   request as apiRequest,
 };
 
+export type PoolJob = {
+  id: string;
+  company: { id: string; name: string; logo_url?: string | null };
+  title: string;
+  category: string | null;
+  recruitment_channel: "campus" | "experienced" | "unknown";
+  employment_type: "internship" | "full_time" | "part_time" | "contract" | "unknown";
+  salary_text: string | null;
+  locations: { schema_version: 1; cities: string[]; raw: string[] };
+  availability_status: "active" | "missing" | "closed";
+  published_at: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+  source_url: string;
+  joined_application_id: string | null;
+  source: { name: string; is_enabled: boolean; sync_status: string; last_complete_at: string | null };
+  description?: string;
+  source_attributes?: Record<string, unknown>;
+};
+export type SharedCompany = { id: string; name: string; aliases: string[]; logo_url: string | null; logo_source: "unknown" | "official" | "plugin" | "admin"; lock_version: string };
+export type PoolFilters = { companies: Array<{ id: string; name: string; aliases?: string[]; logo_url?: string | null }>; cities: string[]; categories: string[]; recruitment_types: string[] };
+export type PoolQuery = { keyword?: string; company_id?: string; company_ids?: string[]; city?: string; job_category?: string; recruitment_type?: string; cursor?: string };
+export function poolQueryParams(query: PoolQuery) {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (Array.isArray(value)) [...new Set(value)].sort().forEach((id) => params.append(key, id));
+    else if (value) params.set(key, value);
+  });
+  return params;
+}
+export type PoolSource = {
+  id: string; company_id: string; company_name: string; company_logo_url?: string | null; adapter_key: string; tenant_key: string;
+  is_enabled: boolean; adapter_ready: boolean; sync_generation: string; sync_status: string;
+  next_sync_at: string | null; last_complete_at: string | null; careers_url: string; supported_channels: string[];
+  last_sync_result: { baseline_count?: number | null; latest?: { generation: string; observed_count: number; counts: { created: number; updated: number; restored: number; closed: number; missing: number; invalid: number }; is_complete: boolean; is_reviewed: boolean; error_code: string | null; company_logo_error_code?: string | null; finished_at: string | null } };
+};
+
 export const api = {
+  listPoolJobs: (query: PoolQuery = {}) => {
+    const params = poolQueryParams(query);
+    return request<{ items: PoolJob[]; next_cursor: string | null }>(`/api/job-pool?${params}`);
+  },
+  poolFilters: () => request<PoolFilters>("/api/job-pool/filters"),
+  listSharedCompanies: () => request<{ items: SharedCompany[] }>("/api/admin/companies"),
+  updateSharedCompany: (company: SharedCompany, changes: { aliases?: string[]; logo_url?: string }) => request<SharedCompany>(`/api/admin/companies/${encodeURIComponent(company.id)}`, { method: "PATCH", body: { base_version: company.lock_version, ...changes } }),
+  getPoolJob: (id: string) => request<PoolJob>(`/api/job-pool/${encodeURIComponent(id)}`),
+  joinPoolJob: (id: string) => request<{ job_id: string; application_id: string; created: boolean }>(`/api/job-pool/${encodeURIComponent(id)}/join`, { method: "POST" }),
+  listPoolSources: () => request<{ items: PoolSource[]; sync_enabled: boolean; catalog_counts?: { companies: number; sources: number } }>("/api/admin/job-pool/sources"),
+  bootstrapPoolSources: () => request<{ items: PoolSource[] }>("/api/admin/job-pool/sources/bootstrap", { method: "POST" }),
+  setPoolSourceEnabled: (source: PoolSource, enabled: boolean) => request<PoolSource>(`/api/admin/job-pool/sources/${source.id}`, { method: "PATCH", body: { base_generation: source.sync_generation, is_enabled: enabled } }),
+  syncPoolSource: (id: string) => request<PoolSource>(`/api/admin/job-pool/sources/${id}/sync`, { method: "POST" }),
+  acceptPoolSync: (source: PoolSource) => request<PoolSource>(`/api/admin/job-pool/sources/${source.id}/sync/accept`, { method: "POST", body: { expected_generation: source.sync_generation } }),
   me: getCurrentUser,
   authCapabilities: () =>
     request<AuthCapabilities>("/api/auth/capabilities"),
@@ -1953,10 +2104,15 @@ export const api = {
       method: "DELETE",
     }),
   listDatasetFolders: () => request<DatasetFolderListResponse>("/api/datasets/folders"),
-  createDatasetFolder: (name: string) =>
+  createDatasetFolder: (name: string, description?: string) =>
     request<DatasetFolder>("/api/datasets/folders", {
       method: "POST",
-      body: { name },
+      body: description ? { name, description } : { name },
+    }),
+  updateDatasetFolderDescription: (folderId: string, description: string) =>
+    request<DatasetFolder>(`/api/datasets/folders/${folderId}`, {
+      method: "PATCH",
+      body: { description },
     }),
   renameDatasetFolder: (folderId: string, name: string) =>
     request<DatasetFolder>(`/api/datasets/folders/${folderId}`, {
@@ -2300,6 +2456,26 @@ export const api = {
       method: "PUT",
       body: payload,
     }),
+  analyzeResumeSection: (resumeId: string, payload: SectionReviewAnalyzeRequest, signal?: AbortSignal) =>
+    request<SectionReviewAnalyzeResponse>(
+      `/api/resumes/${encodeURIComponent(resumeId)}/section-review:analyze`,
+      { method: "POST", body: payload, signal },
+    ),
+  rewriteResumeSectionLine: (resumeId: string, payload: SectionReviewRewriteRequest, signal?: AbortSignal) =>
+    request<SectionReviewRewriteResponse>(
+      `/api/resumes/${encodeURIComponent(resumeId)}/section-review:rewrite`,
+      { method: "POST", body: payload, signal },
+    ),
+  listResumeSectionReviews: (resumeId: string, signal?: AbortSignal) =>
+    request<{ reviews: SectionReviewRecord[] }>(
+      `/api/resumes/${encodeURIComponent(resumeId)}/section-reviews`,
+      { signal },
+    ),
+  updateResumeSectionReviewItem: (resumeId: string, reviewId: string, itemId: string, payload: SectionReviewItemUpdate) =>
+    request<SectionReviewItem>(
+      `/api/resumes/${encodeURIComponent(resumeId)}/section-reviews/${encodeURIComponent(reviewId)}/items/${encodeURIComponent(itemId)}`,
+      { method: "PATCH", body: payload },
+    ),
   generateInterviewPrepItems: (id: string) =>
     request<InterviewSessionDetail>(
       `/api/interview-sessions/${id}/prep-items:generate`,

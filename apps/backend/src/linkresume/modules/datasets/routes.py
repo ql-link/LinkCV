@@ -410,6 +410,20 @@ def validate_folder_name(name: str) -> str:
     return cleaned
 
 
+MAX_FOLDER_DESCRIPTION_CHARS = 500
+
+
+def validate_folder_description(description: str) -> str:
+    # 项目说明允许换行和制表符，其余控制字符一律拒绝
+    cleaned = description.strip()
+    if len(cleaned) > MAX_FOLDER_DESCRIPTION_CHARS or any(
+        (ord(character) < 32 and character not in "\n\t") or ord(character) == 127
+        for character in cleaned
+    ):
+        raise ApiError(400, "INVALID_FOLDER_DESCRIPTION")
+    return cleaned
+
+
 @router.get("/folders", response_model=DatasetFolderListResponse)
 def list_folders(
     db: Session = Depends(get_db),
@@ -448,6 +462,7 @@ def list_folders(
         DatasetFolderRecord(
             id=str(f.id),
             name=f.name,
+            description=f.description,
             dataset_count=counts_map.get(f.id, 0),
             created_at=f.create_time,
             updated_at=f.update_time,
@@ -469,6 +484,7 @@ def create_folder(
 ) -> DatasetFolderRecord:
     user = lock_active_user(db, user.id)
     cleaned_name = validate_folder_name(payload.name)
+    cleaned_description = validate_folder_description(payload.description)
     current_count = (
         db.execute(
             select(func.count(UserDatasetFolder.id)).where(
@@ -492,6 +508,7 @@ def create_folder(
     folder = UserDatasetFolder(
         user_id=user.id,
         name=cleaned_name,
+        description=cleaned_description,
     )
     db.add(folder)
     try:
@@ -504,6 +521,7 @@ def create_folder(
     return DatasetFolderRecord(
         id=str(folder.id),
         name=folder.name,
+        description=folder.description,
         dataset_count=0,
         created_at=folder.create_time,
         updated_at=folder.update_time,
@@ -517,8 +535,15 @@ def rename_folder(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_dataset_user),
 ) -> DatasetFolderRecord:
+    if payload.name is None and payload.description is None:
+        raise ApiError(400, "INVALID_FOLDER_UPDATE")
     user = lock_active_user(db, user.id)
-    cleaned_name = validate_folder_name(payload.name)
+    cleaned_name = validate_folder_name(payload.name) if payload.name is not None else None
+    cleaned_description = (
+        validate_folder_description(payload.description)
+        if payload.description is not None
+        else None
+    )
     content_service.lock_user(db, user.id)
     folder = db.execute(
         select(UserDatasetFolder).where(
@@ -529,7 +554,7 @@ def rename_folder(
     if folder is None:
         raise ApiError(404, "FOLDER_NOT_FOUND")
 
-    if folder.name != cleaned_name:
+    if cleaned_name is not None and folder.name != cleaned_name:
         existing = db.execute(
             select(UserDatasetFolder).where(
                 UserDatasetFolder.user_id == user.id,
@@ -540,6 +565,9 @@ def rename_folder(
         if existing is not None:
             raise ApiError(409, "FOLDER_NAME_DUPLICATE")
         folder.name = cleaned_name
+    if cleaned_description is not None and folder.description != cleaned_description:
+        folder.description = cleaned_description
+    if db.is_modified(folder):
         try:
             db.commit()
             db.refresh(folder)
@@ -563,6 +591,7 @@ def rename_folder(
     return DatasetFolderRecord(
         id=str(folder.id),
         name=folder.name,
+        description=folder.description,
         dataset_count=count,
         created_at=folder.create_time,
         updated_at=folder.update_time,

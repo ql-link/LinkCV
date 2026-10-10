@@ -119,6 +119,12 @@ describe("LinkResume routes", () => {
     expect(datasetsPath()).toBe("/datasets");
     expect(datasetsPath("all")).toBe("/datasets");
     expect(datasetsPath("folder-1")).toBe("/datasets?folder=folder-1");
+    expect(datasetsPath("jobs")).toBe("/datasets?tab=jobs");
+    expect(datasetsPath("files")).toBe("/datasets?view=files");
+    expect(datasetsPath("app:31")).toBe("/datasets?application=31");
+    expect(parseAppRoute("/datasets", "?tab=jobs")).toEqual({ kind: "datasets", folderId: "jobs" });
+    expect(parseAppRoute("/datasets", "?view=files")).toEqual({ kind: "datasets", folderId: "files" });
+    expect(parseAppRoute("/datasets", "?application=31")).toEqual({ kind: "datasets", folderId: "app:31" });
     expect(isSafeAppPath("/account")).toBe(true);
     expect(isSafeAppPath("/share/token_123")).toBe(true);
     expect(parseAppRoute("/login", "?next=%2Fshare%2Ftoken_123")).toEqual({ kind: "auth", mode: "login", next: "/share/token_123" });

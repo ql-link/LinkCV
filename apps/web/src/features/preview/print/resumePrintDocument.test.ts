@@ -186,6 +186,35 @@ describe("统一简历打印文档", () => {
     expect(html).not.toContain("/api/resumes/1/assets/logo.png");
   });
 
+  it("renders images in titles and labels through the shared PDF renderer", () => {
+    const data = canonicalFixture();
+    const image = {
+      node_id: "node_image000000000001", inline_type: "media" as const,
+      media_kind: "inline_image" as const, src: "/api/resumes/1/assets/example.png",
+      alt: "标题图", width: 48, width_unit: "px" as const, height_px: 24,
+      align: null, system_fallback: false, source_refs: [],
+    };
+    data.identity.name!.runs = [image, {
+      inline_type: "text", text: data.identity.name!.value, marks: [], href: null,
+      style: { color: null, font_size_pt: null, highlight_color: null },
+    }];
+    data.identity.contacts = [{
+      node_id: "node_contact000000001", source_refs: [], contact_kind: "other", label: "标签", value: "",
+      runs: [], prefix_runs: [{ ...image, node_id: "node_image000000000002" }, {
+        inline_type: "text", text: "标签：", marks: [], href: null,
+        style: { color: null, font_size_pt: null, highlight_color: null },
+      }],
+    }];
+    const html = renderResumePrintDocument({
+      title: "行内图片", data, style: defaultCanonicalPresentation,
+      layout_plan: canonicalLayoutPlan(data),
+      assets: { [image.src]: "data:image/png;base64,ZXhhbXBsZQ==" },
+    });
+    const dom = new DOMParser().parseFromString(html, "text/html");
+    expect(dom.querySelectorAll('img[src="data:image/png;base64,ZXhhbXBsZQ=="]')).toHaveLength(2);
+    expect(html).toContain("标签：");
+  });
+
   it("不把未授权资源替换成可执行内容", () => {
     const html = renderResumePrintDocument({
       title: "安全",
