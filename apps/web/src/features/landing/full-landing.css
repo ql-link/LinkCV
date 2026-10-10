@@ -83,22 +83,32 @@ body:has(.marketing-landing) { background: #fcfcfc; }
 .fl-hero-stage { animation: fl-hero-in 1s var(--fl-ease) .32s both; }
 @keyframes fl-hero-in { from { opacity: 0; translate: 0 18px; } }
 .fl-hero-stage { position: relative; width: 100%; margin-bottom: 56px; scroll-margin-top: 80px; }
-.fl-demo-label { position: absolute; top: -24px; right: 0; font-size: 10px; line-height: 14px; color: #5d6b47; letter-spacing: .3px; }
-.fl-demo-viewport { position: absolute; inset: 0; overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px #1d2a4a1f, 0 0 0 6px #ffffff8c, 0 0 0 7px #1d2a4a0f, 0 2px 4px #171a290f, 0 18px 40px #1d2a4a1f, 0 48px 100px #1d2a4a24; }
+.fl-demo-viewport { position: absolute; inset: 0; overflow: hidden; border-radius: 16px; background: #fcfcfc; box-shadow: 0 0 0 1px #1d2a4a1f, 0 0 0 6px #ffffff8c, 0 0 0 7px #1d2a4a0f, 0 2px 4px #171a290f, 0 18px 40px #1d2a4a1f, 0 48px 100px #1d2a4a24; }
 .fl-demo-viewport::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px #ffffffb3; pointer-events: none; }
-.fl-demo-window { position: absolute; left: 0; top: 0; overflow: hidden; background: #f1f1ef; transform-origin: 0 0; user-select: none; }
+.fl-demo-window { position: absolute; left: 0; top: 0; overflow: hidden; transform-origin: 0 0; user-select: none; isolation: isolate; }
 .fl-demo-window img { position: absolute; top: 0; display: block; max-width: none; pointer-events: none; -webkit-user-drag: none; }
 .fl-demo-sidebar { left: 0; }
-/* 选中项：已选中样式的侧栏图只露出当前行，切换时裁剪区域滑过去 */
-.fl-demo-selected { transition: clip-path .5s cubic-bezier(.22, 1, .36, 1), opacity .2s ease; }
-.fl-demo-selected[data-visible="false"] { opacity: 0; }
+/* 选中项：半透明圆角色块整块滑动；不用混合模式，避免与 Hero 背景光场混出蓝色 */
+.fl-demo-slider { position: absolute; top: 0; border-radius: 8px; background: #1d1d1b0b; pointer-events: none; transition: transform .45s cubic-bezier(.22, 1, .36, 1); }
 .fl-demo-page { left: 216px; transition: opacity .22s ease; }
 .fl-demo-page[data-loaded="false"] { opacity: 0; }
 .fl-demo-nav { position: absolute; inset: 0 auto 0 0; width: 216px; }
-.fl-demo-hotspot { position: absolute; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
-.fl-demo-hotspot:hover { background: #1d1d1b0a; }
-.fl-demo-hotspot:focus-visible { outline: 2px solid #3f6fd8; outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .fl-demo-selected, .fl-demo-page { transition: none; } }
+.fl-demo-hotspot { position: absolute; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: pointer; outline: none; -webkit-tap-highlight-color: transparent; }
+.fl-demo-hotspot:hover { background: #1d1d1b08; }
+.fl-demo-hotspot:focus-visible { box-shadow: inset 0 0 0 1.5px #1d1d1b40; }
+/* Hero 展示区：短片播完后拼装成互动演示；画框高度由脚本按阶段设置（16:9 → 1440:900） */
+.fl-showcase { aspect-ratio: 16 / 9; }
+.fl-showcase video { position: absolute; left: 0; top: 0; display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; background: #fcfcfc; }
+.fl-showcase-bar { position: absolute; top: -30px; right: 0; display: flex; align-items: center; gap: 10px; height: 22px; font-size: 11px; color: #59616d; letter-spacing: .3px; }
+.fl-showcase-note { position: absolute; right: 2px; bottom: -26px; font-size: 11px; line-height: 14px; color: #7a828e; letter-spacing: .3px; }
+.fl-showcase-bar button { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: #2b3038; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.fl-showcase-bar button:hover { color: #3f6fd8; }
+.fl-showcase-bar button:focus-visible { outline: 2px solid #3f6fd8; outline-offset: 3px; border-radius: 4px; }
+.fl-showcase-bg { position: absolute; inset: 0; background: #f1f1ef; opacity: 0; }
+.fl-showcase-piece { position: absolute; background-repeat: no-repeat; will-change: transform, opacity; }
+.fl-showcase-card { position: absolute; background: #fff; box-shadow: 0 0 0 1px #e5e6e3; will-change: transform, opacity; }
+.fl-showcase-logo { position: absolute; left: 0; top: 0; max-width: none; transform-origin: 0 0; pointer-events: none; will-change: transform, opacity; }
+@media (prefers-reduced-motion: reduce) { .fl-demo-slider, .fl-demo-page { transition: none; } }
 
 /* 居中 CTA */
 .fl-purpose-section { padding: 120px 0; background: linear-gradient(#fcfcfc, #dbe7f7 55%, #ede8fa); }

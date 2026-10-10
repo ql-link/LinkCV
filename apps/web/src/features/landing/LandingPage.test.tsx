@@ -26,7 +26,7 @@ describe("LandingPage", () => {
     const starts = screen.getAllByRole("link", { name: "免费开始" });
     expect(starts).toHaveLength(3);
     for (const link of starts) expect(link).toHaveAttribute("href", "/resumes");
-    expect(screen.getByRole("link", { name: "看 2 分钟演示" })).toHaveAttribute("href", "#demo");
+    expect(screen.getByRole("link", { name: "看 1 分钟短片" })).toHaveAttribute("href", "#demo");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "皖ICP备2026017322号" })).toHaveAttribute("href", "https://beian.miit.gov.cn/");
     for (const anchor of Array.from(container.querySelectorAll<HTMLAnchorElement>('a[href^="#"]'))) {
@@ -50,7 +50,7 @@ describe("LandingPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "切换语言" }));
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("The job-search partner that knows your story");
     expect(screen.getAllByRole("link", { name: "Start free" })).toHaveLength(3);
-    expect(screen.getByRole("img", { name: "Home · Sample data" })).toHaveAttribute("src", expect.stringContaining("en-US/home"));
+    expect(screen.getByLabelText("LinkResume product film")).toHaveAttribute("poster", expect.stringContaining("en-US/poster"));
     expect(document.documentElement.lang).toBe("en-US");
     fireEvent.click(screen.getByRole("button", { name: "Switch language" }));
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("懂你经历的求职搭档");
