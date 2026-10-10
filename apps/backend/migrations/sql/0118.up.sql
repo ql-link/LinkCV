@@ -1,63 +1,50 @@
--- 0118: official job pool; additive, forward-only, no external requests.
+-- 0118: Persist editor section focus results. Two new empty tables; existing tables are unchanged.
 
-CREATE TABLE global_job_source (
-	id BIGINT UNSIGNED NOT NULL COMMENT '来源主键' AUTO_INCREMENT,
-	company_id BIGINT UNSIGNED NOT NULL COMMENT '已有企业引用',
-	adapter_key VARCHAR(24) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '白名单适配器',
-	tenant_key VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '适配器租户身份',
-	portal_config JSON NOT NULL COMMENT '版本化门户配置',
-	is_enabled TINYINT UNSIGNED NOT NULL COMMENT '是否启用：1是0否' DEFAULT '0',
-	sync_generation BIGINT UNSIGNED NOT NULL COMMENT '配置或任务变更递增的写入版本' DEFAULT '0',
-	sync_status VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '最近同步状态' DEFAULT 'idle',
-	lease_until DATETIME(6) COMMENT '当前任务租约过期时间',
-	next_sync_at DATETIME(6) COMMENT '下次同步时间',
-	last_complete_at DATETIME(6) COMMENT '最近完整有效同步时间',
-	last_sync_result JSON COMMENT '最新同步摘要与有效数量基线',
-	create_time DATETIME(6) NOT NULL COMMENT '创建时间' DEFAULT CURRENT_TIMESTAMP(6),
-	update_time DATETIME(6) NOT NULL COMMENT '更新时间' DEFAULT CURRENT_TIMESTAMP(6),
-	CONSTRAINT pk_global_job_source PRIMARY KEY (id),
-	CONSTRAINT uk_global_job_source_adapter_tenant UNIQUE (adapter_key, tenant_key),
-	CONSTRAINT ck_global_job_source_enabled CHECK (is_enabled IN (0,1)),
-	CONSTRAINT ck_global_job_source_status CHECK (sync_status IN ('idle','queued','running','succeeded','partial','failed','anomalous','cancelled')),
-	CONSTRAINT ck_global_job_source_config CHECK (lower(json_type(portal_config)) = 'object')
-)ENGINE=InnoDB COMMENT='企业官方招聘采集来源与最近同步状态' CHARSET=utf8mb4 COLLATE utf8mb4_0900_ai_ci
+CREATE TABLE resume_section_review (
+	id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+	user_id BIGINT UNSIGNED NOT NULL COMMENT '所属用户 ID',
+	resume_id BIGINT UNSIGNED NOT NULL COMMENT '所属简历 ID',
+	unit_id VARCHAR(64) NOT NULL COMMENT '段落节点 ID（编辑器 node_id）',
+	analysis_no INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '第几次分析，重新分析时加一',
+	reference_json JSON NOT NULL COMMENT '参照：general 或 method 写作法则',
+	job_id BIGINT UNSIGNED NULL COMMENT '参照的目标岗位 ID，无则为空',
+	intent VARCHAR(300) NOT NULL DEFAULT '' COMMENT '用户填写的突出方向',
+	context_ids_json JSON NOT NULL COMMENT '参考段落 ID 数组，至多 6 个',
+	base_lines_json JSON NOT NULL COMMENT '分析时各句原文：line_id 到文本',
+	result_json JSON NOT NULL COMMENT '分析结果：参照名、推断方向、是否内容太少、起草问题与批注',
+	create_time DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间 UTC',
+	update_time DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间 UTC',
+	CONSTRAINT pk_resume_section_review PRIMARY KEY (id),
+	CONSTRAINT uk_resume_section_review_unit UNIQUE (resume_id, unit_id),
+	CONSTRAINT ck_resume_section_review_context_ids CHECK (LOWER(JSON_TYPE(context_ids_json)) = 'array'),
+	CONSTRAINT ck_resume_section_review_base_lines CHECK (LOWER(JSON_TYPE(base_lines_json)) = 'object')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='简历段落聚焦的最新一次分析，每段一行';
 
-;
+CREATE INDEX idx_resume_section_review_user ON resume_section_review (user_id);
 
-CREATE TABLE global_job (
-	id BIGINT UNSIGNED NOT NULL COMMENT '公共岗位主键' AUTO_INCREMENT,
-	source_id BIGINT UNSIGNED NOT NULL COMMENT '采集来源引用',
-	source_job_key VARCHAR(192) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '原生编号或规范链接哈希身份',
-	job_title VARCHAR(200) NOT NULL COMMENT '岗位标题',
-	job_category VARCHAR(100) COMMENT '标准岗位类别',
-	recruitment_channel VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'campus/experienced/unknown' DEFAULT 'unknown',
-	employment_type VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'internship/full_time/part_time/contract/unknown' DEFAULT 'unknown',
-	salary_text VARCHAR(128) COMMENT '薪资原文',
-	locations JSON NOT NULL COMMENT '标准城市数组与来源地点原文',
-	description LONGTEXT NOT NULL COMMENT '完整安全岗位正文',
-	source_attributes JSON NOT NULL COMMENT '白名单来源补充属性',
-	published_at DATETIME(6) COMMENT '来源明确的发布时间',
-	source_url VARCHAR(2048) NOT NULL COMMENT '官方详情与投递入口',
-	availability_status VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'active/missing/closed' DEFAULT 'active',
-	last_seen_at DATETIME(6) NOT NULL COMMENT '最近有效观察时间',
-	last_seen_generation BIGINT UNSIGNED NOT NULL COMMENT '该来源最近观察代次',
-	missing_count INTEGER UNSIGNED NOT NULL COMMENT '连续完整同步缺失次数' DEFAULT '0',
-	missing_since DATETIME(6) COMMENT '本次连续缺失起点',
-	create_time DATETIME(6) NOT NULL COMMENT '创建与首次发现时间' DEFAULT CURRENT_TIMESTAMP(6),
-	update_time DATETIME(6) NOT NULL COMMENT '更新时间' DEFAULT CURRENT_TIMESTAMP(6),
-	CONSTRAINT pk_global_job PRIMARY KEY (id),
-	CONSTRAINT uk_global_job_source_key UNIQUE (source_id, source_job_key),
-	CONSTRAINT ck_global_job_status CHECK (availability_status IN ('active','missing','closed')),
-	CONSTRAINT ck_global_job_channel CHECK (recruitment_channel IN ('campus','experienced','unknown')),
-	CONSTRAINT ck_global_job_employment CHECK (employment_type IN ('internship','full_time','part_time','contract','unknown')),
-	CONSTRAINT ck_global_job_text CHECK (length(trim(job_title)) > 0 AND length(trim(description)) > 0),
-	CONSTRAINT ck_global_job_locations CHECK (JSON_TYPE(locations) = 'OBJECT' AND JSON_TYPE(JSON_EXTRACT(locations, '$.cities')) = 'ARRAY'),
-	CONSTRAINT ck_global_job_attributes CHECK (lower(json_type(source_attributes)) = 'object'),
-	CONSTRAINT ck_global_job_missing_count CHECK (missing_count >= 0)
-)ENGINE=InnoDB COMMENT='平台共享官方招聘岗位' CHARSET=utf8mb4 COLLATE utf8mb4_0900_ai_ci
+CREATE TABLE resume_section_review_item (
+	id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+	user_id BIGINT UNSIGNED NOT NULL COMMENT '所属用户 ID',
+	resume_id BIGINT UNSIGNED NOT NULL COMMENT '所属简历 ID',
+	review_id BIGINT UNSIGNED NOT NULL COMMENT '所属段落分析 ID',
+	note_id VARCHAR(32) NULL COMMENT '对应分析结果中的批注 ID；自定义要求和起草为空',
+	kind VARCHAR(16) NOT NULL COMMENT '类型：missing 缺信息 / wording 表达 / structure 结构 / ask 自定义要求 / draft 起草',
+	line_id VARCHAR(64) NULL COMMENT '作用的句子节点 ID，整段批注为空',
+	instruction VARCHAR(300) NOT NULL DEFAULT '' COMMENT '用户自定义要求原话',
+	status VARCHAR(16) NOT NULL COMMENT '状态：todo 未处理 / asking 追问中 / pending 待确认 / done 已采用 / skipped 已跳过',
+	question_index TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '当前追问序号，从 0 开始',
+	answers_json JSON NOT NULL COMMENT '用户回答，按追问顺序的字符串数组，至多 3 个',
+	draft_json JSON NULL COMMENT '候选：variants、missing、base_text、line_id',
+	selected_index TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '选中的候选序号',
+	edit_json JSON NULL COMMENT '已采用改动：line_id、before、after，仅 done 时非空',
+	create_time DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间 UTC',
+	update_time DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间 UTC',
+	CONSTRAINT pk_resume_section_review_item PRIMARY KEY (id),
+	CONSTRAINT ck_resume_section_review_item_kind CHECK (kind IN ('missing', 'wording', 'structure', 'ask', 'draft')),
+	CONSTRAINT ck_resume_section_review_item_status CHECK (status IN ('todo', 'asking', 'pending', 'done', 'skipped')),
+	CONSTRAINT ck_resume_section_review_item_edit CHECK ((status = 'done') = (edit_json IS NOT NULL)),
+	CONSTRAINT ck_resume_section_review_item_answers CHECK (LOWER(JSON_TYPE(answers_json)) = 'array')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='简历段落聚焦中的一条批注、自定义要求或起草';
 
-;
-CREATE FULLTEXT INDEX idx_global_job_search ON global_job (job_title, description) WITH PARSER ngram;
-CREATE INDEX idx_global_job_create_time ON global_job (create_time, id);
-
-ALTER TABLE job_description ADD COLUMN global_job_id BIGINT UNSIGNED NULL COMMENT '公共岗位来源，存量及手工岗位为空', ADD CONSTRAINT uk_job_description_user_global_job UNIQUE (user_id, global_job_id);
+CREATE INDEX idx_resume_section_review_item_resume ON resume_section_review_item (resume_id, review_id, id);
+CREATE INDEX idx_resume_section_review_item_user ON resume_section_review_item (user_id);

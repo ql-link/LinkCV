@@ -27,6 +27,7 @@ from linkresume.application.resumes.service import (
     parse_persisted_resume_snapshot,
     update_resume_snapshot,
 )
+from linkresume.application.section_review.store import delete_resume_reviews
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
 from linkresume.core.storage import (
@@ -409,6 +410,7 @@ def delete_resume(
         ).values(resume_id=None, resume_title_snapshot=None))
         detach_mock_interview_resume(db, user_id=user.id, resume_id=resume.id)
         db.execute(delete(JobResumeMatch).where(JobResumeMatch.resume_id == resume.id))
+        delete_resume_reviews(db, resume.id)
         result = db.execute(delete(Resume).where(Resume.id == resume.id))
         db.commit()
     except Exception:

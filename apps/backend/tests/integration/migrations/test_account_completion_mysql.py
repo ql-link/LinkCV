@@ -176,6 +176,7 @@ def test_cleanup_deletes_personal_resource_graph_and_preserves_other_graph(mysql
     from linkresume.modules.job_descriptions.models import JobDescription
     from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
     from linkresume.modules.resumes.models import Resume, ResumeTemplate, DocumentParseTask
+    from linkresume.modules.resumes.section_review_models import ResumeSectionReview, ResumeSectionReviewItem
     from tests.canonical_resume_fixtures import canonical_resume_payload
     factory = sessionmaker(mysql, expire_on_commit=False)
     uid, other = seed(factory), seed(factory)
@@ -189,6 +190,10 @@ def test_cleanup_deletes_personal_resource_graph_and_preserves_other_graph(mysql
             template = db.scalar(select(ResumeTemplate).where(ResumeTemplate.is_active == 1).limit(1))
             data, style = canonical_resume_payload()
             resume = add(Resume(user_id=owner, template_id=template.id, title="虚构简历", data_json=data, style_json=style))
+            review = add(ResumeSectionReview(user_id=owner, resume_id=resume.id, unit_id="node_fictional", reference_json={"kind": "general"},
+                context_ids_json=[], base_lines_json={}, result_json={"reference_label": "通用写作标准", "inferred_focus": None, "too_thin": True}))
+            add(ResumeSectionReviewItem(user_id=owner, resume_id=resume.id, review_id=review.id, kind="ask",
+                instruction="虚构要求", status="skipped", answers_json=[]))
             job = add(JobDescription(user_id=owner, company_name="虚构公司", job_title="虚构岗位", description="虚构 JD", source_type="manual"))
             application = add(JobApplication(user_id=owner, job_description_id=job.id, resume_id=resume.id,
                 company_name_snapshot="虚构公司", job_title_snapshot="虚构岗位", job_snapshot={}, calendar_color="blue",

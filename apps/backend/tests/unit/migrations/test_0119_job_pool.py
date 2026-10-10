@@ -8,7 +8,7 @@ from linkresume.core.migration_sql import sql_statements
 from linkresume.modules.job_pool.models import GlobalJob, GlobalJobSource
 
 BACKEND = Path(__file__).resolve().parents[3]
-SQL = (BACKEND / "migrations/sql/0118.up.sql").read_text()
+SQL = (BACKEND / "migrations/sql/0119.up.sql").read_text()
 
 
 def test_additive_sql_matches_reviewed_orm_columns_and_indexes():
@@ -31,7 +31,7 @@ def test_revision_remains_forward_only_and_has_one_head():
     cfg.set_main_option("script_location", str(BACKEND / "migrations"))
     scripts = ScriptDirectory.from_config(cfg)
     assert len(scripts.get_heads()) == 1
-    revision = scripts.get_revision("0118")
-    assert revision.down_revision == "0117"
+    revision = scripts.get_revision("0119")
+    assert revision.down_revision == "0118"
     assert "raise RuntimeError" in Path(revision.path).read_text()
-    assert not (BACKEND / "migrations/sql/0118.down.sql").exists()
+    assert not (BACKEND / "migrations/sql/0119.down.sql").exists()

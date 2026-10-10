@@ -47,7 +47,7 @@ def mysql():
         cfg.set_main_option("script_location", str(BACKEND / "migrations"))
         load_settings.cache_clear()
         assert make_url(load_settings().sqlalchemy_url).database == name
-        command.upgrade(cfg, "0117")
+        command.upgrade(cfg, "0118")
         with engine.begin() as db:
             db.execute(text("INSERT INTO `user` (email,password_hash,nickname) VALUES ('zhangsan@example.test','fictional-hash','张三')"))
             user_id = db.scalar(text("SELECT id FROM `user` WHERE email='zhangsan@example.test'"))
@@ -79,7 +79,7 @@ def test_forward_migration_schema_indexes_and_legacy_data(mysql):
     indexes = schema.get_indexes("global_job")
     assert {index["name"] for index in indexes} == {"uk_global_job_source_key", "idx_global_job_search", "idx_global_job_create_time"}
     with mysql.connect() as db:
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0119"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0120"
         assert db.scalar(text("SELECT description FROM job_description WHERE global_job_id IS NULL")) == "已有个人正文"
         legacy = db.execute(text("SELECT aliases,logo_source,lock_version,logo_url FROM global_company WHERE normalized_name='已有公司'")).first()
         assert legacy.aliases == "[]" and legacy.logo_source == "unknown" and legacy.lock_version == 0
@@ -118,7 +118,7 @@ def test_real_ngram_json_city_filter_and_concurrent_idempotent_join(mysql):
         assert len(list(db.scalars(select(JobDescription).where(JobDescription.global_job_id == int(identifier))))) == 1
 
 
-def test_0119_concurrent_company_logo_fill_preserves_one_default(mysql):
+def test_0120_concurrent_company_logo_fill_preserves_one_default(mysql):
     from linkresume.application.job_descriptions.company_service import fill_logo
     factory = sessionmaker(mysql, expire_on_commit=False)
     with factory.begin() as db:

@@ -10,7 +10,7 @@ BACKEND = Path(__file__).resolve().parents[3]
 
 
 def test_company_migration_is_additive_forward_only_and_latest_head():
-    sql = (BACKEND / "migrations/sql/0119.up.sql").read_text()
+    sql = (BACKEND / "migrations/sql/0120.up.sql").read_text()
     assert len(sql_statements(sql)) == 1
     assert sql.startswith("ALTER TABLE global_company")
     for column in ("aliases", "logo_source", "lock_version"):
@@ -21,7 +21,7 @@ def test_company_migration_is_additive_forward_only_and_latest_head():
     cfg = Config(str(BACKEND / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND / "migrations"))
     scripts = ScriptDirectory.from_config(cfg)
-    assert scripts.get_heads() == ["0119"]
-    revision = scripts.get_revision("0119")
-    assert revision.down_revision == "0118"
+    assert scripts.get_heads() == ["0120"]
+    revision = scripts.get_revision("0120")
+    assert revision.down_revision == "0119"
     assert "raise RuntimeError" in Path(revision.path).read_text()

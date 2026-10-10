@@ -30,6 +30,10 @@ from linkresume.modules.resumes.models import (
     Resume,
     ResumeTemplate,
 )
+from linkresume.modules.resumes.section_review_models import (
+    ResumeSectionReview,
+    ResumeSectionReviewItem,
+)
 
 __all__ = [
     "GlobalJob",
@@ -57,6 +61,8 @@ __all__ = [
     "DocumentParseTask",
     "ProductEvent",
     "Resume",
+    "ResumeSectionReview",
+    "ResumeSectionReviewItem",
     "ResumeTemplate",
     "User",
     "UserDataset",

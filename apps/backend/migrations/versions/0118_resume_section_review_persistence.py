@@ -1,8 +1,8 @@
-"""add_global_job_pool.
+"""resume_section_review_persistence.
 
 Revision ID: 0118
 Revises: 0117
-Create Date: 2026-10-09 12:23:31.365240
+Create Date: 2026-10-09 12:00:00.000000
 """
 from collections.abc import Sequence
 from pathlib import Path

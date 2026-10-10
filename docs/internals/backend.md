@@ -4,7 +4,7 @@
 
 `modules/job_pool` 提供普通 Cookie 登录用户的共享岗位查询与加入接口，以及管理员来源管理接口。`application/job_pool` 负责标准化、幂等写入、上下线判断和个人快照事务；`workers/job_pool_worker.py` 挂在现有 Worker 中，不新增队列或服务。同步开关默认关闭，来源首次登记默认停用。
 
-迁移 `0118` 接在 `0117` 后：新增 `global_job_source`（14 字段）、`global_job`（20 字段），给 `job_description` 增加可空 `global_job_id` 和 `(user_id, global_job_id)` 唯一约束，旧资料保持 NULL。来源仅有主键及 `(adapter_key, tenant_key)` 唯一索引；岗位使用 `(source_id, source_job_key)` 唯一索引、`(create_time,id)` 排序索引和标题/正文 `ngram` 全文索引。城市按版本化 JSON 数组精确过滤，未增加多值城市索引。无外部联网迁移、硬删除或 downgrade。
+迁移 `0119` 接在 `0118` 后：新增 `global_job_source`（14 字段）、`global_job`（20 字段），给 `job_description` 增加可空 `global_job_id` 和 `(user_id, global_job_id)` 唯一约束，旧资料保持 NULL。来源仅有主键及 `(adapter_key, tenant_key)` 唯一索引；岗位使用 `(source_id, source_job_key)` 唯一索引、`(create_time,id)` 排序索引和标题/正文 `ngram` 全文索引。城市按版本化 JSON 数组精确过滤，未增加多值城市索引。无外部联网迁移、硬删除或 downgrade。
 
 岗位正文先去 HTML 标签与脚本，保持完整文本；白名单补充属性只存部门、学历、经验、毕业年份、批次及截止时间。招聘渠道与用工形式各用一轴，未明确的字段保持 unknown/null。时间保存 UTC，所支持国内官网的无时区时间按北京时间转换。个人城市字段仍为 100 字符；地点文本超长时，城市字段保存首个城市，同时在个人正文保留全部地点；追加后超过正文上限时，全部地点保存在个人备注，正文保持完整。
 
@@ -199,13 +199,13 @@ LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验�
 
 ### 公司匹配与共享图标
 
-`0119` 接在 `0118` 后，是当前唯一 head。它仅为 `global_company` 增加 aliases（JSON 数组）、logo_source（unknown/official/plugin/admin）及 lock_version（BIGINT UNSIGNED），补充数组与来源 CHECK，并更新 logo_url 注释；不增加表、索引，不重写已有岗位或默认图。旧公司别名为空，旧图标来源为 unknown。
+`0120` 接在 `0119` 后，是当前唯一 head。它仅为 `global_company` 增加 aliases（JSON 数组）、logo_source（unknown/official/plugin/admin）及 lock_version（BIGINT UNSIGNED），补充数组与来源 CHECK，并更新 logo_url 注释；不增加表、索引，不重写已有岗位或默认图。旧公司别名为空，旧图标来源为 unknown。
 
 `application/job_descriptions/company_service.py` 统一精确匹配展示名、规范名、工商全称和管理员别名。匹配规范化包含 NFKC、casefold 与空白合并，不推测集团子公司、简称或模糊名称。只有唯一候选才使用默认图片或共享插件图片；别名允许同名，不新增全局别名唯一约束，多个候选不会自动合并。新岗位缺图时复制当前默认图；外部导入携带 HTTPS 图标时以条件更新仅补空默认图，同步增加资料版本。重复导入只在用户确认替换后进入该链路，不处理历史批量匹配。
 
 插件上传沿用现有图像大小、解码、去元数据与 WebP 规范化，再唯一匹配公司。只有公司缺图或默认图恰好是此次导入的 plugin 外链时，才把规范化字节发布到 `public-company-logos/{sha256}.webp` 并更新默认 URL。其他默认图保留。发布失败仅记录不含 URL、正文或图片内容的警告，个人图片继续保存。共享图与个人图使用独立对象命名空间：新增公共读取路由只允许 SHA-256 文件名，不提供任意对象访问；原个人图片路由继续校验归属。旧公共版本不因管理员替换默认图而删除，保证个人快照 URL 可读。
 
-`modules/job_descriptions/company_routes.py` 提供管理员公司列表与更新接口、公共图片读取接口。管理保存使用公司行锁和 base_version，官网/插件默认图变更也增加版本；旧版本409要求重新读取。别名和默认图保存不重写用户岗位或求职快照。数据库兼容发布需先查询目标 current、备份并升级至0119，再启动包含新字段的 API/Worker；不执行 downgrade。
+`modules/job_descriptions/company_routes.py` 提供管理员公司列表与更新接口、公共图片读取接口。管理保存使用公司行锁和 base_version，官网/插件默认图变更也增加版本；旧版本409要求重新读取。别名和默认图保存不重写用户岗位或求职快照。数据库兼容发布需先查询目标 current、备份并升级至0120，再启动包含新字段的 API/Worker；不执行 downgrade。
 
 ## 功能与架构导航
 
@@ -526,7 +526,9 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ## 当前 Muse 目录迁移
 
-当前迁移链 head 为 `0119`（`0099 → 0100 → … → 0110 → 0111 → 0112 → 0113 → 0114 → 0115 → 0116 → 0117 → 0118 → 0119`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。`0111–0115` 的内容见下文「阿里巴巴 MySQL 规约整改」。
+当前迁移链 head 为 `0120`（`0099 → 0100 → … → 0110 → 0111 → 0112 → 0113 → 0114 → 0115 → 0116 → 0117 → 0118 → 0119 → 0120`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。`0111–0115` 的内容见下文「阿里巴巴 MySQL 规约整改」。
+
+`0118` 新增两张空表保存编辑器段落聚焦结果：`resume_section_review` 每段一行，`(resume_id, unit_id)` 唯一，保存最近一次分析的参照、原文与结果；`resume_section_review_item` 保存每条批注、自定义要求或起草的状态、回答、候选与采用时的改前改后，`status='done'` 当且仅当 `edit_json` 非空。两表都冗余 `user_id`、`resume_id`，不建外键；删除简历和注销账号时由应用层同事务清理。不修改存量表，回退依赖备份或新的向前迁移。
 
 `0117` 将内置 Muse 模板中仍匹配原始样本的示例姓名统一为“张三”，按已知模板 key 和原始姓名精确匹配，只修改 `data_json.identity.name.value`。管理员编辑过的姓名、自定义模板、已有用户简历与其他字段不修改；没有 schema 变化，重复执行不再改变数据。迁移为 forward-only，恢复原示例姓名依赖备份或新的向前迁移。
 
