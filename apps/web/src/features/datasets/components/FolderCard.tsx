@@ -37,7 +37,7 @@ export function FolderCard({ folder, recent, onClick, onRename, onDelete }: Fold
   const count = folder.dataset_count;
   const latest = recent[0];
   const meta = count === 0
-    ? t("还没有资料 · 进入后添加")
+    ? t("还没有资料")
     : latest
       ? t("{value0} 份资料 · 最近上传 {value1}", { value0: count, value1: relativeUploadDay(latest.created_at) })
       : t("{value0} 份资料", { value0: count });

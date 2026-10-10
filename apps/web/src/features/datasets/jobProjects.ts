@@ -140,9 +140,3 @@ export function datasetProjectLabels(projects: JobProject[]) {
   }
   return labels;
 }
-
-/** 卡片上的进度条最多放 4 个节点：保留投递，其余取最近的阶段 */
-export function compactStageNodes(nodes: JobStageNode[], max = 4): JobStageNode[] {
-  if (nodes.length <= max) return nodes;
-  return [nodes[0], ...nodes.slice(nodes.length - (max - 1))];
-}
