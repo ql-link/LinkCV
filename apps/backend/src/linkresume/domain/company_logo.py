@@ -3,6 +3,10 @@
 import re
 
 
+def is_public_company_logo_url(value: str) -> bool:
+    return re.fullmatch(r"/api/company-logos/[0-9a-f]{64}\.webp", value) is not None
+
+
 def company_logo_url(job_id: int, digest: str | None) -> str | None:
     if not digest or not re.fullmatch(r"[0-9a-f]{64}", digest):
         return None

@@ -149,7 +149,9 @@ export function RouteSkeleton({ section }: { section: V3Section }) {
             ? <SkeletonCards cards={[92, 168, 132]} />
             : section === "mock"
               ? <SkeletonCards cards={[196, 150, 120]} />
-              : <SkeletonCards />;
+              : section === "opportunities"
+                ? <SkeletonRows />
+                : <SkeletonCards />;
   return (
     <div className={`v3-sk-page is-${section}`} role="status" aria-busy="true" aria-label={t("正在加载页面…")}>
       <SkeletonHead actions={section === "jobs" || section === "datasets" ? 2 : 1} />

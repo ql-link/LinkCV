@@ -4523,10 +4523,69 @@ def test_mysql_0117_normalizes_builtin_sample_names_without_touching_user_conten
         engine.dispose()
 
 
-def test_mysql_0118_adds_folder_description_with_empty_default_for_existing_rows() -> None:
+def test_mysql_0118_creates_section_review_tables_matching_models() -> None:
+    from linkresume.modules.resumes.section_review_models import (
+        ResumeSectionReview,
+        ResumeSectionReviewItem,
+    )
+
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "0117")
+    run_alembic(database_url, "upgrade", "0118")
+    engine = create_engine(database_url)
+    try:
+        schema = inspect(engine)
+        for model in (ResumeSectionReview, ResumeSectionReviewItem):
+            table = model.__table__.name
+            assert {column["name"] for column in schema.get_columns(table)} == set(model.__table__.columns.keys())
+            assert schema.get_foreign_keys(table) == []
+        assert {index["name"] for index in schema.get_indexes("resume_section_review")} >= {
+            "uk_resume_section_review_unit",
+            "idx_resume_section_review_user",
+        }
+        assert {index["name"] for index in schema.get_indexes("resume_section_review_item")} >= {
+            "idx_resume_section_review_item_resume",
+            "idx_resume_section_review_item_user",
+        }
+        with engine.begin() as connection:
+            review_id = connection.execute(
+                text(
+                    "INSERT INTO resume_section_review "
+                    "(user_id, resume_id, unit_id, reference_json, context_ids_json, base_lines_json, result_json) "
+                    "VALUES (1, 1, 'node_fictional', JSON_OBJECT('kind', 'general'), JSON_ARRAY(), JSON_OBJECT(), JSON_OBJECT())"
+                )
+            ).lastrowid
+        with pytest.raises(IntegrityError), engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO resume_section_review "
+                    "(user_id, resume_id, unit_id, reference_json, context_ids_json, base_lines_json, result_json) "
+                    "VALUES (1, 1, 'node_fictional', JSON_OBJECT(), JSON_ARRAY(), JSON_OBJECT(), JSON_OBJECT())"
+                )
+            )
+        item = (
+            "INSERT INTO resume_section_review_item (user_id, resume_id, review_id, kind, status, answers_json, edit_json) "
+            "VALUES (1, 1, :review_id, :kind, :status, JSON_ARRAY(), {edit})"
+        )
+        with engine.begin() as connection:
+            connection.execute(text(item.format(edit="NULL")), {"review_id": review_id, "kind": "ask", "status": "pending"})
+            connection.execute(
+                text(item.format(edit="JSON_OBJECT('line_id', 'li', 'before', 'a', 'after', 'b')")),
+                {"review_id": review_id, "kind": "wording", "status": "done"},
+            )
+        for kind, status, edit in (("ask", "loading", "NULL"), ("other", "todo", "NULL"), ("ask", "done", "NULL")):
+            with pytest.raises((IntegrityError, DBAPIError)), engine.begin() as connection:
+                connection.execute(text(item.format(edit=edit)), {"review_id": review_id, "kind": kind, "status": status})
+    finally:
+        engine.dispose()
+        reset_test_database_to_base(database_url)
+        run_alembic(database_url, "upgrade", "head")
+
+
+def test_mysql_0121_adds_folder_description_with_empty_default_for_existing_rows() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0120")
     engine = create_engine(database_url)
     try:
         with engine.begin() as connection:
@@ -4538,7 +4597,7 @@ def test_mysql_0118_adds_folder_description_with_empty_default_for_existing_rows
                 text("INSERT INTO user_dataset_folder (user_id, name) VALUES (:user_id, '已有文件夹')"),
                 {"user_id": user_id},
             )
-        run_alembic(database_url, "upgrade", "0118")
+        run_alembic(database_url, "upgrade", "0121")
         with engine.connect() as connection:
             assert connection.execute(text("SELECT description FROM user_dataset_folder")).scalars().all() == [""]
             column = connection.execute(text(

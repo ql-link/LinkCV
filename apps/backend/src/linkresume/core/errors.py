@@ -37,6 +37,13 @@ def install_error_handlers(app: FastAPI) -> None:
         request: Request,
         error: RequestValidationError,
     ) -> JSONResponse:
+        if request.url.path.startswith("/api/admin/companies"):
+            request.state.error_code = "COMPANY_INVALID"
+            return JSONResponse(status_code=400, content={"error": "COMPANY_INVALID"})
+        if request.url.path.startswith(("/api/job-pool", "/api/admin/job-pool")):
+            code = "JOB_POOL_INVALID_QUERY" if request.method == "GET" else "JOB_SOURCE_INVALID"
+            request.state.error_code = code
+            return JSONResponse(status_code=400, content={"error": code})
         if request.url.path.rstrip("/") == "/api/admin/plugin-releases":
             return JSONResponse(
                 status_code=422,

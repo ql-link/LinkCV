@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column
@@ -76,6 +77,7 @@ class JobDescription(Base):
 
     __table_args__ = (
         PrimaryKeyConstraint("id", name="pk_job_description"),
+        UniqueConstraint("user_id", "global_job_id", name="uk_job_description_user_global_job"),
         UniqueConstraint(
             "user_id",
             "source_site",
@@ -167,6 +169,9 @@ class JobDescription(Base):
         unsigned_bigint_type(),
         nullable=False,
         comment="JD 所有者",
+    )
+    global_job_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(), nullable=True, comment="公共岗位来源，存量及手工岗位为空"
     )
     job_title: Mapped[str] = mapped_column(String(200), nullable=False, comment="岗位名称")
     company_name: Mapped[str] = mapped_column(
@@ -304,6 +309,8 @@ class GlobalCompany(Base):
             "LENGTH(TRIM(normalized_name)) > 0",
             name="ck_global_company_normalized_name_not_blank",
         ),
+        CheckConstraint("LOWER(JSON_TYPE(aliases)) = 'array'", name="ck_global_company_aliases_array"),
+        CheckConstraint("logo_source IN ('unknown', 'official', 'plugin', 'admin')", name="ck_global_company_logo_source"),
         {
             "comment": "平台独立维护的全局公司资料",
             "sqlite_autoincrement": True,
@@ -323,8 +330,11 @@ class GlobalCompany(Base):
         String(255), nullable=True, comment="公司工商全称"
     )
     logo_url: Mapped[str | None] = mapped_column(
-        String(2048), nullable=True, comment="公司 Logo HTTPS URL"
+        String(2048), nullable=True, comment="公司图标 HTTPS 地址或公共托管图片路径"
     )
+    aliases: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, server_default=text("(JSON_ARRAY())"), comment="用于唯一精确匹配的公司别名；重名不自动关联")
+    logo_source: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown", server_default="unknown", comment="默认图标来源：unknown/official/plugin/admin")
+    lock_version: Mapped[int] = mapped_column(unsigned_bigint_type(), nullable=False, default=0, server_default="0", comment="公司资料乐观锁版本")
     website_url: Mapped[str | None] = mapped_column(
         String(2048), nullable=True, comment="公司官网 HTTPS URL"
     )

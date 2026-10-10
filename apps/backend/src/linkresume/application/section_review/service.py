@@ -3,8 +3,10 @@
 The editor sends the text it currently shows; the backend only checks that the
 resume (and optional reference job) belong to the caller, asks the model for
 structured notes or rewrites, and filters anything that does not anchor back to
-the submitted text. Nothing is written: the user applies changes in the editor.
-The model call never holds a database session.
+the submitted text. The resume itself is never written: the user applies changes
+in the editor. Each finished analysis or rewrite is saved (see ``store``) so the
+paragraph's notes and progress survive a reload. The model call never holds a
+database session.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from linkresume.application.job_matches.service import job_text
+from linkresume.application.section_review import store
 from linkresume.application.resumes.service import find_owned_resume, parse_decimal_id
 from linkresume.modules.job_descriptions.models import JobDescription
 from linkresume.modules.llm.resolver import SECTION_REVIEW
@@ -32,6 +35,7 @@ from linkresume.modules.resumes.section_review_schemas import (
     MethodReference,
     SectionReviewAnalyzeRequest,
     SectionReviewAnalyzeResponse,
+    SectionReviewAnalyzeResult,
     SectionReviewContext,
     SectionReviewNote,
     SectionReviewProposal,
@@ -436,6 +440,33 @@ def _draft_questions() -> list[SectionReviewQuestion]:
 # --- use cases --------------------------------------------------------------
 
 
+def _reference_job_id(payload: SectionReviewAnalyzeRequest) -> int | None:
+    job_id = payload.reference.job_id if isinstance(payload.reference, JobReference) else payload.job_id
+    return parse_decimal_id(job_id) if job_id else None
+
+
+async def _save_analysis(
+    session_factory: sessionmaker[Session],
+    user_id: int,
+    resume_id: str,
+    payload: SectionReviewAnalyzeRequest,
+    result: SectionReviewAnalyzeResult,
+) -> SectionReviewAnalyzeResponse:
+    parsed = parse_decimal_id(resume_id)
+    if parsed is None:
+        raise SectionReviewResumeNotFound
+
+    def save(db: Session) -> SectionReviewAnalyzeResponse:
+        try:
+            record = store.save_analysis(db, user_id, parsed, payload, _reference_job_id(payload), result)
+        except store.SectionReviewNotFound as error:
+            # The resume was deleted while the model was answering.
+            raise SectionReviewResumeNotFound from error
+        return SectionReviewAnalyzeResponse(**result.model_dump(), review=record)
+
+    return await asyncio.to_thread(_in_session, session_factory, save)
+
+
 async def analyze_section(
     session_factory: sessionmaker[Session],
     llm: LLMService,
@@ -449,12 +480,13 @@ async def analyze_section(
         lambda db: _load_reference(db, user_id, resume_id, payload.reference, payload.job_id),
     )
     if _section_chars(payload.section) < THIN_SECTION_CHARS:
-        return SectionReviewAnalyzeResponse(
+        result = SectionReviewAnalyzeResult(
             reference_label=label,
             inferred_focus=None,
             too_thin=True,
             draft_questions=_draft_questions(),
         )
+        return await _save_analysis(session_factory, user_id, resume_id, payload, result)
     await llm.ensure_configured(SECTION_REVIEW)
     body = "\n".join(
         (
@@ -474,12 +506,13 @@ async def analyze_section(
         SectionAnalysis,
     )
     focus = (analysis.inferred_focus or "").strip()
-    return SectionReviewAnalyzeResponse(
+    result = SectionReviewAnalyzeResult(
         reference_label=label,
         inferred_focus=_clip(focus, 40) if focus and not (payload.intent or "").strip() else None,
         too_thin=False,
         notes=clean_analysis(analysis, payload.section, payload.context),
     )
+    return await _save_analysis(session_factory, user_id, resume_id, payload, result)
 
 
 async def rewrite_line(
@@ -489,11 +522,19 @@ async def rewrite_line(
     resume_id: str,
     payload: SectionReviewRewriteRequest,
 ) -> SectionReviewRewriteResponse:
-    _, reference_text = await asyncio.to_thread(
-        _in_session,
-        session_factory,
-        lambda db: _load_reference(db, user_id, resume_id, payload.reference, payload.job_id),
-    )
+    parsed = parse_decimal_id(resume_id)
+
+    def prepare(db: Session) -> str:
+        _, text = _load_reference(db, user_id, resume_id, payload.reference, payload.job_id)
+        if parsed is None:
+            raise SectionReviewResumeNotFound
+        if payload.review_id is not None:
+            store.check_rewrite(db, user_id, parsed, payload)
+        return text
+
+    reference_text = await asyncio.to_thread(_in_session, session_factory, prepare)
+    if parsed is None:  # unreachable: prepare found the resume
+        raise SectionReviewResumeNotFound
     await llm.ensure_configured(SECTION_REVIEW)
     target = payload.section.line(payload.line_id) if payload.line_id else None
     body = "\n".join(
@@ -527,4 +568,14 @@ async def rewrite_line(
         item = _clip(item, 12)
         if item and item not in missing:
             missing.append(item)
-    return SectionReviewRewriteResponse(variants=variants, missing=missing[:4])
+    missing = missing[:4]
+    item = (
+        await asyncio.to_thread(
+            _in_session,
+            session_factory,
+            lambda db: store.save_rewrite(db, user_id, parsed, payload, variants, missing),
+        )
+        if payload.review_id is not None
+        else None
+    )
+    return SectionReviewRewriteResponse(variants=variants, missing=missing, item=item)

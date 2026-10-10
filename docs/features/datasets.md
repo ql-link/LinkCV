@@ -45,7 +45,7 @@ Web `/datasets` 以“项目”组织资料，不设二级导航。首页页头�
 ## 核心对象与规则
 
 - 新上传必须指定当前用户拥有的现存文件夹，服务端拒绝缺失或不可访问的目标；单项和批量移动也必须指定现存文件夹，不能移至未分类。
-- `user_dataset_folders` 保存用户自建分类文件夹，同一用户下名称唯一（上限 50 个）；`description`（`0118`，最多 500 字，默认空字符串）是 Web 中的项目说明。
+- `user_dataset_folders` 保存用户自建分类文件夹，同一用户下名称唯一（上限 50 个）；`description`（`0121`，最多 500 字，默认空字符串）是 Web 中的项目说明。
 - `user_dataset` 保存用户归属、`folder_id`（为 NULL 表示未分类）、文件名、格式、MIME、大小、对象键、SHA-256、用户范围的 `idempotency_key`、请求指纹和 `parse_task_id`；同一用户与幂等键只能对应同一份请求。`asset_kind` 区分 `document|audio|video`；可空的 `interview_session_id`、`interview_source_type`、`duration_ms` 表达与面试场次的关联。统一入库、关联、解绑和删除服务保证场次 ID 与来源成对设置或清空；数据库保留场次外键的 `ON DELETE SET NULL`，不使用 MySQL 禁止的跨字段 CHECK 约束该外键列。
 - 文件夹删除需要用户确认永久删除范围；服务端先检查全部资料，存在上传或解析中任务时拒绝整次删除。确认后清理源文件、解析结果、资料及任务记录，最后删除文件夹，不产生未分类资料。对象存储清理失败返回错误，保留数据库记录供重试；跨对象存储与数据库不具备原子回滚，部分对象可能已删除。
 - 原始文件进入私有对象存储；Worker 本地规范化 Markdown/TXT，通过 LinkParse 解析 PDF/DOCX。

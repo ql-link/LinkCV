@@ -14,6 +14,7 @@ from linkresume.modules.interviews.models import (
     JobApplicationStage,
 )
 from linkresume.modules.job_descriptions.models import GlobalCompany, JobDescription
+from linkresume.modules.job_pool.models import GlobalJob, GlobalJobSource
 from linkresume.modules.job_matches.models import JobResumeMatch
 from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
 from linkresume.modules.product_events.models import ProductEvent
@@ -29,8 +30,14 @@ from linkresume.modules.resumes.models import (
     Resume,
     ResumeTemplate,
 )
+from linkresume.modules.resumes.section_review_models import (
+    ResumeSectionReview,
+    ResumeSectionReviewItem,
+)
 
 __all__ = [
+    "GlobalJob",
+    "GlobalJobSource",
     "JobResumeMatch",
     "Announcement",
     "AnnouncementReadCursor",
@@ -54,6 +61,8 @@ __all__ = [
     "DocumentParseTask",
     "ProductEvent",
     "Resume",
+    "ResumeSectionReview",
+    "ResumeSectionReviewItem",
     "ResumeTemplate",
     "User",
     "UserDataset",
