@@ -16,6 +16,7 @@ from linkresume.api.router import api_router
 from linkresume.modules.agent.internal_routes import router as internal_agent_router
 from linkresume.core.config import Settings, load_settings
 from linkresume.core.database import Base, build_engine, build_session_factory
+from linkresume.application.job_pool.service import register_catalog
 from linkresume.core.errors import ApiError, install_error_handlers
 from linkresume.core.mq.publisher import MQPublisher
 from linkresume.core.mq.factory import build_mq_publisher
@@ -105,6 +106,7 @@ def create_app(
     speech_gateway: Any | None = None,
     linkrag_client: Any | None = None,
     create_schema: bool = False,
+    register_job_pool_catalog: bool | None = None,
 ) -> FastAPI:
     runtime_settings = settings or load_settings()
     runtime_emitter = event_emitter or configure_logging(runtime_settings)
@@ -121,6 +123,9 @@ def create_app(
     ):
         runtime_mq_publisher = build_mq_publisher(runtime_settings)
     engine = None
+    if register_job_pool_catalog is None:
+        # Test apps that inject sessions or create schemas opt in explicitly.
+        register_job_pool_catalog = session_factory is None and not create_schema
     if session_factory is None:
         engine = build_engine(runtime_settings.sqlalchemy_url)
         session_factory = build_session_factory(engine)
@@ -214,6 +219,16 @@ def create_app(
                 exc_info=True,
                 extra={"dependency": "minio", "error_code": "MINIO_UNAVAILABLE"},
             )
+        if register_job_pool_catalog:
+            try:
+                # Preset companies and sources always exist; only enabling is an admin choice.
+                await asyncio.to_thread(register_catalog, session_factory)
+            except Exception:
+                logger.warning(
+                    "Job pool catalog registration failed; it retries on next start",
+                    exc_info=True,
+                    extra={"dependency": "mysql", "error_code": "JOB_POOL_CATALOG_UNAVAILABLE"},
+                )
         try:
             await asyncio.to_thread(redis.ping)
         except Exception:

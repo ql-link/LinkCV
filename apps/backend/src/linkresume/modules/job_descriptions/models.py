@@ -334,6 +334,7 @@ class GlobalCompany(Base):
     )
     aliases: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, server_default=text("(JSON_ARRAY())"), comment="用于唯一精确匹配的公司别名；重名不自动关联")
     logo_source: Mapped[str] = mapped_column(String(16), nullable=False, default="unknown", server_default="unknown", comment="默认图标来源：unknown/official/plugin/admin")
+    logo_dhash: Mapped[str | None] = mapped_column(ascii_char(16), nullable=True, comment="当前站内公司图标的 64 位差值哈希，用于识别默认图；为空表示无图、旧外链或待回填")
     lock_version: Mapped[int] = mapped_column(unsigned_bigint_type(), nullable=False, default=0, server_default="0", comment="公司资料乐观锁版本")
     website_url: Mapped[str | None] = mapped_column(
         String(2048), nullable=True, comment="公司官网 HTTPS URL"
@@ -362,3 +363,45 @@ class GlobalCompany(Base):
         onupdate=func.now(),
         comment="最后更新时间（UTC）",
     )
+
+
+class GlobalCompanyLogoFingerprint(Base):
+    __tablename__ = "global_company_logo_fingerprint"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_global_company_logo_fingerprint"),
+        UniqueConstraint("dhash", name="uk_global_company_logo_fingerprint_dhash"),
+        Index("idx_global_company_logo_fingerprint_status", "review_status", "company_count"),
+        CheckConstraint("review_status IN ('normal','suspected','placeholder','allowed')",
+            name="ck_global_company_logo_fingerprint_review_status"),
+        CheckConstraint("LOWER(JSON_TYPE(company_names)) = 'array'", name="ck_global_company_logo_fingerprint_names"),
+        {"comment": "插件公司图标图像指纹分组与默认图审核状态", "sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True, comment="主键")
+    dhash: Mapped[str] = mapped_column(ascii_char(16), nullable=False, comment="规范化图片 64 位差值哈希的十六进制")
+    sample_sha256: Mapped[str] = mapped_column(ascii_char(64), nullable=False, comment="首个样图的规范化 WebP SHA-256，疑似后发布到公共命名空间供审核")
+    company_names: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, server_default=text("(JSON_ARRAY())"), comment="使用该图的不同规范化公司名，最多保存 20 个")
+    company_count: Mapped[int] = mapped_column(unsigned_int_type(), nullable=False, default=0, server_default="0", comment="使用该图的不同公司名数量，即 company_names 的长度")
+    review_status: Mapped[str] = mapped_column(ascii_varchar(16), nullable=False, default="normal", server_default="normal", comment="审核状态：normal/suspected/placeholder/allowed")
+    create_time: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="创建时间")
+    update_time: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
+class GlobalCompanyUnmatchedName(Base):
+    __tablename__ = "global_company_unmatched_name"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_global_company_unmatched_name"),
+        UniqueConstraint("normalized_name", name="uk_global_company_unmatched_name_normalized_name"),
+        Index("idx_global_company_unmatched_name_ignored_hits", "is_ignored", "hit_count"),
+        CheckConstraint("is_ignored IN (0,1)", name="ck_global_company_unmatched_name_ignored"),
+        {"comment": "插件图标上传时未能匹配任何公司的名称", "sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True, comment="主键")
+    normalized_name: Mapped[str] = mapped_column(String(200), nullable=False, comment="规范化公司名")
+    display_name: Mapped[str] = mapped_column(String(200), nullable=False, comment="最近一次出现时的原始公司名，用于展示和写入别名")
+    hit_count: Mapped[int] = mapped_column(unsigned_int_type(), nullable=False, default=1, server_default="1", comment="出现次数")
+    is_ignored: Mapped[int] = mapped_column(Integer().with_variant(mysql.TINYINT(unsigned=True), "mysql"), nullable=False, default=0, server_default="0", comment="是否已被管理员忽略：1是0否")
+    last_seen_time: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, comment="最近出现时间")
+    create_time: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="创建时间")
+    update_time: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间")

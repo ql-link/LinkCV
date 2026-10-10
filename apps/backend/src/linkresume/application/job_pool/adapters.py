@@ -25,7 +25,7 @@ from pydantic import ValidationError
 
 from linkresume.application.job_pool.catalog import entry_for, validate_source
 from linkresume.application.job_pool.html_jobs import HaierDetail
-from linkresume.application.job_pool import manufacturing
+from linkresume.application.job_pool import manufacturing, scope
 from linkresume.application.job_pool.logos import FIXED_LOGOS, extract_logo, logo_page, safe_logo_url
 from linkresume.application.job_pool.types import JobObservation, SyncResult, cities, clean_text, job_key, source_date
 
@@ -47,7 +47,7 @@ class OfficialHTTP:
     async def close(self):
         await self.client.aclose()
 
-    async def request(self, url, *, body=None, form=None, headers=None, as_text=False, same_url_retry=False):
+    async def request(self, url, *, body=None, form=None, headers=None, as_text=False, as_bytes=False, same_url_retry=False):
         parsed = urlsplit(url)
         if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port not in (None, 443):
             raise CollectionError("JOB_SOURCE_UNSAFE_URL")
@@ -81,6 +81,8 @@ class OfficialHTTP:
                         chunks.extend(chunk)
                         if len(chunks) > self.max_bytes:
                             raise CollectionError("JOB_SOURCE_RESPONSE_TOO_LARGE")
+                    if as_bytes:
+                        return bytes(chunks)
                     try:
                         return chunks.decode("utf-8") if as_text else json.loads(chunks)
                     except (ValueError, UnicodeDecodeError) as error:
@@ -108,6 +110,48 @@ def category(value):
     return None
 
 
+def raw_category_text(value):
+    """Upstream category text for the admission scope."""
+    if isinstance(value, dict):
+        value = value.get("name")
+    text = str(value or "").strip()
+    return text[:200] or None
+
+
+# List-row fields that are enough to judge scope before an adapter fetches each job's detail.
+# Missing keys only disable the early skip; the final decision always uses the full job.
+PREVIEW = {
+    "tencent": ("RecruitPostName", "CategoryName", "LocationName"),
+    "feishu": ("title", "job_category", "city_list"),
+    "moka": ("title", "jobType", "locations"),
+    "moka-campus": ("title", "jobType", "locations"),
+    "haier": ("job_name", "func_desc", "location"),
+    "ant": ("name", "categoryName", "workLocations"),
+    "mihoyo": ("title", "competencyType", None),
+    "tme": ("name", "jobf_descr", "work_city"),
+    "alibaba-cpo": ("name", "categoryName", "workLocations"),
+    "alibaba": ("name", "categoryName", "workLocations"),
+    "kuaishou-social": ("name", "positionCategoryName", None),
+    "weimob": ("positionName", None, "workAddresses"),
+    "didi": ("jobName", "jobTypeName", "workArea"),
+    "bilibili": ("positionName", "postCodeName", "workLocation"),
+    "byd": ("positionName", "positionTypeName", None),
+    "hikvision": ("postName", "positionType", "workPlace"),
+    "dayee": ("postName", "postTypeName", "workPlaceStr"),
+}
+
+
+def skip_listing(adapter, row):
+    fields = PREVIEW.get(adapter)
+    if fields is None:
+        return False
+    title_key, category_key, place_key = fields
+    title = row.get(title_key)
+    category_text = raw_category_text(row.get(category_key)) if category_key else None
+    places = text_locations(row.get(place_key)) if place_key else None
+    return scope.skip_listing(title.strip() if isinstance(title, str) else None, category_text, places or None)
+
+
 def text_locations(value):
     if isinstance(value, list):
         names = []
@@ -123,9 +167,11 @@ def text_locations(value):
 
 
 class OfficialAdapter:
-    def __init__(self, http: OfficialHTTP, *, max_pages=2000):
+    def __init__(self, http: OfficialHTTP, *, max_pages=2000, scoped=False):
         self.http = http
         self.max_pages = max_pages
+        # The worker enables the admission scope; parser tests read unscoped rows.
+        self.scoped = scoped
         self.sessions = {}
 
     async def collect(self, adapter, tenant, config):
@@ -139,6 +185,7 @@ class OfficialAdapter:
             for portal in config["portals"]:
                 page_fingerprints = set()
                 portal_ids = set()
+                portal_skipped = 0
                 initial_total = None
                 exhausted = False
                 for page in range(1, self.max_pages + 1):
@@ -162,11 +209,21 @@ class OfficialAdapter:
                         page_fingerprints.add(fingerprint)
                     for row in rows:
                         try:
+                            if self.scoped and skip_listing(adapter, row):
+                                # Out of scope from the list alone: skip the per-job detail request.
+                                portal_skipped += 1
+                                result.filtered_count += 1
+                                continue
                             job = await self.normalize(adapter, tenant, config, portal, row)
                             if job.source_job_key in portal_ids:
                                 result.is_complete = False
                                 result.error_code = "JOB_SOURCE_COUNT_CHANGED"
                             portal_ids.add(job.source_job_key)
+                            if self.scoped:
+                                job = scope.admit(job)
+                                if job is None:
+                                    result.filtered_count += 1
+                                    continue
                             previous = seen.get(job.source_job_key)
                             total_payload_bytes += len(job.model_dump_json().encode()) - (len(previous.model_dump_json().encode()) if previous else 0)
                             if total_payload_bytes > 64 * 1024 * 1024:
@@ -178,7 +235,7 @@ class OfficialAdapter:
                             result.error_code = "JOB_SOURCE_INVALID_JOB"
                     if len(rows) < size:
                         exhausted = True
-                        if initial_total is not None and len(portal_ids) != initial_total:
+                        if initial_total is not None and len(portal_ids) + portal_skipped != initial_total:
                             result.is_complete = False
                             result.error_code = "JOB_SOURCE_COUNT_MISMATCH"
                         break
@@ -203,6 +260,11 @@ class OfficialAdapter:
                 result.company_logo_url = await asyncio.wait_for(self.company_logo(adapter, tenant, config), timeout=8)
                 if result.company_logo_url is None:
                     result.company_logo_error_code = "JOB_SOURCE_LOGO_NOT_FOUND"
+                else:
+                    # Store the artwork itself; the address was checked against this tenant's hosts.
+                    source = entry_for(adapter, tenant, config)
+                    result.company_logo_bytes = await asyncio.wait_for(self.http.request(result.company_logo_url,
+                        as_bytes=True, headers={"Referer": source.url, "Accept": "image/*"}), timeout=8)
             except CollectionError as error:
                 result.company_logo_error_code = error.code
             except (TimeoutError, ValueError, TypeError):
@@ -229,7 +291,10 @@ class OfficialAdapter:
             return data["Posts"], data["Count"], size
         if adapter == "feishu":
             headers = {"website-path": portal} if portal != "default" else {}
-            value = await self.http.request(f"https://{tenant}/api/v1/search/job/posts", body={"keyword": "", "limit": size, "offset": offset, "portal_type": entry_for(adapter, tenant).portal_type}, headers=headers)
+            body = {"keyword": "", "limit": size, "offset": offset, "portal_type": entry_for(adapter, tenant).portal_type}
+            if self.scoped and entry_for(adapter, tenant).source_categories:
+                body["job_category_id_list"] = await self.feishu_categories(tenant, portal, headers)
+            value = await self.http.request(f"https://{tenant}/api/v1/search/job/posts", body=body, headers=headers)
             if value.get("code") != 0:
                 raise CollectionError("JOB_SOURCE_INVALID_RESPONSE")
             data = value["data"]
@@ -411,6 +476,22 @@ class OfficialAdapter:
             data = await self.bilibili_request(tenant, portal, path, body=body)
             return data["list"], data["total"], size
         raise CollectionError("JOB_SOURCE_ADAPTER_PENDING")
+
+    async def feishu_categories(self, tenant, portal, headers):
+        """Resolve the catalog's category names to this tenant's IDs once per sync."""
+        key = ("feishu-categories", tenant, portal)
+        if key not in self.sessions:
+            value = await self.http.request(f"https://{tenant}/api/v1/config/job/filters", headers=headers)
+            types = (value.get("data") or {}).get("job_type_list") if value.get("code") == 0 else None
+            if not isinstance(types, list):
+                raise CollectionError("JOB_SOURCE_INVALID_RESPONSE")
+            ids = {item.get("name"): str(item.get("id")) for item in types if isinstance(item, dict) and item.get("id")}
+            wanted = entry_for("feishu", tenant).source_categories
+            # A renamed category must not silently fall back to the capped unfiltered list.
+            if any(name not in ids for name in wanted):
+                raise CollectionError("JOB_SOURCE_CATEGORY_UNAVAILABLE")
+            self.sessions[key] = [ids[name] for name in wanted]
+        return self.sessions[key]
 
     async def kuaishou_social_request(self, path, params):
         # Anonymous browser signing material from the public careers client;
@@ -935,5 +1016,5 @@ class OfficialAdapter:
             location_data["raw"] = list(dict.fromkeys(raw_locations))
         return JobObservation(source_job_key=job_key(identifier, url), job_title=title,
             description=body, recruitment_channel=channel, employment_type=employment,
-            locations=location_data, job_category=category(raw_category),
+            locations=location_data, job_category=category(raw_category), source_category=raw_category_text(raw_category),
             salary_text=salary, source_url=url, source_attributes=attrs, published_at=published)

@@ -7,24 +7,29 @@
 | 接口 | 请求与响应 |
 | --- | --- |
 | `GET /api/job-pool` | keyword（去空白后 2～100 字符）、company_id（兼容单企业）、company_ids（重复 Query，最多200项，去重后按企业并集过滤）、city、job_category、recruitment_type（campus/internship/experienced）、cursor、limit（1～100，默认20）；返回 items、next_cursor，仅展示 active/missing |
-| `GET /api/job-pool/filters` | 返回 companies（id/name/aliases/logo_url/logo_source/lock_version）、cities、categories、recruitment_types；城市与类别来自当前可见岗位 |
+| `GET /api/job-pool/filters` | 返回 companies（id/name/aliases/logo_url/logo_source/lock_version）、cities、categories、recruitment_types；城市与类别来自当前可见岗位，类别为技术细分方向（算法、后端、前端、客户端、测试、数据、运维、安全、芯片、嵌入式、硬件、研发） |
 | `GET /api/job-pool/{id}` | 返回完整共享岗位及本人的 joined_application_id；closed 仍可查看 |
 | `POST /api/job-pool/{id}/join` | 无请求正文；返回 job_id、application_id、created；新建 201，复用 200，已下线新加入 409 |
-| `GET /api/admin/job-pool/sources` | items、sync_enabled、catalog_counts{companies,sources}（服务端目录统计，与已登记/启用数量独立），含 company_logo_url、真实支持渠道、配置、代次、状态、摘要 |
-| `POST /api/admin/job-pool/sources/bootstrap` | 幂等登记预置来源，首次默认停用，不采集、不覆盖已有来源配置 |
+| `GET /api/admin/job-pool/sources` | items、sync_enabled，含 company_logo_url、真实支持渠道、配置、代次、状态、摘要；预置目录在 API 启动时自动登记，不再提供登记接口 |
 | `POST /api/admin/job-pool/sources` | company_id、adapter_key、portal_config、is_enabled；仅接受白名单来源，重复身份 409 |
 | `PATCH /api/admin/job-pool/sources/{id}` | base_generation 与 is_enabled/portal_config；旧代次 409，禁止更换租户或缩减现有门户覆盖，取消旧任务写入 |
 | `POST /api/admin/job-pool/sources/{id}/sync` | 同步与来源均需开启；新排队 202，已有活动任务 200 |
 | `POST /api/admin/job-pool/sources/{id}/sync/accept` | expected_generation；仅最新完整异常结果可确认，重复确认幂等，旧结果 409 |
 | `GET /api/admin/companies` | 管理员专用，返回 items：id、name、aliases、logo_url、logo_source（unknown/official/plugin/admin）、lock_version（十进制字符串） |
-| `PATCH /api/admin/companies/{id}` | 管理员专用；base_version + aliases（最多30个、每个1～200字符；按 NFKC/大小写/空白规范化去重）和/或 logo_url（无凭据 HTTPS 地址）；成功增加版本，过期409 COMPANY_CONFLICT，非法400 COMPANY_INVALID，缺失404 COMPANY_NOT_FOUND |
+| `PATCH /api/admin/companies/{id}` | 管理员专用；base_version + aliases（最多30个、每个1～200字符；按 NFKC/大小写/空白规范化去重）和/或 logo_url。logo_url 为无凭据 HTTPS 地址时由服务端受限下载并转存为站内图（仅公网地址、禁跳转、8 秒、2MB），为 null 时清除图标并锁定为首字；成功增加版本，过期409 COMPANY_CONFLICT，非法400 COMPANY_INVALID，缺失404 COMPANY_NOT_FOUND，地址被拒422 COMPANY_LOGO_URL_REJECTED，下载失败502 COMPANY_LOGO_FETCH_FAILED，图片非法422 COMPANY_LOGO_INVALID，过大413 COMPANY_LOGO_TOO_LARGE，限流429 COMPANY_LOGO_RATE_LIMITED |
+| `PUT /api/admin/companies/{id}/logo` | 管理员专用；multipart `file` + `base_version`，上传图片设为公司图标；返回公司资料，错误同上（不含下载类） |
+| `GET /api/admin/companies/unmatched-names` | 管理员专用；插件上传图标时未能匹配公司的名称，items：id、name、hit_count、last_seen_at，按次数降序最多200条，不含已忽略 |
+| `POST /api/admin/companies/unmatched-names/{id}/assign` | company_id + base_version；把名称加为该公司别名并移除记录，返回公司资料；名称已匹配其他公司409 COMPANY_ALIAS_TAKEN，过期409 COMPANY_CONFLICT，别名满400 COMPANY_INVALID，记录不存在404 UNMATCHED_NAME_NOT_FOUND |
+| `POST /api/admin/companies/unmatched-names/{id}/ignore` | 忽略该名称，204；之后再出现只累计次数 |
+| `GET /api/admin/companies/logo-fingerprints` | status=suspected（默认）/placeholder/allowed；items：id、image_url、company_count（最多计到 20）、sample_names（最多5个）、status |
+| `POST /api/admin/companies/logo-fingerprints/{id}/mark-placeholder` 与 `/allow` | 标记为默认图（清空使用该图的插件来源公司图标）或放行；返回 id、status、cleared_company_count，幂等；不存在404 COMPANY_LOGO_FINGERPRINT_NOT_FOUND |
 | `GET /api/company-logos/{sha256}.webp` | 无需登录，只读取已发布共享命名空间中的规范化 WebP；未发布或格式非法404，存储读取失败503；public immutable 缓存、ETag/304；不能读取个人图片命名空间 |
 
-公司匹配将展示名、规范名、工商全称和管理员别名做 NFKC、大小写与空白规范化后的精确比较，仅唯一公司匹配时使用默认图或共享插件图片。多个公司同名/同别名时不自动匹配。官网和插件仅补空默认图；插件上传可将同一次导入的外链默认图升级为规范化共享 WebP，不能覆盖管理员或官网图。管理端修改默认图不会重写个人岗位和求职快照，也不会批量回填历史岗位。公共图片版本地址保持可读，以保留既有个人快照。共享存储失败不阻止个人图片保存。
+公司匹配将展示名、规范名、工商全称和管理员别名做 NFKC、大小写与空白规范化后的精确比较，仅唯一公司匹配时使用默认图或共享插件图片。多个公司同名/同别名时不自动匹配。公司图标只经一个入口写入站内 `/api/company-logos/{sha256}.webp`，优先级为管理员 > 官网 > 插件：管理员设置或清除后锁定；官网图可替换插件图和旧官网图；插件只补空。插件导入携带的外部图片链接不会成为公司默认图，只有上传的规范化字节才会。同一图像指纹被 3 个以上不同公司名上传即为疑似默认图，不再共享；管理员标记为默认图后清空相关插件来源公司图标，之后插件上传的该图既不共享也不保存为个人图片，`POST /api/job-descriptions/{id}/logo` 返回 200 与现有 logo_url（可为 null）、revision（无图为 `none`）。短边小于 32px 或近似纯色的图片不共享，但仍保存为个人图片。管理端修改默认图不会重写个人岗位和求职快照，也不会批量回填历史岗位。公共图片版本地址保持可读，以保留既有个人快照。共享存储失败不阻止个人图片保存。
 
-岗位摘要包含 id、company{id,name,logo_url}、title、category、recruitment_channel、employment_type、salary_text、locations{schema_version:1,cities,raw}、availability_status、published_at、first_seen_at、last_seen_at、source_url、joined_application_id，以及 source{name,is_enabled,sync_status,last_complete_at}；详情增加 description 和 source_attributes。`company.logo_url` 为可空 HTTPS 外链或 `/api/company-logos/{sha256}.webp` 公共托管地址，官网同步只补空，不覆盖已有公司图；新加入时复制到个人岗位和求职快照，重复加入不刷新。列表不返回正文或来源扩展属性。个人岗位响应兼容增加 `global_job_id: string|null`，不会自动刷新个人快照。同步摘要 `latest.company_logo_error_code` 单独表达图标未找到或请求失败，不改变岗位同步 `is_complete`、`error_code` 和上下线语义。
+岗位摘要包含 id、company{id,name,logo_url}、title、category、recruitment_channel、employment_type、salary_text、locations{schema_version:1,cities,raw}、availability_status、published_at、first_seen_at、last_seen_at、source_url、joined_application_id，以及 source{name,is_enabled,sync_status,last_complete_at}；详情增加 description 和 source_attributes。`company.logo_url` 为可空 `/api/company-logos/{sha256}.webp` 公共托管地址（迁移前遗留的官网或管理员外链在替换前仍可能是 HTTPS 地址）；新加入时复制到个人岗位和求职快照，重复加入不刷新。列表不返回正文或来源扩展属性。个人岗位响应兼容增加 `global_job_id: string|null`，不会自动刷新个人快照。同步摘要 `latest.company_logo_error_code` 单独表达图标未找到、请求失败、图片非法（JOB_SOURCE_LOGO_INVALID）、命中默认图（JOB_SOURCE_LOGO_PLACEHOLDER）或存储失败（JOB_SOURCE_LOGO_STORAGE_FAILED），不改变岗位同步 `is_complete`、`error_code` 和上下线语义。
 
-来源 `portal_config` 为 `{schema_version:1,host,portals,site_id}`；未知键、非白名单 host/portal/site_id、重复门户都拒绝。来源状态为 idle/queued/running/succeeded/partial/failed/anomalous/cancelled。摘要 `{schema_version:1,baseline_count,latest}`，latest 含 generation、baseline_count、observed_count、counts{created,updated,missing,closed,restored,invalid}、is_complete、is_reviewed、error_code、started_at、finished_at。
+来源 `portal_config` 为 `{schema_version:1,host,portals,site_id}`；未知键、非白名单 host/portal/site_id、重复门户都拒绝。来源状态为 idle/queued/running/succeeded/partial/failed/anomalous/cancelled。摘要 `{schema_version:1,baseline_count,scope_version,latest}`，latest 含 generation、baseline_count、observed_count、counts{created,updated,missing,closed,restored,invalid,filtered}（filtered 为收录范围外条数，旧摘要缺省视为 0）、is_complete、is_reviewed、error_code、started_at、finished_at。
 
 错误保持现有 JSON 错误结构：400 `JOB_POOL_INVALID_QUERY`/`JOB_POOL_INVALID_CURSOR`/`JOB_SOURCE_INVALID`/`JOB_SOURCE_COVERAGE_REDUCTION`；404 `JOB_POOL_NOT_FOUND`/`JOB_SOURCE_NOT_FOUND`；409 `JOB_POOL_CLOSED`/`JOB_POOL_SOURCE_CONFLICT`/`JOB_SOURCE_CONFLICT`/`JOB_SOURCE_EXISTS`/`JOB_POOL_SYNC_DISABLED`/`JOB_SOURCE_DISABLED`/`JOB_SYNC_STALE`/`JOB_SYNC_NOT_REVIEWABLE`。游标绑定筛选条件，改变筛选后不能复用。
 

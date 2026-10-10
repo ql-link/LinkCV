@@ -6,7 +6,7 @@ from io import BytesIO
 from typing import Iterator
 
 from minio.error import S3Error
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageOps, ImageStat, UnidentifiedImageError
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -25,7 +25,7 @@ def normalize_logo(data: bytes) -> bytes:
         raise ApiError(413, "COMPANY_LOGO_TOO_LARGE")
     try:
         with Image.open(BytesIO(data)) as source:
-            if source.format not in {"PNG", "JPEG", "WEBP", "GIF"}:
+            if source.format not in {"PNG", "JPEG", "WEBP", "GIF", "ICO"}:
                 raise ValueError("unsupported image")
             if source.width * source.height > 16_000_000:
                 raise ValueError("too many pixels")
@@ -44,6 +44,49 @@ def normalize_logo(data: bytes) -> bytes:
             return result
     except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as error:
         raise ApiError(422, "COMPANY_LOGO_INVALID") from error
+
+
+def _flatten(normalized: bytes) -> Image.Image:
+    with Image.open(BytesIO(normalized)) as image:
+        rgba = image.convert("RGBA")
+    # Transparent pixels render on a white surface in every consumer.
+    surface = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+    surface.alpha_composite(rgba)
+    return surface.convert("L")
+
+
+def logo_dhash(normalized: bytes) -> str:
+    """64-bit difference hash of a normalized logo; tolerant of resizing and recompression."""
+    pixels = list(_flatten(normalized).resize((9, 8), Image.Resampling.LANCZOS).getdata())
+    value = 0
+    for row in range(8):
+        for column in range(8):
+            value = (value << 1) | int(pixels[row * 9 + column] > pixels[row * 9 + column + 1])
+    return f"{value:016x}"
+
+
+def dhash_distance(left: str, right: str) -> int:
+    return (int(left, 16) ^ int(right, 16)).bit_count()
+
+
+def is_low_quality_logo(normalized: bytes) -> bool:
+    """Tiny or nearly uniform images are not useful as a shared company default."""
+    image = _flatten(normalized)
+    if min(image.size) < 32:
+        return True
+    return ImageStat.Stat(image).stddev[0] < 4
+
+
+def store_public_logo(db: Session, storage: AssetStorage, normalized: bytes, digest: str) -> str:
+    object_name = f"public-company-logos/{digest}.webp"
+    with _content_write_lock(db, digest):
+        try:
+            storage.stat(object_name)
+        except S3Error as error:
+            if error.code not in {"NoSuchKey", "NoSuchObject"}:
+                raise
+            storage.put(object_name, normalized, "image/webp", cache_control="public, max-age=31536000, immutable")
+    return f"/api/company-logos/{digest}.webp"
 
 
 def sync_application_logos(db: Session, job: JobDescription) -> None:
@@ -103,6 +146,12 @@ def attach_logo(
             raise ApiError(409, "COMPANY_LOGO_CONFLICT")
         object_name = f"company-logos/{digest}.webp"
         with _content_write_lock(db, digest):
+            if locked.source_type == "external_import":
+                from linkresume.application.job_descriptions.company_service import record_plugin_logo
+                if not record_plugin_logo(db, storage, locked, normalized, digest):
+                    # A confirmed platform placeholder is not this company's image.
+                    db.commit()
+                    return {"logo_url": locked.resolved_logo_url, "revision": locked.logo_sha256 or "none"}
             try:
                 storage.stat(object_name)
             except S3Error as error:
@@ -110,8 +159,6 @@ def attach_logo(
                     raise
                 # Never delete this shared object as compensation on failure.
                 storage.put(object_name, normalized, "image/webp", cache_control="private, no-cache")
-            from linkresume.application.job_descriptions.company_service import publish_plugin_logo
-            publish_plugin_logo(db, storage, locked, normalized, digest)
         locked.logo_sha256 = digest
         locked.lock_version += 1
         locked.update_time = utc_now()

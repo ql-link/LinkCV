@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from linkresume.application.job_pool import service
-from linkresume.application.job_pool.catalog import CATALOG, entry_for, validate_source
+from linkresume.application.job_pool.catalog import entry_for, validate_source
 from linkresume.application.job_pool.types import AcceptSync, SourceCreate, SourceUpdate
 from linkresume.core.database import get_db, utc_now
 from linkresume.core.errors import ApiError
@@ -76,20 +76,7 @@ def source_record(db, row):
 @admin_router.get("/sources")
 def sources(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     rows = db.scalars(select(GlobalJobSource).order_by(GlobalJobSource.id))
-    return {"items": [source_record(db, row) for row in rows], "sync_enabled": request.app.state.settings.job_pool_sync_enabled,
-        "catalog_counts": {"companies": len({entry.name.casefold() for entry in CATALOG}), "sources": len(CATALOG)}}
-
-
-@admin_router.post("/sources/bootstrap")
-def register_catalog(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
-    lock_active_user(db, admin.id)
-    try:
-        service.bootstrap(db)
-    except IntegrityError:
-        # Concurrent initial registration wins through existing company/source unique keys.
-        db.rollback()
-        service.bootstrap(db)
-    return {"items": [source_record(db, row) for row in db.scalars(select(GlobalJobSource).order_by(GlobalJobSource.id))]}
+    return {"items": [source_record(db, row) for row in rows], "sync_enabled": request.app.state.settings.job_pool_sync_enabled}
 
 
 @admin_router.post("/sources", status_code=201)

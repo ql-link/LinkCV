@@ -1767,6 +1767,9 @@ export type PoolJob = {
   source_attributes?: Record<string, unknown>;
 };
 export type SharedCompany = { id: string; name: string; aliases: string[]; logo_url: string | null; logo_source: "unknown" | "official" | "plugin" | "admin"; lock_version: string };
+export type UnmatchedCompanyName = { id: string; name: string; hit_count: number; last_seen_at: string };
+export type LogoFingerprintStatus = "suspected" | "placeholder" | "allowed";
+export type LogoFingerprint = { id: string; image_url: string; company_count: number; sample_names: string[]; status: LogoFingerprintStatus };
 export type PoolFilters = { companies: Array<{ id: string; name: string; aliases?: string[]; logo_url?: string | null }>; cities: string[]; categories: string[]; recruitment_types: string[] };
 export type PoolQuery = { keyword?: string; company_id?: string; company_ids?: string[]; city?: string; job_category?: string; recruitment_type?: string; cursor?: string };
 export function poolQueryParams(query: PoolQuery) {
@@ -1781,7 +1784,7 @@ export type PoolSource = {
   id: string; company_id: string; company_name: string; company_logo_url?: string | null; adapter_key: string; tenant_key: string;
   is_enabled: boolean; adapter_ready: boolean; sync_generation: string; sync_status: string;
   next_sync_at: string | null; last_complete_at: string | null; careers_url: string; supported_channels: string[];
-  last_sync_result: { baseline_count?: number | null; latest?: { generation: string; observed_count: number; counts: { created: number; updated: number; restored: number; closed: number; missing: number; invalid: number }; is_complete: boolean; is_reviewed: boolean; error_code: string | null; company_logo_error_code?: string | null; finished_at: string | null } };
+  last_sync_result: { baseline_count?: number | null; latest?: { generation: string; observed_count: number; counts: { created: number; updated: number; restored: number; closed: number; missing: number; invalid: number; filtered?: number }; is_complete: boolean; is_reviewed: boolean; error_code: string | null; company_logo_error_code?: string | null; finished_at: string | null } };
 };
 
 export const api = {
@@ -1791,11 +1794,22 @@ export const api = {
   },
   poolFilters: () => request<PoolFilters>("/api/job-pool/filters"),
   listSharedCompanies: () => request<{ items: SharedCompany[] }>("/api/admin/companies"),
-  updateSharedCompany: (company: SharedCompany, changes: { aliases?: string[]; logo_url?: string }) => request<SharedCompany>(`/api/admin/companies/${encodeURIComponent(company.id)}`, { method: "PATCH", body: { base_version: company.lock_version, ...changes } }),
+  /** `logo_url: null` clears the logo; a string is downloaded and stored by the server. */
+  updateSharedCompany: (company: SharedCompany, changes: { aliases?: string[]; logo_url?: string | null }) => request<SharedCompany>(`/api/admin/companies/${encodeURIComponent(company.id)}`, { method: "PATCH", body: { base_version: company.lock_version, ...changes } }),
+  uploadSharedCompanyLogo: (company: SharedCompany, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("base_version", company.lock_version);
+    return request<SharedCompany>(`/api/admin/companies/${encodeURIComponent(company.id)}/logo`, { method: "PUT", formData });
+  },
+  listUnmatchedCompanyNames: () => request<{ items: UnmatchedCompanyName[] }>("/api/admin/companies/unmatched-names"),
+  assignUnmatchedCompanyName: (id: string, company: SharedCompany) => request<SharedCompany>(`/api/admin/companies/unmatched-names/${encodeURIComponent(id)}/assign`, { method: "POST", body: { company_id: company.id, base_version: company.lock_version } }),
+  ignoreUnmatchedCompanyName: (id: string) => request<void>(`/api/admin/companies/unmatched-names/${encodeURIComponent(id)}/ignore`, { method: "POST" }),
+  listLogoFingerprints: (status: LogoFingerprintStatus = "suspected") => request<{ items: LogoFingerprint[] }>(`/api/admin/companies/logo-fingerprints?status=${status}`),
+  reviewLogoFingerprint: (id: string, decision: "mark-placeholder" | "allow") => request<{ id: string; status: LogoFingerprintStatus; cleared_company_count: number }>(`/api/admin/companies/logo-fingerprints/${encodeURIComponent(id)}/${decision}`, { method: "POST" }),
   getPoolJob: (id: string) => request<PoolJob>(`/api/job-pool/${encodeURIComponent(id)}`),
   joinPoolJob: (id: string) => request<{ job_id: string; application_id: string; created: boolean }>(`/api/job-pool/${encodeURIComponent(id)}/join`, { method: "POST" }),
-  listPoolSources: () => request<{ items: PoolSource[]; sync_enabled: boolean; catalog_counts?: { companies: number; sources: number } }>("/api/admin/job-pool/sources"),
-  bootstrapPoolSources: () => request<{ items: PoolSource[] }>("/api/admin/job-pool/sources/bootstrap", { method: "POST" }),
+  listPoolSources: () => request<{ items: PoolSource[]; sync_enabled: boolean }>("/api/admin/job-pool/sources"),
   setPoolSourceEnabled: (source: PoolSource, enabled: boolean) => request<PoolSource>(`/api/admin/job-pool/sources/${source.id}`, { method: "PATCH", body: { base_generation: source.sync_generation, is_enabled: enabled } }),
   syncPoolSource: (id: string) => request<PoolSource>(`/api/admin/job-pool/sources/${id}/sync`, { method: "POST" }),
   acceptPoolSync: (source: PoolSource) => request<PoolSource>(`/api/admin/job-pool/sources/${source.id}/sync/accept`, { method: "POST", body: { expected_generation: source.sync_generation } }),

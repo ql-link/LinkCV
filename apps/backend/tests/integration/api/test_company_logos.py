@@ -4,7 +4,7 @@ import hashlib
 import pytest
 from fastapi.testclient import TestClient
 from minio.error import S3Error
-from PIL import Image, PngImagePlugin
+from PIL import Image, ImageDraw, PngImagePlugin
 from sqlalchemy import select
 
 from linkresume.application.job_descriptions.logo_service import normalize_logo
@@ -50,8 +50,10 @@ class LogoStorage:
         self.objects.pop(name, None)
 
 
-def picture(color="red", *, metadata=None):
+def picture(color="red", *, metadata=None, mark=(40, 40, 200, 160)):
     image = Image.new("RGB", (400, 200), color)
+    # A visible mark keeps the fictional logo from being a uniform (low quality) image.
+    ImageDraw.Draw(image).rectangle(mark, fill="white")
     output = BytesIO()
     image.save(output, format="PNG", pnginfo=metadata)
     return output.getvalue()

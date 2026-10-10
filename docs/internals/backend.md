@@ -16,6 +16,8 @@ Logo 由 `application/job_pool/logos.py` 在岗位采集后独立识别，最多
 
 完整同步必须遍历所有登记门户并补齐必需详情，校验可靠总数且分页不重复。封顶、分页变化、缺失正文、详情失败、校验或网络错误均保留有效观察并记为 partial/failed，不能据此下线。飞书返回 10000 上限时也不能视为完整。有效基线至少 20 个且数量下降超过 50% 时进入 anomalous；管理员只可确认最新同代完整结果，确认幂等。缺失状态规则见 [求职中心功能](../features/career-center.md)。`last_sync_result` 保存有效 `baseline_count` 和最新 `latest` 摘要，不建立历史任务表。
 
+岗位池只收国内技术岗，规则在 `application/job_pool/scope.py`：岗位名排除词（销售、产品经理、设计、工艺、设备、质量、生产等）优先，再按岗位名和来源类别归入技术细分方向，来源类别只含「技术 / 研发 / 开发 / 算法 / 软件」时归为「研发」；地点按海外地名单（含港澳台）判断，全部为海外才不收录，多地岗位只保留非海外城市，未知地名和空地点保留。岗位名先去掉团队名（「腾讯营销-…」「… - 抖音平台产品」）和括号说明，只看角色部分；以「运营 / 营销 / 产品」等业务词结尾的角色不收，业务词出现在工程岗名中间时不影响（「营销算法工程师」）。Worker 以 `scoped=True` 采集：目录项的 `source_categories` 会在飞书请求中按名称查出本租户类别 ID 并作为 `job_category_id_list` 传入（目前只有字节跳动「研发」，用于避开飞书 1 万条上限），类别名找不到时本轮记 `JOB_SOURCE_CATEGORY_UNAVAILABLE` 而不回退到全量；`PREVIEW` 中的采集方式先用列表字段预筛，范围外的岗位不请求详情；其余在入库前用完整信息判定。被过滤的条数计入 `counts.filtered` 和完整性校验，不算无效。摘要顶层 `scope_version` 记录基准对应的规则版本，版本变化后的首轮完整同步只重新定基准、不判数量骤降；规则调整时递增 `SCOPE_VERSION`。规则上线后执行一次 `scripts/release/close_out_of_scope_jobs.py`（默认预览，`--execute` 写入），把存量范围外岗位标为 closed，范围内岗位改写类别和城市。
+
 适配器由项目维护，不安装第三方抓取包；公开接口调研参考 [Hiring-Radar](https://github.com/simonlin1212/Hiring-Radar)、[JobHunt-CLI](https://github.com/Enzoding/JobHunt-CLI) 和 [job-pro](https://github.com/HA7CH/job-pro)，参数与完整性规则以本仓库实现为准。预置 190 个来源、183 个公司或招聘主体名称（阿里业务集团分别列出；得物、京东、网易、快手、贝壳、宁德时代、徐工有独立渠道来源）。已有公司及本次扩展的实际覆盖如下，不能将某个渠道可用等同于企业全部渠道已接入：
 
 | 企业 | 适配器 | 已实现门户 |
@@ -176,7 +178,7 @@ Logo 由 `application/job_pool/logos.py` 在岗位采集后独立识别，最多
 
 OPPO 校园岗位池使用官网 pageNew / detail 匿名接口及固定公开 Tenant-Id=1000；按响应 current/size/total 遍历，详情 idRecruitPosition 必须与列表 idProjPosition 一致，不能替换为 atsProjectPositionId。完整正文包含职责、要求、知识技能、AI 能力要求与加分项；Graduate / doctor 识别为校招，Intern 只确认实习用工。未确认其他类型保持 unknown，不读取账号、申请进度或个人简历接口。
 
-标准岗位类别补充生产/制造、质量、供应链，供现有动态类别筛选使用；不认识的分类继续保持空值，不按标题推测。
+采集器仍先产出粗分类别（含生产/制造、质量、供应链），并保留来源类别原文；Worker 入库前由收录范围规则改写为技术细分方向，非技术岗不入库。
 
 腾讯音乐按响应 `_meta.page_size/current_page/total_count` 遍历，不假定请求的 pageSize 生效；社招和校园接口的岗位原生 ID 带渠道前缀以免不同命名空间碰撞。腾讯音乐日常实习、京东实习和联想实习仅确认用工形式，不推测其属于应届校招。北森、华为、大疆、京东校招、网易校招和联想使用各自响应总数及真实分页起点；大疆只有明确 `totalCount=0` 才将 `datas=null` 视为空列表。北森返回的省份·城市保留在 raw，城市筛选仅使用其中明确的城市名；快手和联想的城市编码必须通过官网字典转换，未知编码视为异常岗位，不推测地点。飞书门户名称来自各官网实际声明，不默认全部使用 index；门户标识同时用于列表请求头、详情请求头和岗位详情 URL。微盟仅调用公开职位页使用的匿名列表/详情接口，使用官网浏览器签名；按返回的 currPage/pageSize/count 核对分页，并读取 positionDesc 与 positionRequire 完整正文，详情必须匹配岗位 id。Moka 区域 API 主机由登记官网的固定元数据决定，管理端不能覆盖 API 主机；已有普通 Moka 来源仍走 app.mokahr.com。Moka 缺少正文时请求 `website/job` 并核对岗位 id 和租户 orgId；其列表总数不可靠，必须走到最后一页。阿里 CPO 从登记的社招页建立匿名 Cookie/CSRF 会话，逐条取详情并核对 id；职责和要求同时为空或只有 `-` 等占位符的岗位记为 invalid，整个结果保持 partial，不能触发下线。
 
@@ -201,11 +203,15 @@ LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验�
 
 `0120` 接在 `0119` 后。它仅为 `global_company` 增加 aliases（JSON 数组）、logo_source（unknown/official/plugin/admin）及 lock_version（BIGINT UNSIGNED），补充数组与来源 CHECK，并更新 logo_url 注释；不增加表、索引，不重写已有岗位或默认图。旧公司别名为空，旧图标来源为 unknown。
 
-`application/job_descriptions/company_service.py` 统一精确匹配展示名、规范名、工商全称和管理员别名。匹配规范化包含 NFKC、casefold 与空白合并，不推测集团子公司、简称或模糊名称。只有唯一候选才使用默认图片或共享插件图片；别名允许同名，不新增全局别名唯一约束，多个候选不会自动合并。新岗位缺图时复制当前默认图；外部导入携带 HTTPS 图标时以条件更新仅补空默认图，同步增加资料版本。重复导入只在用户确认替换后进入该链路，不处理历史批量匹配。
+`application/job_descriptions/company_service.py` 统一精确匹配展示名、规范名、工商全称和管理员别名。匹配规范化包含 NFKC、casefold 与空白合并，不推测集团子公司、简称或模糊名称。只有唯一候选才使用默认图片或共享插件图片；别名允许同名，不新增全局别名唯一约束，多个候选不会自动合并。新岗位缺图时复制当前默认图；外部导入携带的图片链接不再写入公司默认图。
 
-插件上传沿用现有图像大小、解码、去元数据与 WebP 规范化，再唯一匹配公司。只有公司缺图或默认图恰好是此次导入的 plugin 外链时，才把规范化字节发布到 `public-company-logos/{sha256}.webp` 并更新默认 URL。其他默认图保留。发布失败仅记录不含 URL、正文或图片内容的警告，个人图片继续保存。共享图与个人图使用独立对象命名空间：新增公共读取路由只允许 SHA-256 文件名，不提供任意对象访问；原个人图片路由继续校验归属。旧公共版本不因管理员替换默认图而删除，保证个人快照 URL 可读。
+`0122` 接在 `0121` 后，为 `global_company` 增加 `logo_dhash`（当前站内图标的 64 位差值哈希），新增两张表：`global_company_logo_fingerprint`（一种图片一行：dHash、样图、最多 20 个使用过它的规范化公司名 JSON、公司数和审核状态 normal/suspected/placeholder/allowed）和 `global_company_unmatched_name`（插件上传时未匹配的名称、次数、是否忽略）。迁移清空 `logo_source='plugin'` 的 HTTPS 外链默认图（下次插件上传补回）。部署后一次性执行 `scripts/release/migrate_company_logos.py`（默认 dry-run，`--execute` 写入）：转存管理员外链，失败保留原外链；并为已有站内图标回填 `logo_dhash`。官网外链在该来源下次同步时替换。
 
-`modules/job_descriptions/company_routes.py` 提供管理员公司列表与更新接口、公共图片读取接口。管理保存使用公司行锁和 base_version，官网/插件默认图变更也增加版本；旧版本409要求重新读取。别名和默认图保存不重写用户岗位或求职快照。数据库兼容发布需先查询目标 current、备份并升级至0120，再启动包含新字段的 API/Worker；不执行 downgrade。
+公司图标只经 `set_company_logo` 写入：调用方提供规范化 WebP 字节（管理员清除时为空），对象写入 `public-company-logos/{sha256}.webp` 后再锁定公司行，按管理员 > 官网 > 插件判断并写入 `logo_url`、`logo_dhash`、`logo_source` 和版本；锁顺序固定为内容锁 → 公司行。管理员可上传图片、填写地址或清除；地址由 `logo_fetch.py` 下载，只允许 HTTPS、解析结果全为公网地址并以已校验 IP 建立连接（保留 SNI/Host）、禁跳转、8 秒、2MB。官网图标由 Worker 经 `OfficialHTTP` 字节模式下载（沿用精确域名白名单），在 `finish` 中规范化并写入；ICO 可规范化，SVG 记为 `JOB_SOURCE_LOGO_INVALID`。图标错误只写 `company_logo_error_code`，不影响同步结果。
+
+插件上传沿用现有大小、解码、去元数据与 WebP 规范化，再由 `record_plugin_logo` 计算 64 位 dHash：与已标记默认图汉明距离不超过 6 时既不共享也不保存个人图片；否则把公司名加入该图片分组（最多记 20 个），不同公司名达到 3 个时转为疑似并把样图发布到公共命名空间供审核，疑似图不再共享。名称无法匹配任何公司时累加待匹配记录（只存名称和次数）；唯一匹配且图片不是疑似、短边不小于 32px、不近似纯色时以插件来源补空默认图。发布失败仅记录不含 URL、正文或图片内容的警告，个人图片继续保存。标记默认图时按 `logo_dhash` 清空使用该组图片的插件来源公司图标，已保存的个人图片和求职快照不回改。共享图与个人图使用独立对象命名空间：公共读取路由只允许 SHA-256 文件名；原个人图片路由继续校验归属。旧公共版本不因替换默认图而删除，保证个人快照 URL 可读。
+
+`modules/job_descriptions/company_routes.py` 提供管理员公司列表、更新、上传、待匹配名称与疑似默认图审核接口，以及公共图片读取接口。管理保存使用公司行锁和 base_version，自动来源写入也增加版本；旧版本409要求重新读取。别名和默认图保存不重写用户岗位或求职快照。预置岗位来源由 `create_app` 的 lifespan 调用 `job_pool.service.register_catalog` 幂等补齐（注入会话或建表的测试应用默认不执行）。数据库兼容发布需先查询目标 current、备份并升级至 `0122`，再启动 API/Worker，最后执行管理员外链转存脚本；不执行 downgrade。
 
 ## 功能与架构导航
 
@@ -526,13 +532,13 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ## 当前 Muse 目录迁移
 
-当前迁移链 head 为 `0121`（`0099 → 0100 → … → 0110 → 0111 → 0112 → 0113 → 0114 → 0115 → 0116 → 0117 → 0118 → 0119 → 0120 → 0121`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。`0111–0115` 的内容见下文「阿里巴巴 MySQL 规约整改」。
+当前迁移链 head 为 `0122`（`0099 → 0100 → … → 0110 → 0111 → 0112 → 0113 → 0114 → 0115 → 0116 → 0117 → 0118 → 0119 → 0120 → 0121 → 0122`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。`0111–0115` 的内容见下文「阿里巴巴 MySQL 规约整改」。
 
 `0118` 新增两张空表保存编辑器段落聚焦结果：`resume_section_review` 每段一行，`(resume_id, unit_id)` 唯一，保存最近一次分析的参照、原文与结果；`resume_section_review_item` 保存每条批注、自定义要求或起草的状态、回答、候选与采用时的改前改后，`status='done'` 当且仅当 `edit_json` 非空。两表都冗余 `user_id`、`resume_id`，不建外键；删除简历和注销账号时由应用层同事务清理。不修改存量表，回退依赖备份或新的向前迁移。
 
 `0117` 将内置 Muse 模板中仍匹配原始样本的示例姓名统一为“张三”，按已知模板 key 和原始姓名精确匹配，只修改 `data_json.identity.name.value`。管理员编辑过的姓名、自定义模板、已有用户简历与其他字段不修改；没有 schema 变化，重复执行不再改变数据。迁移为 forward-only，恢复原示例姓名依赖备份或新的向前迁移。
 
-`0121` 接在 `0120` 后，为 `user_dataset_folder` 增加 `description VARCHAR(500) NOT NULL DEFAULT ''`（Web 资料库“我的项目”的项目说明），存量文件夹为空字符串；纯增量字段，不回填、不改变其他列。迁移为 forward-only。
+`0121` 接在 `0120` 后，为 `user_dataset_folder` 增加 `description VARCHAR(500) NOT NULL DEFAULT ''`（Web 资料库“我的项目”的项目说明），存量文件夹为空字符串；纯增量字段，不回填、不改变其他列。迁移为 forward-only。`0122` 见上文「公司匹配与共享图标」。
 
 `0116` 只扩展 LLM 计费结构：线路增加价格来源模式和价格版本 ID，调用增加明确 UTC 请求时间、互斥计费用量、费用状态和结算金额；新增 `llm_price_revision`、`llm_cost_operation`、`llm_call_cost_revision` 保存完整规则、管理员操作和不可变费用证据。金额使用十进制定点数，供应商账单 ID 使用大小写敏感唯一约束，不新增数据库外键。迁移不补算或覆盖历史金额，不改动旧 `create_time`。新增版本表的时间由应用显式写 UTC，避免依赖数据库会话时区。发布须先备份、停止旧服务并执行迁移，再启动新版 Backend/Pi/Web；恢复依赖备份或新的向前迁移。费用算法和接口见 [Agent/LLM 运行时](agent-runtime.md) 与 [HTTP 契约](../api/http-contracts.md)。
 

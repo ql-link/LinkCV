@@ -114,7 +114,7 @@ async def main() -> None:
         )
     job_pool_task = None
     try:
-        job_pool_task = asyncio.create_task(run_job_pool_loop(JobPoolProcessor(session_factory, settings))) if settings.job_pool_sync_enabled else None
+        job_pool_task = asyncio.create_task(run_job_pool_loop(JobPoolProcessor(session_factory, settings, storage=storage))) if settings.job_pool_sync_enabled else None
         await run_consumer(
             resume_processor=resume_processor,
             dataset_processor=dataset_processor,
