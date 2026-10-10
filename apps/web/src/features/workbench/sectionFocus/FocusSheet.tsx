@@ -323,6 +323,9 @@ export function FocusSheet({
   ));
   const [askText, setAskText] = useState("");
   const [askLineId, setAskLineId] = useState<string | null>(null);
+  // The user request being reworded in the ask bar; it is set aside once the new one is sent.
+  const [revisingId, setRevisingId] = useState<string | null>(null);
+  const askInput = useRef<HTMLInputElement>(null);
   const [jobs, setJobs] = useState<JobDescriptionSummary[] | null>(null);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [draftAnswers, setDraftAnswers] = useState<string[]>(restored?.draftAnswers ?? []);
@@ -583,9 +586,45 @@ export function FocusSheet({
     });
   };
 
+  // The user's answers as request pairs, from follow-up questions or the thin-draft form.
+  const answerPairs = (item: Item) => {
+    const questions = item.note?.questions ?? (phase.kind === "ready" ? phase.result.draft_questions : []);
+    return item.answers.flatMap((reply, position) => {
+      const text = reply.trim();
+      return text && questions[position] ? [{ question: questions[position].prompt, answer: text }] : [];
+    });
+  };
+
+  // 「再调语气」works on the version on screen, not the original line: keep its content
+  // and the user's answers, and only change the tone.
+  const retune = (item: Item) => {
+    const shown = item.draft?.variants[item.selected]?.text ?? "";
+    const instruction = t("在这一版的基础上换一种语气，内容和事实不变：{text}", { text: shown });
+    void rewrite(item, {
+      lineId: item.lineId,
+      instruction: shown && instruction.length <= 300 ? instruction : item.instruction || t("换一种语气，事实不变"),
+      answers: answerPairs(item),
+    });
+  };
+
+  // Hand a line to the ask bar, so the user can say in their own words what to change.
+  const askAbout = (lineId: string | null, text = "") => {
+    setAskLineId(lineId && editable.has(lineId) ? lineId : null);
+    setAskText(text);
+    askInput.current?.focus();
+  };
+
+  const reviseAsk = (item: Item) => {
+    setRevisingId(item.id);
+    askAbout(item.lineId, item.instruction);
+  };
+
   const submitAsk = () => {
     const instruction = askText.trim();
     if (!instruction || !unit || phase.kind !== "ready") return;
+    const revised = items.find((item) => item.id === revisingId && item.status !== "done");
+    setRevisingId(null);
+    if (revised) skip(revised);
     const indexFromText = lineIndexFromText(instruction);
     const usable = (id: string | null | undefined) => (id && editable.has(id) ? id : null);
     const activeLine = items.find((item) => item.id === activeId)?.lineId ?? null;
@@ -654,6 +693,11 @@ export function FocusSheet({
     const draft = item.draft;
     const note = item.note;
     const question = note?.questions[item.qIndex];
+    const open = draft !== null && (item.status === "pending" || item.status === "todo");
+    // Each kind offers the next step that fits it: missing facts → revisit the answers,
+    // a user request → reword it, wording → another tone or the user's own words.
+    const asked = note?.kind === "missing" && note.questions.length > 0;
+    const canRetune = open && item.lineId !== null && (item.kind === "wording" || (item.kind === "missing" && !asked));
     return (
       <div className={`sf-panel sf-panel-${item.kind}`}>
         {note?.kind === "missing" && question && item.status !== "done" && (
@@ -721,12 +765,33 @@ export function FocusSheet({
                 </button>
               )}
               {item.status === "stale" && <button type="button" className="sf-btn" onClick={() => void analyze()}>{t("重新分析")}</button>}
-              {item.status === "error" && item.kind === "ask" && (
-                <button type="button" className="sf-btn" onClick={() => void rewrite(item, { lineId: item.lineId, instruction: item.instruction })}>{t("重试")}</button>
+              {item.status === "error" && (item.kind === "ask" || answerPairs(item).length > 0) && (
+                <button
+                  type="button"
+                  className="sf-btn"
+                  onClick={() => void rewrite(item, { lineId: item.lineId, instruction: item.kind === "ask" ? item.instruction : undefined, answers: answerPairs(item) })}
+                >
+                  {t("重试")}
+                </button>
               )}
-              {draft && (item.status === "pending" || item.status === "todo") && note?.kind !== "structure" && item.lineId && (
-                <button type="button" className="sf-btn" onClick={() => void rewrite(item, { lineId: item.lineId, instruction: item.instruction || t("换一种语气，事实不变") })}>
+              {asked && item.qIndex > 0 && item.status !== "loading" && (
+                <button type="button" className="sf-btn" title={t("回到第 1 题修改补充的信息")} onClick={() => patch(item.id, { qIndex: 0 })}>
+                  {t("改回答")}
+                </button>
+              )}
+              {item.kind === "ask" && item.status !== "loading" && (
+                <button type="button" className="sf-btn" title={t("把这条要求放回下方输入栏修改后重新生成")} onClick={() => reviseAsk(item)}>
+                  {t("改要求")}
+                </button>
+              )}
+              {canRetune && (
+                <button type="button" className="sf-btn" title={t("基于当前这版换一种语气，内容不变")} onClick={() => retune(item)}>
                   {t("再调语气")}
+                </button>
+              )}
+              {open && item.kind === "wording" && item.lineId && (
+                <button type="button" className="sf-btn" title={t("在下方输入栏写下你对这一句的要求")} onClick={() => askAbout(item.lineId)}>
+                  {t("说说要求")}
                 </button>
               )}
               {item.status !== "skipped" && (
@@ -1078,8 +1143,12 @@ export function FocusSheet({
         >
           <i className="sf-ring" aria-hidden="true" />
           <input
+            ref={askInput}
             value={askText}
-            onChange={(event) => setAskText(event.target.value)}
+            onChange={(event) => {
+              setAskText(event.target.value);
+              if (!event.target.value.trim()) setRevisingId(null);
+            }}
             placeholder={phase.kind === "loading" ? t("AI 分析完成后，可以在这里继续提要求") : t("还有想法？直接告诉 AI，比如「第 2 条写得更有冲击力，但别夸大」")}
             maxLength={300}
             disabled={phase.kind !== "ready" || !unit.lines.length}
@@ -1187,7 +1256,19 @@ function QuestionStep({
         </div>
       )}
       <label className="sf-answer">
-        <input value={value} onChange={(event) => setValue(event.target.value)} maxLength={300} placeholder={t("用你自己的话回答，AI 不会替你编")} autoFocus />
+        <input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter submits right away; Enter that confirms an IME candidate does not.
+            if (event.key !== "Enter" || event.nativeEvent.isComposing || event.keyCode === 229) return;
+            event.preventDefault();
+            if (value.trim()) onSubmit(value);
+          }}
+          maxLength={300}
+          placeholder={t("用你自己的话回答，AI 不会替你编")}
+          autoFocus
+        />
         <button type="submit" disabled={!value.trim()}>{index + 1 < total ? t("下一题 ↵") : t("生成 ↵")}</button>
       </label>
     </form>
