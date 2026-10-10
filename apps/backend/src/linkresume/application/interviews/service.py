@@ -141,17 +141,18 @@ class SessionWithApplication:
 def application_logo_url(application: JobApplication) -> str | None:
     """Project the captured company logo for both Web and miniprogram consumers.
 
-    The snapshot is imported from user-controlled job pages, so only two shapes
-    pass: an absolute HTTPS URL, or the location of the logo we store and serve
-    ourselves. Anything else stays unrendered rather than becoming a mixed-content
+    The snapshot is imported from user-controlled job pages, so only controlled shapes
+    pass: an absolute HTTPS URL, a public company image version, or this job's
+    ownership-protected image location. Anything else stays unrendered rather than becoming a mixed-content
     or `javascript:` source in a consumer.
     """
-    from linkresume.domain.company_logo import is_job_logo_url
+    from linkresume.domain.company_logo import is_job_logo_url, is_public_company_logo_url
 
     value = application.job_snapshot.get("logo_url")
     if isinstance(value, str) and (
         value.startswith("https://")
         or is_job_logo_url(value, application.job_description_id)
+        or is_public_company_logo_url(value)
     ):
         return value
     return None

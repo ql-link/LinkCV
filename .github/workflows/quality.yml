@@ -136,13 +136,13 @@ jobs:
             exit "$status"
           fi
 
-      - name: Verify account lifecycle and import concurrency on MySQL
+      - name: Verify account lifecycle and job pool concurrency on MySQL
         env:
           APP_ENV: development
           LINKRESUME_ENV_FILE: ${{ github.workspace }}/.env.nonexistent-migration-test
           # The suite creates and drops its own randomly named schema.
           LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://root:linkresume-root-test@127.0.0.1:3306/linkresume
-        run: uv run --directory apps/backend pytest tests/integration/migrations/test_account_completion_mysql.py -q
+        run: uv run --directory apps/backend pytest tests/integration/migrations/test_account_completion_mysql.py tests/integration/migrations/test_job_pool_mysql.py -q
 
   # 规则与文档同步检查只依赖 git 和 Python，不等待 Node 依赖安装，失败时约半分钟内给出结果。
   # check:contracts 需要 Web 依赖加载 vite.config.mjs，仍由 check job 的 npm run check 覆盖。

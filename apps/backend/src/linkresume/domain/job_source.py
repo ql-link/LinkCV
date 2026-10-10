@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from urllib.parse import SplitResult, urlsplit, urlunsplit
+from urllib.parse import SplitResult, parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 class InvalidJobSource(ValueError):
@@ -70,8 +70,10 @@ def normalize_job_source(raw_url: str) -> NormalizedJobSource:
             scheme=scheme,
             netloc=netloc,
             path=path,
-            query="",
-            fragment="",
+            query=urlencode(sorted((key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+                                   if not key.lower().startswith("utm_")
+                                   and key.lower() not in {"tracking", "ref", "referer_code", "sharecode", "from", "gclid"})),
+            fragment=parsed.fragment if parsed.fragment.startswith("/") else "",
         )
     )
     if len(canonical) > 2048:

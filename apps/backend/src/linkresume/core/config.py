@@ -161,6 +161,12 @@ class Settings(BaseSettings):
     )
 
     agent_enabled: bool = Field(default=False, alias="AGENT_ENABLED")
+    job_pool_sync_enabled: bool = Field(default=False, alias="JOB_POOL_SYNC_ENABLED")
+    job_pool_sync_interval_seconds: int = Field(default=43200, alias="JOB_POOL_SYNC_INTERVAL_SECONDS", ge=3600)
+    job_pool_sync_poll_seconds: int = Field(default=30, alias="JOB_POOL_SYNC_POLL_SECONDS", ge=1)
+    job_pool_sync_timeout_seconds: float = Field(default=20, alias="JOB_POOL_SYNC_TIMEOUT_SECONDS", gt=0, le=60)
+    job_pool_sync_max_pages: int = Field(default=2000, alias="JOB_POOL_SYNC_MAX_PAGES", ge=1, le=10000)
+    job_pool_sync_max_response_bytes: int = Field(default=2097152, alias="JOB_POOL_SYNC_MAX_RESPONSE_BYTES", ge=1024, le=16777216)
     pi_service_base_url: str = Field(
         default="http://127.0.0.1:8010", alias="PI_SERVICE_BASE_URL"
     )

@@ -5,6 +5,16 @@ import pytest
 from linkresume.domain.job_source import InvalidJobSource, normalize_job_source
 
 
+def test_official_query_and_hash_identify_distinct_jobs_without_tracking():
+    first = normalize_job_source("https://careers.tencent.com/jobdesc.html?postId=1001&utm_source=test")
+    second = normalize_job_source("https://careers.tencent.com/jobdesc.html?postId=1002")
+    assert first.url == "https://careers.tencent.com/jobdesc.html?postId=1001"
+    assert first.url_hash != second.url_hash
+    first = normalize_job_source("https://app.mokahr.com/social-recruitment/fictional/100#/job/1")
+    second = normalize_job_source("https://app.mokahr.com/social-recruitment/fictional/100#/job/2")
+    assert first.url.endswith("#/job/1") and first.url_hash != second.url_hash
+
+
 def test_boss_mobile_and_desktop_urls_share_one_source_identity() -> None:
     desktop = normalize_job_source(
         "https://www.zhipin.com/job_detail/abc_123.html?ka=search#company"

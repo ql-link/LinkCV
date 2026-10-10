@@ -1,0 +1,75 @@
+.adm-shell:has(.pool-admin) { column-gap: 0; padding: 16px; background: #f4f4f2; }
+.adm-main:has(.pool-admin) { border: 0; border-radius: 16px; box-shadow: none; }
+.adm-content:has(> .pool-admin) { max-width: none; gap: 0; padding: 32px; }
+.pool-admin { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
+.pool-admin-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.pool-admin-metric { display: flex; flex-direction: column; gap: 4px; border-radius: 8px; padding: 16px; background: var(--ui-surface-subtle); }
+.pool-admin-metric strong { font-size: 24px; font-weight: 500; line-height: 38px; }
+.pool-admin-metric > span { color: var(--ui-text-secondary); font-size: 12px; line-height: 19px; }
+.pool-admin-metric small { color: var(--ui-text-subtle); font-size: 11px; line-height: 18px; }
+.pool-admin-filters { display: flex; align-items: center; gap: 8px; }
+.pool-admin-filters .pool-search-field { width: 350px; }
+.pool-admin-filters .pool-filter { width: 180px; }
+.pool-admin-filters > button { margin-left: auto; }
+.pool-table-scroll { overflow-x: auto; border: 1px solid var(--ui-border); border-radius: 8px; }
+.pool-source-table { width: 100%; min-width: 940px; border-collapse: collapse; font-size: 11px; line-height: 18px; text-align: left; }
+.pool-source-table th { height: 43px; background: var(--ui-surface-subtle); color: var(--ui-text-secondary); font-weight: 400; }
+.pool-source-table th, .pool-source-table td { padding: 12px; }
+.pool-source-table td { border-top: 1px solid var(--ui-border); color: var(--ui-text-secondary); vertical-align: middle; }
+.pool-source-table th:nth-child(1) { width: 21.3%; }
+.pool-source-table th:nth-child(2), .pool-source-table th:nth-child(3) { width: 14.2%; }
+.pool-source-table th:nth-child(4) { width: 16.8%; }
+.pool-source-company { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.pool-source-company a { color: var(--ui-foreground); font-size: 12px; font-weight: 500; line-height: 19px; text-decoration: none; }
+.pool-source-company a:hover { text-decoration: underline; }
+.pool-source-table td > small { display: block; margin: 4px 0 0 32px; color: var(--ui-text-muted); font-size: 10px; overflow-wrap: anywhere; }
+.pool-source-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pool-source-actions button { border: 0; padding: 0; background: transparent; color: var(--ui-primary); font: 400 11px/18px var(--ui-font-sans); cursor: pointer; }
+.pool-source-actions button + button::before { margin-right: 8px; color: var(--ui-text-subtle); content: "·"; }
+.pool-source-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.pool-admin-hint { color: var(--ui-text-secondary); font-size: 11px; line-height: 18px; }
+.pool-admin-loading { border-radius: 8px; padding: 24px; background: var(--ui-surface-subtle); }
+.pool-sync-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.pool-sync-metrics > div { display: flex; flex-direction: column; gap: 4px; border-radius: 8px; padding: 12px; background: var(--ui-surface-subtle); }
+.pool-sync-metrics strong { font-size: 24px; font-weight: 500; line-height: 38px; }
+.pool-sync-metrics span { font-size: 12px; line-height: 19px; }
+.pool-sync-details { display: flex; flex-direction: column; gap: 16px; border-top: 1px solid var(--ui-border); margin: 0; padding-top: 16px; font-size: 12px; line-height: 19px; }
+.pool-sync-details > div { display: flex; justify-content: space-between; gap: 12px; }
+.pool-sync-details dd { margin: 0; }
+.pool-official-link { width: fit-content; color: var(--ui-primary); font-size: 12px; line-height: 19px; }
+.pool-confirm-content { display: flex; flex-direction: column; gap: 16px; }
+.adm-modal:has(.pool-confirm-content) { padding: 24px; border: 1px solid #ececea; border-radius: 12px; }
+.adm-modal:has(.pool-confirm-content) .adm-modal-head h2 { font: 600 20px/32px "Noto Serif SC", serif; }
+.adm-modal:has(.pool-confirm-content) .adm-modal-foot button { height: 34px; min-height: 34px; border-radius: 18px; font-size: 13px; }
+.adm-modal:has(.pool-confirm-content) .adm-modal-foot button:last-child { background: #3f6fd8; color: white; }
+@media (max-width: 1023px) { .adm-shell:has(.pool-admin) { padding: 0; } .adm-content:has(> .pool-admin) { padding: 56px 16px 32px; } .pool-admin-filters { flex-wrap: wrap; } .pool-admin-filters .pool-search-field { width: 100%; } }
+@media (max-width: 580px) { .pool-admin-metrics { grid-template-columns: minmax(0, 1fr); } .pool-admin-metric { gap: 2px; padding: 12px; } .pool-admin-filters .pool-filter { width: calc(50% - 4px); } }
+.pool-companies .pool-admin-filters .pool-search-field { width: 400px; }
+.pool-companies .pool-admin-filters .pool-filter { width: 170px; }
+.pool-company-table { width: 100%; min-width: 1008px; table-layout: fixed; border-collapse: collapse; font-size: 12px; line-height: 19px; text-align: left; }
+.pool-company-table th { height: 52px; background: #fafaf9; color: var(--ui-text-secondary); font-weight: 400; }
+.pool-company-table th, .pool-company-table td { padding: 16px; }
+.pool-company-table th:nth-child(1) { width: 270px; }
+.pool-company-table th:nth-child(2) { width: 300px; }
+.pool-company-table th:nth-child(3) { width: 260px; }
+.pool-company-table td { border-top: 1px solid var(--ui-border); color: var(--ui-text-secondary); overflow-wrap: anywhere; }
+.pool-company-identity, .pool-company-editor-identity { display: flex; align-items: center; gap: 8px; }
+.pool-company-identity strong { color: var(--ui-foreground); font-size: 13px; font-weight: 500; line-height: 21px; }
+.pool-company-actions { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.pool-company-actions button { border: 0; padding: 0; background: transparent; color: var(--ui-primary); font: inherit; cursor: pointer; }
+.pool-company-actions span { color: var(--ui-text-subtle); }
+.pool-company-explainer { display: flex; flex-direction: column; gap: 8px; border-radius: 8px; padding: 20px; background: #fafaf9; }
+.pool-company-explainer h2 { margin: 0; font-size: 14px; font-weight: 500; line-height: 22px; }
+.pool-company-explainer p, .pool-company-editor-identity p, .pool-company-help p { margin: 0; color: var(--ui-text-secondary); font-size: 12px; line-height: 19px; }
+.pool-company-editor-identity { gap: 12px; }
+.pool-company-editor-identity strong { font-size: 16px; font-weight: 500; line-height: 26px; }
+.pool-company-preview { gap: 24px; border-radius: 8px; padding: 24px; background: #fafaf9; }
+.pool-company-preview > div { display: flex; flex-direction: column; gap: 4px; }
+.pool-company-field-label { font-size: 13px; font-weight: 500; line-height: 21px; }
+.pool-company-aliases { display: flex; flex-wrap: wrap; gap: 8px; border-radius: 8px; padding: 12px; background: #fafaf9; }
+.pool-company-alias { border: 0; border-radius: 4px; padding: 4px 8px; background: #f4f4f2; color: var(--ui-text-secondary); font: 400 11px/18px var(--ui-font-sans); }
+button.pool-company-alias { cursor: pointer; }
+.pool-company-alias-input { display: flex; gap: 8px; }
+.pool-company-alias-input input { flex: 1; min-width: 0; }
+.pool-company-help { display: flex; flex-direction: column; gap: 4px; }
+@media (max-width: 1023px) { .pool-companies .pool-admin-filters .pool-search-field { width: 100%; } }

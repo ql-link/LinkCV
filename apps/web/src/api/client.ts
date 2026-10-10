@@ -800,6 +800,7 @@ export type JobMatchRecommendations = {
 };
 
 export type JobDescriptionSummary = {
+  global_job_id?: string | null;
   id: string;
   job_title: string;
   company_name: string;
@@ -1696,7 +1697,58 @@ export {
   request as apiRequest,
 };
 
+export type PoolJob = {
+  id: string;
+  company: { id: string; name: string; logo_url?: string | null };
+  title: string;
+  category: string | null;
+  recruitment_channel: "campus" | "experienced" | "unknown";
+  employment_type: "internship" | "full_time" | "part_time" | "contract" | "unknown";
+  salary_text: string | null;
+  locations: { schema_version: 1; cities: string[]; raw: string[] };
+  availability_status: "active" | "missing" | "closed";
+  published_at: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+  source_url: string;
+  joined_application_id: string | null;
+  source: { name: string; is_enabled: boolean; sync_status: string; last_complete_at: string | null };
+  description?: string;
+  source_attributes?: Record<string, unknown>;
+};
+export type SharedCompany = { id: string; name: string; aliases: string[]; logo_url: string | null; logo_source: "unknown" | "official" | "plugin" | "admin"; lock_version: string };
+export type PoolFilters = { companies: Array<{ id: string; name: string; aliases?: string[]; logo_url?: string | null }>; cities: string[]; categories: string[]; recruitment_types: string[] };
+export type PoolQuery = { keyword?: string; company_id?: string; company_ids?: string[]; city?: string; job_category?: string; recruitment_type?: string; cursor?: string };
+export function poolQueryParams(query: PoolQuery) {
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (Array.isArray(value)) [...new Set(value)].sort().forEach((id) => params.append(key, id));
+    else if (value) params.set(key, value);
+  });
+  return params;
+}
+export type PoolSource = {
+  id: string; company_id: string; company_name: string; company_logo_url?: string | null; adapter_key: string; tenant_key: string;
+  is_enabled: boolean; adapter_ready: boolean; sync_generation: string; sync_status: string;
+  next_sync_at: string | null; last_complete_at: string | null; careers_url: string; supported_channels: string[];
+  last_sync_result: { baseline_count?: number | null; latest?: { generation: string; observed_count: number; counts: { created: number; updated: number; restored: number; closed: number; missing: number; invalid: number }; is_complete: boolean; is_reviewed: boolean; error_code: string | null; company_logo_error_code?: string | null; finished_at: string | null } };
+};
+
 export const api = {
+  listPoolJobs: (query: PoolQuery = {}) => {
+    const params = poolQueryParams(query);
+    return request<{ items: PoolJob[]; next_cursor: string | null }>(`/api/job-pool?${params}`);
+  },
+  poolFilters: () => request<PoolFilters>("/api/job-pool/filters"),
+  listSharedCompanies: () => request<{ items: SharedCompany[] }>("/api/admin/companies"),
+  updateSharedCompany: (company: SharedCompany, changes: { aliases?: string[]; logo_url?: string }) => request<SharedCompany>(`/api/admin/companies/${encodeURIComponent(company.id)}`, { method: "PATCH", body: { base_version: company.lock_version, ...changes } }),
+  getPoolJob: (id: string) => request<PoolJob>(`/api/job-pool/${encodeURIComponent(id)}`),
+  joinPoolJob: (id: string) => request<{ job_id: string; application_id: string; created: boolean }>(`/api/job-pool/${encodeURIComponent(id)}/join`, { method: "POST" }),
+  listPoolSources: () => request<{ items: PoolSource[]; sync_enabled: boolean; catalog_counts?: { companies: number; sources: number } }>("/api/admin/job-pool/sources"),
+  bootstrapPoolSources: () => request<{ items: PoolSource[] }>("/api/admin/job-pool/sources/bootstrap", { method: "POST" }),
+  setPoolSourceEnabled: (source: PoolSource, enabled: boolean) => request<PoolSource>(`/api/admin/job-pool/sources/${source.id}`, { method: "PATCH", body: { base_generation: source.sync_generation, is_enabled: enabled } }),
+  syncPoolSource: (id: string) => request<PoolSource>(`/api/admin/job-pool/sources/${id}/sync`, { method: "POST" }),
+  acceptPoolSync: (source: PoolSource) => request<PoolSource>(`/api/admin/job-pool/sources/${source.id}/sync/accept`, { method: "POST", body: { expected_generation: source.sync_generation } }),
   me: getCurrentUser,
   authCapabilities: () =>
     request<AuthCapabilities>("/api/auth/capabilities"),

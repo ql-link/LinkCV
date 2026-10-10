@@ -14,6 +14,7 @@ import {
   loadDatasetsPage,
   loadHomePage,
   loadInterviewCenterPage,
+  loadOpportunitiesPage,
   loadMockInterviewPage,
   loadResumeTemplatesPage,
   scheduleAuthenticatedWorkspacePreload,
@@ -37,6 +38,7 @@ const ResumeCreatePage = lazy(() => import("./features/home/ResumeCreatePage").t
 const MockInterviewPage = lazy(() => loadMockInterviewPage().then((module) => ({ default: module.MockInterviewPage })));
 const ResumeTemplatesPage = lazy(() => loadResumeTemplatesPage().then((module) => ({ default: module.ResumeTemplatesPage })));
 const JobDetailPage = lazy(() => import("./features/jobs/JobDetailPage").then((module) => ({ default: module.JobDetailPage })));
+const OpportunitiesPage = lazy(() => loadOpportunitiesPage().then((module) => ({ default: module.OpportunitiesPage })));
 const InterviewCenterPage = lazy(() => loadInterviewCenterPage().then((module) => ({ default: module.InterviewCenterPage })));
 const loadLandingPage = () => import("./features/landing/LandingPage");
 const LandingPage = lazy(() => loadLandingPage().then((module) => ({ default: module.LandingPage })));
@@ -70,6 +72,7 @@ export function AppRouteLoadingFallback() {
     || route.kind === "resumeCreate"
     || route.kind === "editor"
     || route.kind === "jobDetail"
+    || route.kind === "opportunities"
     || route.kind === "interviews"
     || route.kind === "datasets"
     || route.kind === "mockInterview"
@@ -170,6 +173,7 @@ function AppContent() {
         || route.kind === "resumeCreate"
         || route.kind === "editor"
         || route.kind === "jobDetail"
+        || route.kind === "opportunities"
         || route.kind === "interviews"
         || route.kind === "datasets"
         || route.kind === "mockInterview"
@@ -311,12 +315,15 @@ function AppContent() {
     route.kind === "resumes"
     || route.kind === "templates"
     || route.kind === "jobDetail"
+    || route.kind === "opportunities"
     || route.kind === "interviews"
     || route.kind === "datasets"
     || route.kind === "account"
   ) {
     const activeSection: V3Section = route.kind === "resumes"
       ? "resumes"
+      : route.kind === "opportunities"
+        ? "opportunities"
       : route.kind === "templates"
         ? "templates"
       : route.kind === "account"
@@ -332,6 +339,7 @@ function AppContent() {
         <V3Shell active={activeSection}>
           {route.kind === "resumes" && <HomePage />}
           {route.kind === "templates" && <ResumeTemplatesPage />}
+          {route.kind === "opportunities" && <OpportunitiesPage jobId={route.jobId} />}
           {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
           {route.kind === "interviews" && (
             <InterviewCenterPage

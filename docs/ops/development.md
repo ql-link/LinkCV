@@ -1,5 +1,22 @@
 # 本地开发与配置
 
+## 官方岗位池同步
+
+岗位池沿用现有 FastAPI、MySQL 和 Worker，不增加 Compose 服务或队列。先将目标环境数据库按正常发布顺序升级到 `0119`，再以明确的本地或共享 Dev profile 启动 API/Worker。管理员在 `/admin/job-pool` 登记预置企业，按实际覆盖渠道启用需要的来源；首次登记默认停用。来源可启用但全局开关关闭时，不执行采集，也不能手动排队。
+
+| 环境变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `JOB_POOL_SYNC_ENABLED` | false | API 排队和 Worker 采集开关，两者需加载相同值 |
+| `JOB_POOL_SYNC_INTERVAL_SECONDS` | 43200 | 每家定时同步间隔，至少3600秒 |
+| `JOB_POOL_SYNC_POLL_SECONDS` | 30 | Worker 来源扫描周期 |
+| `JOB_POOL_SYNC_TIMEOUT_SECONDS` | 20 | 单请求超时，上限60秒 |
+| `JOB_POOL_SYNC_MAX_PAGES` | 2000 | 每个门户页数上限，达到上限记为部分同步 |
+| `JOB_POOL_SYNC_MAX_RESPONSE_BYTES` | 2097152 | 单响应大小上限，拒绝超大响应 |
+
+两个并行来源、120秒租约、30秒续租和每来源至少0.5秒请求间隔由岗位池 Worker 实现。没有登录、验证码或页面浏览器回退；被拒绝、临时网络故障和非 JSON 响应记为失败/部分同步，保留已发现岗位，不据此下线。公开字段未标明时保持 unknown/null。接口与后台统计见 [HTTP 契约](../api/http-contracts.md#官网岗位池)。
+
+定向验证可运行 `uv run --directory apps/backend pytest tests/unit/domain/test_job_pool_adapters.py tests/integration/api/test_job_pool.py` 与 `npm --prefix apps/web run test -- src/features/jobs/OpportunitiesPage.test.tsx src/features/admin/JobPoolPanel.test.tsx`。真实 MySQL 验证需显式设置 `LINKRESUME_TEST_MYSQL_URL` 指向 localhost 临时 `linkresume` 库；专项测试创建并删除随机隔离库，不接共享 Dev/Production。官网抽样成功不代表全量采集或生产入库已完成。
+
 简历当前内容切换由 schema `0084` 完成；`RESUME_VERSION_LIMIT` 已删除，不再配置历史名额。随后 `0089` 与 `0090` 退役资料替换/清理表、旧面试素材表和简历历史表，旧版本接口已移除。小程序使用 `/api/miniprogram/v2/resumes` 与 `lock_version`，旧端点在切换构建中返回 426；发布前须先升级数据库，再同步切换 API 与客户端。
 
 当前简历关联迁移随 `0084` 执行：停止旧写入并备份，核实目标 current 后升级，将旧求职引用映射为同一所有者的 `resume_id`；无法映射者保持未关联且保留原引用供核对。既有环境升级到 `0089`/`0090` 前，还必须停止旧 API 和 Worker，完成资料操作收尾与面试素材迁移；具体顺序和不可回退边界见[部署说明](deployment.md#资料操作表退役0089)和[面试素材与简历历史表退役](deployment.md#面试素材与简历历史表退役0090)。
