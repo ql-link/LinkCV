@@ -51,10 +51,10 @@ export function PluginInstallDialog({ onClose }: { onClose: () => void }) {
     }
   };
   return (
-    <Dialog width={600} label={t("安装 LinkResume 岗位采集插件")} onClose={onClose} className="job-dialog plugin-install-dialog" closable={false}>
+    <Dialog width={600} label={t("安装 LinkResume 求职助手插件")} onClose={onClose} className="job-dialog plugin-install-dialog" closable={false}>
       <div className="v3-dialog-body plugin-dialog-body">
         <div className="plugin-dialog-header">
-          <h2 id="plugin-install-title" className="v3-dialog-title">{t("安装 LinkResume 岗位采集插件")}</h2>
+          <h2 id="plugin-install-title" className="v3-dialog-title">{t("安装 LinkResume 求职助手插件")}</h2>
           <button className="v3-dialog-close plugin-dialog-close" type="button" aria-label={t("关闭插件安装说明")} onClick={onClose}><Icon name="x" size={16} /></button>
         </div>
         <p className="v3-dialog-sub">{t("在招聘网站上一键把岗位存进岗位看板。")}<span className="plugin-dialog-chip"><Icon name="layout" size={12} />{t("支持 Chrome / Edge")}</span></p>
@@ -72,7 +72,7 @@ export function PluginInstallDialog({ onClose }: { onClose: () => void }) {
                 {release && (
                   <div className="plugin-release-row">
                     <span className="plugin-release-icon" aria-hidden="true"><Icon name="puzzle" size={14} /></span>
-                    <strong className="plugin-release-name">{t("LinkResume 岗位采集插件")}</strong>
+                    <strong className="plugin-release-name">{t("LinkResume 求职助手插件")}</strong>
                   </div>
                 )}
                 {downloadError && <p className="plugin-release-state is-error" role="alert">{downloadError}</p>}
@@ -86,7 +86,7 @@ export function PluginInstallDialog({ onClose }: { onClose: () => void }) {
           </li>
           <PluginStep index="2" title={t("打开扩展管理页")}>{t("在浏览器地址栏输入 ")}<code>chrome://extensions</code>{t("；使用 Edge 时输入 ")}<code>edge://extensions</code>。</PluginStep>
           <PluginStep index="3" title={t("加载插件并固定到工具栏")}>{t("开启“开发者模式”，点击“加载已解压的扩展程序”，选择包含 ")}<code>manifest.json</code>{t(" 的解压目录，再把“LinkResume 岗位采集”固定到工具栏。")}</PluginStep>
-          <PluginStep index="4" title={t("打开岗位并核对导入")}>{t("先登录 LinkResume，再打开 BOSS 直聘岗位详情页，点击插件图标核对信息后“确认导入”，岗位会出现在“待投递”。插件不会自动投递或批量采集。")}</PluginStep>
+          <PluginStep index="4" title={t("打开岗位并核对导入")}>{t("先登录 LinkResume，再打开 BOSS 直聘岗位详情页，点击插件图标，在侧边栏选择“岗位采集”，核对信息后“确认导入”，岗位会出现在“待投递”。插件不会自动投递或批量采集。网申填写可从简历菜单选择“用于插件网申”，再到招聘表单打开插件开始填写。")}</PluginStep>
           <PluginStep index="5" title={t("查看岗位与更新插件")} hidden={!showUpdateHelp}>{t("导入成功后可在求职记录中打开完整岗位并继续编辑。首次安装后请刷新已经打开的招聘页面；更新时覆盖原解压目录，并在扩展管理页点击“重新加载”。")}</PluginStep>
         </ol>
       </div>

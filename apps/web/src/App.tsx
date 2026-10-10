@@ -8,6 +8,7 @@ import { api, ApiRequestError } from "./api/client";
 import { authPath, editorPath, legacyCareerRedirect, navigateTo, useAppRoute } from "./routing";
 import { applyRouteSeo } from "./seo";
 import { useResumeStore } from "./store/resumeStore";
+import { sendPluginCommand } from "./features/plugin/bridge";
 import {
   loadAccountPage,
   loadAssistantPage,
@@ -111,6 +112,9 @@ function AppContent() {
   const [routeError, setRouteError] = useState<{ resumeId: string; message: string } | null>(null);
   const authStatus = useResumeStore((state) => state.authStatus);
   const userId = useResumeStore((state) => state.user?.id);
+  useEffect(() => {
+    if (authStatus !== "checking" && !isAdminArea) void sendPluginCommand("AUTH_CHANGED").catch(() => {});
+  }, [authStatus, userId, isAdminArea]);
   useEffect(() => {
     if (isAdminArea) { setLocale("zh-CN", false); return; }
     let active = true;

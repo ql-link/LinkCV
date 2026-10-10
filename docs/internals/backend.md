@@ -423,3 +423,7 @@ Agent 跨轮身份记忆覆盖现有六类 contexts；通用历史引用通过�
 `systemone_intent.py` 在存在显式简历选择时改写 `resume_identity` 的判定说明，避免历史中的其他简历触发“是哪一份简历”的追问。
 
 `intent_schemas.py` 的路由规则把“追问上一轮简历内容”规划为 `resume_diagnosis` 任务，不当作普通对话。
+
+## 浏览器网申接入
+
+`modules/browser_extension` 提供本人简历的轻量列表、确定性网申字段投影及有界页面字段识别接口，使用 Web 身份校验与统一 `browser_autofill` LLM 场景。只读现有 `resumes` 与 `user_profile`，不持久化投影；LLM 配置与计量沿用已有表，本次不新增 schema 或 revision。投影不包含版式或图片，细节见 [网申填写](autofill.md) 与 [HTTP 契约](../api/http-contracts.md)。

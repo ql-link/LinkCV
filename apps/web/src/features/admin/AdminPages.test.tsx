@@ -331,6 +331,20 @@ describe("CapabilitiesPage", () => {
     await waitFor(() => expect(updateModel).toHaveBeenCalledWith("5", { userSelectable: false }));
   });
 
+  it("binds browser autofill to native System One for Jev", async () => {
+    mockLlm({ routes: [{ ...route, invokeTarget: "jev-latest" }] });
+    vi.mocked(api.getLlmCatalog).mockResolvedValue({ ...catalog, useCases: ["browser_autofill"], providers: [{ ...catalog.providers[0], protocols: ["openai_chat", "system_one"] }] });
+    const put = vi.spyOn(api, "putLlmBinding").mockResolvedValue({ binding: {} as LlmBinding });
+    render(wrap(<CapabilitiesPage />));
+    fireEvent.click(await screen.findByRole("tab", { name: /网申字段识别/ }));
+    fireEvent.click(screen.getByRole("button", { name: "加入模型" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("搜索模型"), { target: { value: "示例" } });
+    fireEvent.click(within(dialog).getByRole("option", { name: /示例模型/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /加入 1 条线路/ }));
+    await waitFor(() => expect(put).toHaveBeenCalledWith("browser_autofill", "12", { protocolCode: "system_one", priority: 10, enabled: false }));
+  });
+
   it("binds intent with chat independently of the conversation protocol", async () => {
     mockLlm();
     vi.mocked(api.getLlmCatalog).mockResolvedValue({ ...catalog, useCases: ["assistant_conversation", "assistant_intent"], providers: [{ ...catalog.providers[0], protocols: ["openai_responses", "openai_chat"] }] });

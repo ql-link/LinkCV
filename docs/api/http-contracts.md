@@ -749,3 +749,11 @@ Agent 结构化上下文增加 `type:"user_profile"`；ID 必须属于当前账�
 `POST /internal/agent/runs/:runId/resources:resolve-reference` 使用内部 Agent 服务鉴权，请求只接受 `{memory_ref, relation, referring_text}`，relation 为 continuation 或 historical_selection。适用于 user_profile/resume/dataset/job/application/interview 的同会话历史指代，要求已有正在运行的任务及来自本轮原话或已校验澄清值的证据；响应 `{resource, materials, sources}` 包含当前版本身份、有界正文和 source_only 来源收据。引用无效、窗口外或新会话返回 `409 AGENT_MEMORY_REFERENCE_INVALID`；不可读取的历史对象返回 `404 AGENT_MEMORY_TARGET_UNAVAILABLE`；本轮同类型显式选择冲突、同任务目标切换分别返回 `409 AGENT_RESOURCE_SELECTION_CONFLICT` / `AGENT_RESOURCE_TARGET_CONFLICT`；任务内版本变更返回 `409 AGENT_CONTEXT_STALE`。同一数值 ID 的不同资源类型独立校验，文件继续检查解析状态和用户私有对象键。工具审计新增 `resolve_resource_reference`，仅记录稳定状态、资源类型与 ID，不记录正文或原始工具参数。
 
 意图识别的 `resume_identity` 澄清在本轮已有显式选择的简历时只表示“用户点名了另一份简历”，不再因历史或措辞不明而询问，响应契约不变。询问简历正文具体内容的后续追问按 `resume_diagnosis` 规划，不再落入普通对话；响应契约不变。
+
+## 浏览器求职助手与网申投影
+
+以下接口使用现有 Web Cookie 会话（401 表示未登录或失效），不接受页面提供的用户 ID。`GET /api/browser-extension/resumes` 返回 `{user_id, resumes:[{id,title,lock_version,updated_at}]}`，只列本人简历，不附带预览。`GET /api/resumes/{id}/autofill-profile` 校验本人归属，未知或他人简历返回 404 `RESUME_NOT_FOUND`；返回 `{version:1,user_id,resume_id,title,lock_version,profile_lock_version,updated_at,profile,warnings,missing}`，ID 为十进制字符串，不改写简历。
+
+`POST /api/browser-extension/autofill/decisions` 接收 `{version:1,field:{uid,section,label,placeholder,kind,options}}`，额外字段拒绝，输入长度有界，options 至多六项。返回 `{choice,prob,ranked}`，choice 必须属于版本 1 字段目录或 `none`，prob 为有限的 0 到 1 数值。该接口只判断网页字段含义，不接受或生成个人资料。429 `AUTOFILL_RATE_LIMITED`、503 `AUTOFILL_UNAVAILABLE` / `LLM_MODEL_NOT_CONFIGURED`、502 模型失败、504 `LLM_TIMEOUT`；额度为每账户每分钟 240 请求。
+
+Web 与插件桥接命令为 `PING`、`SELECT_RESUME(resumeId)`、`AUTH_CHANGED`，消息带 source 与 requestId。桥接只接受当前环境精确 Origin 和顶层页面，回复不返回个人资料，不能通过桥接调用任意 API 或执行表单填写。

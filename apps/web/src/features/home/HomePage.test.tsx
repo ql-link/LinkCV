@@ -8,6 +8,7 @@ import {
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { defaultSettings, useResumeStore } from "../../store/resumeStore";
 import { HomePage, HomeScreen } from "./HomePage";
+import * as pluginBridge from "../plugin/bridge";
 
 const resumes: ResumeSummary[] = [
   {
@@ -137,6 +138,14 @@ describe("HomeScreen", () => {
     expect(window.location.search).toBe("");
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     expect(screen.queryByRole("dialog", { name: "导入简历" })).not.toBeInTheDocument();
+  });
+
+  it("从简历菜单向插件发送所选简历 ID", async () => {
+    const send = vi.spyOn(pluginBridge, "sendPluginCommand").mockResolvedValue({ ok: true });
+    renderHome();
+    fireEvent.click(within(openResumeMenu()).getByRole("menuitem", { name: "用于插件网申" }));
+    await waitFor(() => expect(send).toHaveBeenCalledWith("SELECT_RESUME", "1"));
+    expect(await screen.findByText("简历已导入插件，请在网申页面打开插件开始填写")).toBeInTheDocument();
   });
 
   it("通过站内确认弹窗删除正式简历", async () => {

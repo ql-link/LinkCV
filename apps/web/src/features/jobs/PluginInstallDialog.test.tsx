@@ -37,7 +37,7 @@ describe("PluginInstallDialog", () => {
     expect(screen.getByText(/edge:\/\/extensions/)).toBeInTheDocument();
     expect(screen.queryByText(/安装过程大约需要两分钟/)).not.toBeInTheDocument();
     expect(container.querySelector(".plugin-dialog-chip svg")).toBeInTheDocument();
-    expect(container.querySelector(".plugin-dialog-header")).toContainElement(screen.getByRole("heading", { name: "安装 LinkResume 岗位采集插件" }));
+    expect(container.querySelector(".plugin-dialog-header")).toContainElement(screen.getByRole("heading", { name: "安装 LinkResume 求职助手插件" }));
     expect(container.querySelector(".plugin-dialog-header")).toContainElement(screen.getByRole("button", { name: "关闭插件安装说明" }));
     expect(screen.getByText(/选择包含/)).toHaveTextContent("manifest.json");
     expect(screen.getByText("打开岗位并核对导入")).toBeInTheDocument();
@@ -46,7 +46,7 @@ describe("PluginInstallDialog", () => {
     expect(container.querySelectorAll(".plugin-step")).toHaveLength(5);
     expect(container.querySelector(".plugin-step.is-open")).toHaveTextContent("下载并解压安装包");
     const releaseRow = container.querySelector(".plugin-release-row");
-    expect(releaseRow).toHaveTextContent("LinkResume 岗位采集插件");
+    expect(releaseRow).toHaveTextContent("LinkResume 求职助手插件");
     expect(releaseRow).not.toHaveTextContent("ZIP 安装包 · 下载后解压");
     expect(container.querySelector(".plugin-release-icon svg")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下载 ZIP" })).toBeEnabled();

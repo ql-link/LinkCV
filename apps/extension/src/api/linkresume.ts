@@ -6,7 +6,8 @@ import type {
 
 interface User {
   id: string;
-  email: string;
+  email: string | null;
+  nickname?: string | null;
 }
 
 export interface LinkResumeConnection {
@@ -93,14 +94,33 @@ async function importOnce(origin: string, payload: ImportJobPayload): Promise<Jo
   );
 }
 
-async function tryRefresh(origin: string): Promise<User | null> {
+const refreshes = new Map<string, Promise<User | null>>();
+
+function tryRefresh(origin: string): Promise<User | null> {
+  const existing = refreshes.get(origin);
+  if (existing) return existing;
+  const refresh = () => rawRequest<{ user: User }>(origin, "/api/auth/refresh", { method: "POST" }).then((result) => result.user);
+  const locks = globalThis.navigator?.locks;
+  const pending = (locks ? locks.request(`linkresume-session-refresh:${origin}`, async () => {
+    // Side panel and service worker share an extension origin, but separate JS globals.
+    const current = await rawRequest<{ user: User | null }>(origin, "/api/auth/me");
+    return current.user ?? await refresh();
+  }) : refresh()).catch(() => null)
+    .finally(() => refreshes.delete(origin));
+  refreshes.set(origin, pending);
+  return pending;
+}
+
+export async function apiRequest<T>(origin: string, path: string, init: RequestInit = {}): Promise<T> {
+  // Callers use fixed API paths; a bridge message cannot choose an arbitrary target.
+  if (!candidateOrigins().includes(origin) || !path.startsWith("/api/")) throw new Error("LinkResume 地址不匹配");
   try {
-    const result = await rawRequest<{ user: User }>(origin, "/api/auth/refresh", {
-      method: "POST",
-    });
-    return result.user;
-  } catch {
-    return null;
+    return await rawRequest<T>(origin, path, init);
+  } catch (error) {
+    if (error instanceof LinkResumeApiError && error.status === 401 && !init.signal?.aborted && await tryRefresh(origin)) {
+      return rawRequest<T>(origin, path, init);
+    }
+    throw error;
   }
 }
 
@@ -125,7 +145,7 @@ async function rawRequest<T>(
   return body as T;
 }
 
-function candidateOrigins(): string[] {
+export function candidateOrigins(): string[] {
   const configuredChannel = import.meta.env.WXT_PUBLIC_LINKRESUME_CHANNEL;
   const configuredOrigin = import.meta.env.WXT_PUBLIC_LINKRESUME_ORIGIN;
   const values = configuredChannel === "development" || configuredChannel === "production"

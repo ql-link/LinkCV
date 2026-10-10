@@ -122,8 +122,7 @@ Web 使用 React、TypeScript 与 Vite，业务 API 使用 FastAPI。MySQL 保�
 
 ```text
 apps/web         Web 工作区、公共官网与分享页
-apps/extension   Chrome 岗位采集插件
-apps/autofill    Chrome / Edge 网申填写插件（LinkAutofill）
+apps/extension   Chrome / Edge 求职助手插件（岗位采集与网申填写）
 apps/miniprogram 微信小程序与扫码登录入口
 apps/desktop     Electron 桌面壳
 apps/mac         macOS 原生客户端
@@ -144,7 +143,7 @@ docs             功能、架构、API 与运维文档
 - [AI 模拟面试](docs/features/mock-interview.md)
 - [个人资料库](docs/features/datasets.md)
 - [浏览器插件安装与开发](apps/extension/README.md)
-- [网申填写插件安装与开发](apps/autofill/README.md)
+- [网申填写插件安装与开发](apps/extension/README.md)
 - [原生客户端](apps/native/README.md)
 - [整体架构](docs/internals/architecture.md)
 - [本地开发](docs/ops/development.md)与[部署说明](docs/ops/deployment.md)

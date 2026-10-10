@@ -85,12 +85,18 @@ def validate_zip(path: Path, *, version: str, origin: str, environment: str) -> 
     if manifest.get("version") != version:
         raise ValueError("extension manifest version does not match package.json")
     expected_name = (
-        "LinkResume 岗位采集（开发版）"
+        "LinkResume 求职助手（开发版）"
         if environment == "development"
-        else "LinkResume 岗位采集"
+        else "LinkResume 求职助手"
     )
     if manifest.get("name") != expected_name:
         raise ValueError("extension name does not match the target environment")
+    if set(manifest.get("permissions", [])) != {"activeTab", "scripting", "storage", "sidePanel"}:
+        raise ValueError("extension permissions do not match the unified plugin")
+    if set(manifest.get("optional_host_permissions", [])) != {"http://*/*", "https://*/*"}:
+        raise ValueError("extension optional host permissions do not match")
+    if "default_popup" in manifest.get("action", {}) or not manifest.get("side_panel", {}).get("default_path"):
+        raise ValueError("extension must use the shared side panel")
     expected_permissions = BOSS_PERMISSIONS | {f"{origin}/*"}
     if set(manifest.get("host_permissions", [])) != expected_permissions:
         raise ValueError("extension host_permissions do not exactly match the target environment")

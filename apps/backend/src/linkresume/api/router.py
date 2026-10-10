@@ -41,7 +41,10 @@ from linkresume.modules.resumes.template_admin_routes import (
     router as template_admin_router,
 )
 
+from linkresume.modules.browser_extension.routes import router as browser_extension_router
+
 api_router = APIRouter()
+api_router.include_router(browser_extension_router)
 api_router.include_router(health_router)
 api_router.include_router(agent_router)
 api_router.include_router(agent_admin_router)

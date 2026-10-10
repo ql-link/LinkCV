@@ -1,39 +1,34 @@
-# 浏览器网申填写插件
+# 浏览器网申填写
 
-## 职责与边界
+网申填写已合并到统一 LinkResume 求职助手 `apps/extension`，与岗位采集共用扩展身份、登录客户端、Manifest、版本和发布渠道。用户先在对应环境的 Web 登录，然后从侧边栏选择简历导入；也可在 Web 简历卡片菜单点击“用于插件网申”。Web 命令只携带简历 ID，后台通过受保护 API 获取资料并再次校验账户归属。
 
-`apps/autofill` 是 LinkAutofill 网申填写插件，使用 WXT、React 19、TypeScript 和 Manifest V3，面向 Chrome / Edge。它与岗位采集插件 `apps/extension` 同级，拥有独立依赖锁文件、扩展身份、构建目录和浏览器存储。
+## 数据投影
 
-用户在设置页配置 Jev 接口、模型、API Key，并导入本机 JSON 简历；在招聘网站的网申页面点击“开始填写”，插件按站点申请访问权限、补齐经历条目、扫描字段、生成填写计划并写入控件。它不自动提交表单。当前没有 LinkResume 登录或简历同步能力，也不调用 FastAPI，不依赖 Web、MySQL 或 MinIO。
+FastAPI `modules/browser_extension` 提供本人简历轻量列表及 `autofill-profile` 投影，不返回版式、图片、布局或其他简历内容。姓名、联系方式、教育、工作、项目、技能等来自所选 canonical 简历；意向城市、薪资范围、工作年限和工作性质来自本人求职画像。账号昵称和登录邮箱不推断为投递姓名或联系方式。工作模块只有标题明确包含“实习”或 internship 时进入实习分组；其他保留工作分组。经历保持文档顺序，包括空条目。未知字段和无法确定的日期保留缺失提示，不生成个人信息。
 
-## 入口与填写流程
+投影版本为 1，带账户 ID、简历 ID、简历及画像锁版本。个人资料缓存于 `browser.storage.session`，绑定 Origin 和账户，内容脚本无权直接读取；退出或账户变化被检测到时清理。开始填写前重新拉取所选简历，执行前再次核实身份，本次使用固定快照。浏览器重启、扩展更新或禁用后缓存清空。首版没有离线填写和 Web 网申补充资料持久化；缺失资料由用户在招聘页面补充。
 
-| 位置 | 职责 |
-| --- | --- |
-| `apps/autofill/wxt.config.ts` | MV3 Manifest、默认 Jev 接口权限、可选网页访问权限 |
-| `entrypoints/background.ts` | 点击扩展图标打开侧边栏 |
-| `entrypoints/sidepanel/` | 发起填写、进度、结果与待处理字段定位 |
-| `entrypoints/options/` | 接口设置、连接测试、JSON 简历导入导出与偏好 |
-| `entrypoints/autofill.content.ts` | 用户点击时按需注入，处理经历补齐、扫描、写入和标记 |
-| `src/profile/` | 简历字段目录、校验、数组经历取值及虚构示例 |
-| `src/scan/` | 页面字段上下文抽取及已识别站点的经历补齐 |
-| `src/decide/` | Jev 选择题客户端、规则与填写计划 |
-| `src/writer/` | 组件库和站点适配、本地选项匹配、日期与级联写入 |
-| `src/run.ts` | 一次填写的阶段调度与错误反馈 |
-| `eval/` | 独立字段决策评测工具，不纳入默认安装与 CI |
+## 代码与调用链
 
-除第一行外，表中路径相对于 `apps/autofill`。JSON 简历字段见 [字段说明](../../apps/autofill/docs/profile.md)，组件适配与写入边界见 [写入层说明](../../apps/autofill/src/writer/README.md)。
+- `entrypoints/sidepanel`：账户连接、简历导入、任务进度和字段结果。
+- `src/api/autofill.ts`：版本化投影、本人列表与会话缓存。
+- `src/autofill/profile`、`decide/plan.ts`：字段目录、取值、格式转换和保留已有内容规则。
+- `src/autofill/decide/jev.ts`：调用 LinkResume 识别接口，最多四个并发请求，不持有第三方密钥。
+- `src/autofill/scan`、`writer`：招聘页面扫描、经历补齐与组件适配。
+- `entrypoints/autofill.content.ts`：用户点击后按站点授权并注入。
 
-填写计划按页面模块和经历序号取值，纠正同标签日期框的起止顺序，并按提示格式转换日期。分机、配偶、高中等规则命中的字段不自动填写；低于概率阈值或简历缺值的字段留给用户处理，默认不覆盖已有内容。经历补齐只在识别出的站点运行，带附件或上传字样的添加按钮会跳过。页面蓝框表示已填写，橙框表示待处理。
+填写链为授权、读取最新快照、注入、补齐经历、扫描、后端判断字段、核实账户、本地生成计划、写入和标记。页面消息绑定文档 token 与 URL，跳转、切换标签页、关闭侧栏或停止时取消后续操作；已经写入的内容保留，停止不能撤销当前正在执行的单个控件操作。默认保留已有内容，写入每个字段前再检查用户是否已输入，低置信度、缺失值和失败字段留给用户核对，不自动提交，也不更新求职记录投递状态。
 
-## 数据、网络与权限
+## 模型与权限
 
-设置和 JSON 简历保存在该扩展的 `browser.storage.local` 中。Jev 请求只包含页面字段的标签、模块、控件类型、输入提示、少量选项和字段目录，不包含简历值。写入层在本地匹配选项，不调用模型或 LinkResume API。
+后端统一 LLM 场景 `browser_autofill` 支持 OpenAI Chat 结构化识别和 System One 原生决策，管理员在能力配置中绑定、探测并启用。探针必须识别虚构学校字段，通用连通性不能替代。密钥仅存在后端；发送给模型的内容为有界标签、模块、提示、控件类型、最多六个选项与固定字段目录，不包含简历值或完整 DOM。服务端目录与插件字段目录有一致性测试。
 
-Manifest 使用 `storage`、`scripting`、`activeTab` 和 `sidePanel`；默认声明 aihubmix 与 OpenRouter 的访问权限。网页以及自定义接口由用户点击时按 Origin 申请可选权限，内容脚本不随任意网页自动注入。默认 Jev 地址为 `https://aihubmix.com/v1/systemone`，模型为 `jev-1.13`，可以在设置页替换；API Key 默认为空。
+单页最多 200 个字段，每用户识别接口每分钟最多 240 次，Redis key 为 `browser-autofill:decisions:<user_id>`，TTL 60 秒。服务端单次预算 20 秒，插件 25 秒；未配置模型、限流、认证失败或服务不可用有明确反馈，不无限重试。现有模型路由、计量与日志治理继续复用。
+
+Manifest 声明 storage、scripting、activeTab 和 sidePanel，固定主机权限仍仅 BOSS 和对应 LinkResume 源站；网申网站通过可选主机权限由用户主动授权，未声明第三方模型的固定主机权限。
 
 ## 开发与验证边界
 
-根级命令、安装和侧载说明见 [本地开发](../ops/development.md#常用命令) 与 [插件 README](../../apps/autofill/README.md)。`apps/autofill/package.json` 和对应 lockfile 独立管理版本及依赖。根级 `sync` 安装运行依赖，`typecheck`、`build` 包含本应用；GitHub Actions 的 `autofill` job 按目录变化执行安装、类型检查和构建。
+安装与开发见 [统一插件 README](../../apps/extension/README.md)。字段格式见 [字段说明](../../apps/extension/docs/profile.md)，写入层见 [适配说明](../../apps/extension/src/autofill/writer/README.md)。旧独立插件存储不会跨扩展身份迁移，需重新从 Web 导入资料。
 
-插件只扫描页面顶层文档，不进入 iframe。组件交互尚未在真实招聘页面系统验证，写入后也没有读回校验；用户需要核对后自行提交。评测仅覆盖仿真页面的字段决策，方法、外部数据来源和样本限制见 [评测说明](../../apps/autofill/eval/README.md)，不能用来证明真实页面控件填写成功。
+当前只扫描顶层文档，不进入 iframe，写入后没有系统性读回校验。真实 Chrome Cookie、权限弹窗、招聘网站控件及 Web 桥接完整链路需要人工验收；单元与接口测试不能替代。

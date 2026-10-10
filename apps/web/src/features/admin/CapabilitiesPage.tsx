@@ -48,6 +48,7 @@ const suggestedIntentProtocol = (target: string) => /^(?:typesafe(?:-ai)?\/)?jev
 const useCaseIcons: Record<string, LucideIcon> = {
   assistant_conversation: MessageSquare,
   assistant_intent: Workflow,
+  browser_autofill: Workflow,
   resume_structuring: ScanText,
   job_text_extraction: FileText,
   job_image_extraction: Image,
@@ -365,10 +366,10 @@ export function CapabilitiesPage() {
                                   <small className="adm-route-meta">
                                     <span title={route?.invokeTarget}>{route?.invokeTarget ?? "—"}</span>
                                     <span>{priceText(route?.pricing ?? null)}</span>
-                                    {useCase !== "assistant_intent" && <span>{item.protocolCode}</span>}
+                                    {!["assistant_intent", "browser_autofill"].includes(useCase) && <span>{item.protocolCode}</span>}
                                     <span>{item.validatedAt ? `验证于 ${formatWhen(item.validatedAt)}` : "启用时自动验证"}</span>
                                   </small>
-                                  {useCase === "assistant_intent" && <span className="adm-cap-protocol"><SelectBox className="adm-cap-protocol-select" label={`线路 #${item.routeId} 识别协议`} value={item.protocolCode} disabled={busy !== null}
+                                  {["assistant_intent", "browser_autofill"].includes(useCase) && <span className="adm-cap-protocol"><SelectBox className="adm-cap-protocol-select" label={`线路 #${item.routeId} 识别协议`} value={item.protocolCode} disabled={busy !== null}
                                       options={intentProtocols.filter((code) => data!.catalog.providers.find((spec) => spec.code === connection?.providerCode)?.protocols.includes(code)).map((code) => ({ value: code, label: protocolLabel(code) }))}
                                       onChange={(code) => void run(`protocol:${item.routeId}`, () => api.putLlmBinding(item.useCase, item.routeId, { protocolCode: code, priority: item.priority, enabled: false }), "协议已修改，启用时将自动验证")} /></span>}
                                 </span>
@@ -469,7 +470,7 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
 }) {
   const { notify } = useConsole();
   const assistant = useCase === ASSISTANT;
-  const intent = useCase === "assistant_intent";
+  const intent = ["assistant_intent", "browser_autofill"].includes(useCase);
   const eligibleConnections = intent ? data.connections.filter((item) => data.catalog.providers.find((spec) => spec.code === item.providerCode)?.protocols.some((code) => intentProtocols.includes(code))) : data.connections;
   const [intentProtocol, setIntentProtocol] = useState<string | null>(null);
   const boundRoutes = new Set(existing.map((item) => item.routeId));

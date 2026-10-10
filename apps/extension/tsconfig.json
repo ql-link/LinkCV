@@ -3,6 +3,11 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "strict": true,
-    "types": ["node", "vitest/globals"]
+    "types": [
+      "node",
+      "vitest/globals"
+    ],
+    "allowJs": true,
+    "checkJs": false
   }
 }

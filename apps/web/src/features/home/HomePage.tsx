@@ -17,6 +17,7 @@ import { SharePanel } from "./SharePanel";
 import { ResumeImportDialog } from "./ResumeImportDialog";
 import { ResumeCreateDialog } from "./ResumeCreateDialog";
 import { useStableCallback } from "./useStableCallback";
+import { sendPluginCommand } from "../plugin/bridge";
 import "./home-v3.css";
 
 // 每个账号最多 10 份正式简历（后端 RESUME_LIMIT_REACHED 同一口径），到上限后新建、导入、复制置灰
@@ -214,6 +215,12 @@ function ResumeCard({
       title: atLimit ? t("已达 {value0} 份上限", { value0: MAX_RESUMES_PER_USER }) : undefined,
       onSelect: () => setCopyRequestId(crypto.randomUUID()),
     },
+    { label: t("用于插件网申"), icon: "edit", onSelect: () => {
+      void sendPluginCommand("SELECT_RESUME", resume.id).then(
+        () => onNotice("success", t("简历已导入插件，请在网申页面打开插件开始填写")),
+        (error: unknown) => onNotice("error", error instanceof Error ? error.message : t("插件导入失败")),
+      );
+    } },
     { label: t("分享链接"), icon: "link", onSelect: onShare },
     { label: exporting ? t("正在导出…") : t("导出 PDF"), icon: "dl", disabled: exporting, onSelect: () => void exportPdf() },
     { kind: "separator" },

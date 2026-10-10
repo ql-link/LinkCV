@@ -37,7 +37,7 @@ from linkresume.modules.llm.providers import (
     OPENAI_CHAT, OPENAI_RESPONSES, SYSTEM_ONE, OPENAI_ASR_FILE, OPENAI_TTS, SPEECH_PROTOCOLS, inference_base_url, speech_ws_url, validate_route, validate_model_protocol,
 )
 from linkresume.modules.llm.resolver import (
-    ASSISTANT_CONVERSATION, ASSISTANT_INTENT, JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION,
+    ASSISTANT_CONVERSATION, ASSISTANT_INTENT, BROWSER_AUTOFILL, JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION,
     RESUME_STRUCTURING, SPEECH_TO_TEXT, SPEECH_USE_CASES, TEXT_TO_SPEECH,
     RoutePlan, resolve, validation_fingerprint, resolve_candidates,
 )
@@ -324,6 +324,18 @@ class LLMService:
         if plan.protocol_code != SYSTEM_ONE:
             return await self._gateway.complete(model=plan.invoke_target, messages=tuple(messages),
                 api_base=runtime.base_url, api_key=runtime.api_key, protocol_code=plan.protocol_code)
+        if plan.use_case == BROWSER_AUTOFILL:
+            from linkresume.modules.browser_extension.decisions import native_request, native_decision
+            result = None
+            try:
+                payload = native_request(messages)
+                result = await self._gateway.complete(model=plan.invoke_target,
+                    messages=(ChatMessage(role="user", content=json.dumps(payload, ensure_ascii=False)),),
+                    api_base=runtime.base_url, api_key=runtime.api_key, protocol_code=SYSTEM_ONE)
+                return replace(result, content=native_decision(json.loads(result.content)).model_dump_json())
+            except (ValueError, KeyError, TypeError) as error:
+                raise GatewayError(code="LLM_RESPONSE_INVALID", may_have_reached_provider=True,
+                                   usage=result.usage if result else None) from error
         if plan.use_case != ASSISTANT_INTENT:
             raise GatewayError(code="LLM_REQUEST_REJECTED", may_have_reached_provider=False)
         from linkresume.modules.agent.systemone_intent import request_for_intent, decision_from_answers, IntentDecisionError
@@ -580,7 +592,17 @@ class LLMService:
                 if use_case == ASSISTANT_INTENT:
                     from linkresume.modules.agent.intent_schemas import IntentDecision, intent_probe_messages
                     messages = _structured_messages(intent_probe_messages(), IntentDecision)
+                if use_case == BROWSER_AUTOFILL:
+                    from linkresume.modules.browser_extension.decisions import probe_messages
+                    from linkresume.modules.browser_extension.schemas import FieldDecision
+                    messages = _structured_messages(probe_messages(), FieldDecision)
                 result = await self._complete_plan(plan, runtime, messages)
+                if use_case == BROWSER_AUTOFILL:
+                    from linkresume.modules.browser_extension.decisions import validate_probe
+                    try:
+                        validate_probe(_validate_structured_content(result.content, FieldDecision))
+                    except ValueError as error:
+                        raise LLMError("LLM_RESPONSE_INVALID", call_id) from error
                 if use_case == ASSISTANT_INTENT:
                     from linkresume.modules.agent.intent_schemas import validate_intent_probe
                     try:

@@ -183,7 +183,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 
 ## 常用命令
 
-根级 `npm run sync`（以及调用它的 `npm run setup`）安装 `apps/autofill` 的锁定依赖。该应用与 `apps/extension` 分别运行、分别侧载；通用 `typecheck` 和 `build` 命令包含两个插件。网申填写插件的 Jev 设置与 JSON 简历通过扩展设置页配置，不读取项目 `.env`，不依赖 FastAPI 或数据库。安装、使用及字段说明见 [网申填写插件](../internals/autofill.md)。`apps/autofill/eval` 是可选的独立评测工具，依赖需在该目录执行 `npm ci`，不包含在默认安装或质量检查中。
+根级 `npm run sync` 安装统一插件 `apps/extension` 的锁定依赖，岗位采集和网申填写使用同一侧载目录。网申填写复用对应环境的 Web 登录，选择简历后导入，模型由管理员配置“网申字段识别”场景。`dev:autofill`、`typecheck:autofill`、`build:autofill` 和 `zip:autofill` 保留为统一插件命令别名，通用类型检查与构建只执行插件一次。`apps/extension/eval` 为独立离线字段决策评测工具，不包含在默认安装或质量检查中。
 
 | 命令                                  | 作用                                                                 |
 | ------------------------------------- | -------------------------------------------------------------------- |
@@ -205,10 +205,10 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run dev:extension:local -- --origin http://127.0.0.1:5175 --port 3002` | 监视插件源码并连接指定本地 Web；输出独立开发版侧载目录，可与正式版并存 |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
-| `npm run dev:autofill`                | 单独启动网申填写插件 WXT 开发模式                                   |
+| `npm run dev:autofill`                | 启动统一插件 WXT 开发模式（兼容别名）                                   |
 | `npm run typecheck:autofill`          | 生成 WXT 类型并检查网申填写插件 TypeScript                           |
-| `npm run build:autofill`              | 构建 `apps/autofill/.output/chrome-mv3` 侧载目录                       |
-| `npm run zip:autofill`                | 将网申填写插件打包为独立 ZIP                                         |
+| `npm run build:autofill`              | 构建 `apps/extension/.output/chrome-mv3` 侧载目录                       |
+| `npm run zip:autofill`                | 将统一插件打包为 ZIP（兼容别名）                                         |
 | `uv run --directory apps/backend python ../../scripts/release/build_extension_release.py ...` | 生成并校验 Development/Production 插件发布 ZIP 与 SHA256SUMS |
 | `npm run build:native-renderer`      | 生成原生客户端离线纸面 `paper.html`，并复制进 Mac 与 Windows 资源目录 |
 | `npm run dev:mac`                     | 构建并启动 SwiftUI Mac 原生客户端（需配置 API origin），见 `apps/native/README.md` |

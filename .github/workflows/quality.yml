@@ -21,7 +21,6 @@ jobs:
       migrations: ${{ steps.detect.outputs.migrations }}
       revisions: ${{ steps.detect.outputs.revisions }}
       extension: ${{ steps.scope.outputs.extension }}
-      autofill: ${{ steps.scope.outputs.autofill }}
       desktop: ${{ steps.scope.outputs.desktop }}
       miniprogram: ${{ steps.scope.outputs.miniprogram }}
       pi: ${{ steps.scope.outputs.pi }}
@@ -73,7 +72,6 @@ jobs:
           has() { [ "$all" = "true" ] || printf '%s\n' "$changed" | grep -Eq "$1"; }
           emit() { if has "$2"; then echo "$1=true" >> "$GITHUB_OUTPUT"; else echo "$1=false" >> "$GITHUB_OUTPUT"; fi; }
           emit extension '^apps/extension/'
-          emit autofill '^apps/autofill/'
           emit desktop '^apps/desktop/'
           emit miniprogram '^apps/miniprogram/'
           emit pi '^(apps/pi-service/|third_party/pi/)'
@@ -205,21 +203,6 @@ jobs:
       - run: npm run test:extension
       - run: npm run build:extension
 
-  autofill:
-    needs: changes
-    if: needs.changes.outputs.autofill == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/autofill/package-lock.json
-      - run: npm ci --prefix apps/autofill
-      - run: npm run typecheck:autofill
-      - run: npm run build:autofill
-
   desktop:
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
@@ -279,7 +262,7 @@ jobs:
   # 汇总 job：保持原有的 "Quality / check" 状态名，分支保护无需修改。
   # 被跳过的 job 视为通过；任一 job 失败或被取消则整体失败。
   check:
-    needs: [changes, migrations, rules, contracts, extension, autofill, desktop, miniprogram, pi, devenv]
+    needs: [changes, migrations, rules, contracts, extension, desktop, miniprogram, pi, devenv]
     if: always()
     runs-on: ubuntu-latest
     steps:

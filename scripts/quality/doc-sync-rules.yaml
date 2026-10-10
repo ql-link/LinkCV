@@ -134,19 +134,19 @@ rules:
   - id: browser-autofill-runtime
     description: 网申填写插件入口、权限或填写逻辑变化必须同步插件文档
     when_changed:
-      - apps/autofill/package.json
-      - apps/autofill/wxt.config.ts
-      - apps/autofill/entrypoints/**
-      - apps/autofill/src/**
+      - apps/extension/package.json
+      - apps/extension/wxt.config.ts
+      - apps/extension/entrypoints/**
+      - apps/extension/src/autofill/**
     must_update:
       - docs/internals/autofill.md
 
   - id: browser-autofill-development
     description: 网申填写插件安装和构建配置变化必须同步开发文档
     when_changed:
-      - apps/autofill/package.json
-      - apps/autofill/wxt.config.ts
-      - apps/autofill/tsconfig.json
+      - apps/extension/package.json
+      - apps/extension/wxt.config.ts
+      - apps/extension/tsconfig.json
     must_update:
       - docs/ops/development.md
 

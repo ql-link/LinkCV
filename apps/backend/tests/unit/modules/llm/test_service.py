@@ -388,3 +388,27 @@ def test_stream_switches_before_output_but_not_after_output(context):
     events = asyncio.run(run())
     assert [event.type for event in events] == ["delta", "error"]
     assert len(gateway.calls) == 1
+
+
+@pytest.mark.parametrize("protocol", ["system_one", "openai_chat"])
+def test_autofill_routes_use_bounded_decisions_and_accounted_calls(context, protocol):
+    from linkresume.modules.browser_extension.decisions import decision_messages
+    from linkresume.modules.browser_extension.schemas import FieldDecision, PageField
+    service, gateway, sessions = context
+    with sessions() as db:
+        binding = get_use_case_route(db, JOB_TEXT_EXTRACTION, 1)
+        binding.use_case = "browser_autofill"
+        binding.protocol_code = protocol
+        route = db.get(LLMModelRoute, 1)
+        connection = db.get(LLMProviderConnection, route.connection_id)
+        binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
+        db.commit()
+    native = {"answers": {"slot": {"choice": "education.school", "probabilities": {"education.school": 0.95, "none": 0.05}}}}
+    generic = {"choice": "education.school", "prob": 0.95, "ranked": [["education.school", 0.95]]}
+    gateway.result = GatewayResult(content=json.dumps(native if protocol == "system_one" else generic), usage=GatewayUsage(12, 3))
+    result = asyncio.run(service.structured_chat(1, decision_messages(PageField(uid="one", label="毕业院校", kind="input:text")), source="browser_autofill", response_model=FieldDecision, use_case="browser_autofill"))
+    assert result.value.choice == "education.school" and result.value.prob == 0.95
+    with sessions() as db:
+        log = db.scalar(select(LLMCallLog))
+        assert log.use_case == "browser_autofill" and log.status == "succeeded" and log.input_tokens == 12
+    asyncio.run(service.probe_route(user_id=1, use_case="browser_autofill", route_id=1))

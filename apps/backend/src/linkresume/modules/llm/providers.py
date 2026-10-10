@@ -137,7 +137,7 @@ def validate_use_case_protocol(use_case: str, protocol_code: str) -> None:
     if speech is not None:
         if protocol_code not in speech:
             raise ValueError("protocol unsupported for speech use case")
-    elif use_case == "assistant_intent":
+    elif use_case in {"assistant_intent", "browser_autofill"}:
         if protocol_code not in {OPENAI_CHAT, SYSTEM_ONE}:
             raise ValueError("protocol unsupported for intent use case")
     elif use_case == "assistant_conversation" and protocol_code == SYSTEM_ONE:

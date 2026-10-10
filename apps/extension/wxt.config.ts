@@ -42,15 +42,16 @@ if (isReleaseBuild && configuredLinkResumePermission().length !== 1) {
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
   manifest: {
-    name: isDevelopmentBuild ? "LinkResume 岗位采集（开发版）" : "LinkResume 岗位采集",
-    description: "从当前 BOSS 直聘岗位详情页提取信息，经确认后导入 LinkResume。",
+    name: isDevelopmentBuild ? "LinkResume 求职助手（开发版）" : "LinkResume 求职助手",
+    description: "采集岗位到 LinkResume，使用本人简历填写网申表单。",
     icons: {
       16: "linkresume-mark.png",
       32: "linkresume-mark.png",
       48: "linkresume-mark.png",
       128: "linkresume-mark.png",
     },
-    permissions: ["activeTab"],
+    permissions: ["activeTab", "scripting", "storage", "sidePanel"],
+    optional_host_permissions: ["https://*/*", "http://*/*"],
     host_permissions: [
       ...bossPermissions,
       ...(isReleaseBuild ? [] : localLinkResumePermissions),

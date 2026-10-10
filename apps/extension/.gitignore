@@ -1,0 +1,7 @@
+
+eval/.data/
+eval/results/
+eval/.models/
+eval/.cache/
+eval/models/
+*.log

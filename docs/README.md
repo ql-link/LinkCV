@@ -51,7 +51,7 @@
 | FastAPI 与 Worker | [internals/backend.md](internals/backend.md) | `apps/backend` |
 | 微信小程序 | [internals/miniprogram.md](internals/miniprogram.md) | `apps/miniprogram`、后端渠道适配 |
 | 浏览器采集插件 | [internals/extension.md](internals/extension.md) | `apps/extension` |
-| 浏览器网申填写插件 | [internals/autofill.md](internals/autofill.md) | `apps/autofill` |
+| 浏览器网申填写插件 | [internals/autofill.md](internals/autofill.md) | `apps/extension/src/autofill` |
 | Agent 与统一 LLM 运行时 | [internals/agent-runtime.md](internals/agent-runtime.md) | `modules/agent`、`modules/llm`、`apps/pi-service` |
 | 第三方 Pi 工具包 | [internals/third-party-pi.md](internals/third-party-pi.md) | `third_party/pi` |
 | 可观测性与业务审计 | [internals/observability.md](internals/observability.md) | `modules/observability`、Promtail、Loki |
