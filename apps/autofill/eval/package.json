@@ -1,0 +1,15 @@
+{
+  "name": "linkautofill-eval",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fetch-data": "sh fetch-data.sh",
+    "extract": "node extract.mjs",
+    "embedding": "node embedding.mjs",
+    "jev": "node jev.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "jsdom": "^25.0.1"
+  }
+}

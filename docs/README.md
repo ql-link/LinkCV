@@ -14,6 +14,7 @@
 | 查找契约事实源和消费方 | [internals/contract-governance.md](internals/contract-governance.md) |
 | 修改 React/Vite 前端 | [internals/web.md](internals/web.md) |
 | 修改或侧载岗位采集插件 | [internals/extension.md](internals/extension.md) |
+| 修改或侧载网申填写插件 | [internals/autofill.md](internals/autofill.md) |
 | 修改 FastAPI 后端 | [internals/backend.md](internals/backend.md) |
 | 了解 third_party/pi 引入方式与对接约束 | [internals/third-party-pi.md](internals/third-party-pi.md) |
 | 对接或修改 HTTP API | [api/http-contracts.md](api/http-contracts.md) |
@@ -50,6 +51,7 @@
 | FastAPI 与 Worker | [internals/backend.md](internals/backend.md) | `apps/backend` |
 | 微信小程序 | [internals/miniprogram.md](internals/miniprogram.md) | `apps/miniprogram`、后端渠道适配 |
 | 浏览器采集插件 | [internals/extension.md](internals/extension.md) | `apps/extension` |
+| 浏览器网申填写插件 | [internals/autofill.md](internals/autofill.md) | `apps/autofill` |
 | Agent 与统一 LLM 运行时 | [internals/agent-runtime.md](internals/agent-runtime.md) | `modules/agent`、`modules/llm`、`apps/pi-service` |
 | 第三方 Pi 工具包 | [internals/third-party-pi.md](internals/third-party-pi.md) | `third_party/pi` |
 | 可观测性与业务审计 | [internals/observability.md](internals/observability.md) | `modules/observability`、Promtail、Loki |

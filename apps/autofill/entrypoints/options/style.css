@@ -1,0 +1,55 @@
+.options {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+  display: grid;
+  gap: 24px;
+}
+
+.options header {
+  display: grid;
+  gap: 6px;
+}
+
+.options header p {
+  margin: 0;
+}
+
+.options section {
+  display: grid;
+  gap: 12px;
+}
+
+.options section p {
+  margin: 0;
+}
+
+.inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.inline input[type='text'],
+.inline input[type='password'] {
+  flex: 1;
+}
+
+.narrow input {
+  max-width: 120px;
+}
+
+.err {
+  color: var(--danger);
+}
+
+.issues ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}

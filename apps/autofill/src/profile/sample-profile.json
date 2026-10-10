@@ -1,0 +1,109 @@
+{
+  "$comment": "示例数据均为虚构。数组分组把最近的经历放在最前面；日期写 YYYY-MM 或 YYYY-MM-DD，仍在进行的写“至今”；没有的字段直接删掉。",
+  "basics": {
+    "name": "林知远",
+    "lastNameZh": "林",
+    "firstNameZh": "知远",
+    "lastName": "Lin",
+    "firstName": "Zhiyuan",
+    "englishName": "Leo Lin",
+    "gender": "男",
+    "birthDate": "2002-05-18",
+    "ethnicity": "汉族",
+    "nationality": "中国",
+    "politicalStatus": "共青团员",
+    "maritalStatus": "未婚",
+    "idType": "身份证",
+    "idNumber": "110101200205180000",
+    "hukou": "浙江省杭州市",
+    "hometown": "浙江省杭州市",
+    "gaokaoOrigin": "浙江省",
+    "heightCm": 175,
+    "weightKg": 65
+  },
+  "contact": {
+    "phone": "13800000000",
+    "email": "zhiyuan.lin@example.com",
+    "city": "上海市",
+    "address": "上海市杨浦区示例路 100 号",
+    "country": "中国",
+    "dialCode": "+86",
+    "wechat": "example_wechat"
+  },
+  "education": [
+    {
+      "school": "示例大学",
+      "major": "计算机科学与技术",
+      "degree": "硕士",
+      "degreeTitle": "硕士",
+      "enrollDate": "2024-09",
+      "gradDate": "2027-06",
+      "gpa": "3.8/4.0",
+      "rank": "前10%",
+      "trainingMode": "全日制",
+      "city": "上海市"
+    },
+    {
+      "school": "样例理工大学",
+      "major": "软件工程",
+      "degree": "本科",
+      "degreeTitle": "学士",
+      "enrollDate": "2020-09",
+      "gradDate": "2024-06",
+      "gpa": "3.6/4.0",
+      "trainingMode": "全日制",
+      "city": "杭州市"
+    }
+  ],
+  "internship": [
+    {
+      "company": "示例科技有限公司",
+      "title": "后端开发实习生",
+      "department": "基础架构部",
+      "city": "上海市",
+      "startDate": "2025-07",
+      "endDate": "2025-10",
+      "summary": "参与内部服务治理平台开发，负责接口限流与监控告警模块。"
+    }
+  ],
+  "work": [],
+  "projects": [
+    {
+      "name": "校园二手交易平台",
+      "role": "项目负责人",
+      "startDate": "2023-03",
+      "endDate": "2023-08",
+      "description": "负责整体架构设计与后端开发，支持商品发布、搜索与即时消息。"
+    }
+  ],
+  "awards": [
+    { "title": "全国大学生数学建模竞赛省级一等奖", "date": "2022-11", "level": "省级" }
+  ],
+  "certificates": [
+    { "name": "全国计算机等级考试二级", "date": "2021-09" }
+  ],
+  "languages": [
+    { "language": "英语", "level": "熟练", "cert": "CET-6 560" }
+  ],
+  "skills": {
+    "domain": "Java、Go、MySQL、Redis、Kubernetes"
+  },
+  "family": [
+    { "name": "林某", "relation": "父亲", "employer": "示例制造公司", "position": "工程师" }
+  ],
+  "intent": {
+    "position": "后端开发工程师",
+    "cities": ["上海市", "杭州市"],
+    "salary": "面议",
+    "acceptRelocation": true,
+    "availableDate": "2027-07",
+    "channel": "企业官网",
+    "jobType": "全职"
+  },
+  "others": {
+    "personalSite": "https://example.com",
+    "portfolio": "https://github.com/example",
+    "selfEvaluation": "做事踏实，乐于钻研，具备良好的沟通能力。",
+    "hobbies": "跑步、摄影"
+  }
+}

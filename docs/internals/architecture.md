@@ -10,6 +10,7 @@
 | Desktop shell | `apps/desktop` | Electron macOS 桌面壳：加载线上 LinkResume Web 端（开发窗口连本地 Vite，打包产物按目标环境连 Dev 或生产），与业务代码和后端零耦合；窗口采用无标题栏沉浸形态，业务迭代不需要修改壳。打包、环境区分（本地/开发版/正式版）与产物管理由 `desktop-release` Skill 引导 |
 | Native desktop clients | `apps/mac`、`apps/windows`、`apps/native` | SwiftUI（macOS）与 WinUI 3（Windows）原生客户端骨架：界面为系统控件，仅简历纸面嵌入离线网页视图，复用 Web 端 `renderResumePrintDocument`；正式 App 已注入 desktop Bearer HTTP、系统安全存储与扫码会话协调器，支持登录与模板只读列表，其余页面仍为占位，协议边界见 [桌面会话](../api/http-contracts.md#桌面-bearer-会话)，详见 [`apps/native/README.md`](../../apps/native/README.md) |
 | Browser extension | `apps/extension` | WXT、React、TypeScript Chrome MV3 插件；读取当前 BOSS 详情页并提交确认后的采集字段 |
+| Autofill extension | `apps/autofill` | 独立的 WXT、React、TypeScript Chrome / Edge MV3 网申填写插件；从本机 JSON 简历取值，通过 Jev 识别页面字段后写入，不自动提交；详见 [网申填写插件](autofill.md) |
 | WeChat miniprogram | `apps/miniprogram` | 原生小程序渠道，提供游客示例、主动登录、扫码确认、本人头像与昵称维护、简历只读浏览及求职跟进；时间表与岗位详情复用面试弹窗、记录编辑器和统一公司标识；详见 [小程序架构](miniprogram.md) |
 | Backend | `apps/backend` | FastAPI 业务 API、内部 Agent 工具、Worker、SQLAlchemy 模型与 SQL-first Alembic 迁移 |
 | Pi Agent service | `apps/pi-service` | 独立无头 Node 服务；运行 Pi Agent loop，并仅通过受控 HTTP 工具调用 FastAPI |
@@ -30,6 +31,8 @@ Web 页面统一请求相对 `/api` 路径。`apps/web/vite.config.mjs` 将全�
 Vite 生产构建按工作区页面输出动态分包，并把 React、React DOM 与 Zustand 固定到独立 `vendor-react` 分包，避免业务代码发布时重复下载稳定运行时。登录后的应用壳在浏览器空闲阶段预加载模板与资料库页面包；资料库的上传、预览、移动弹窗和 Markdown 渲染继续按用户操作加载，不进入资料库首屏分包。
 
 浏览器插件从独立的 `chrome-extension://` 源运行，默认通过 `http://127.0.0.1:5173` 或 `http://localhost:5173` 调用同一 Vite `/api` 代理，并携带用户已经在对应 Web 源站建立的 HttpOnly Cookie 会话。插件 Manifest 只声明 BOSS 站点、本地 LinkResume 源站和构建时显式配置的 LinkResume 源站权限；内容脚本不直接访问 LinkResume API。
+
+网申填写插件 `apps/autofill` 使用独立的扩展身份与本机存储，不访问 LinkResume API，也不共享岗位采集插件的 Cookie 或配置。扩展侧边栏直接调用用户配置的 Jev 接口，页面脚本只负责招聘页面的字段扫描、经历补齐与值写入。
 
 FastAPI 在 `apps/backend/src/linkresume/main.py` 以 `/api` 前缀挂载浏览器路由，并在根路径挂载不出现在 OpenAPI 的 `/internal/agent` 服务间路由。智能助手请求由 FastAPI 写入 MySQL 后以服务 token 转发到独立 Pi 服务；Pi 再用另一枚 token 调用受控内部工具，浏览器不直接访问 Pi。Vite 为最长 180 秒的同步导入设置 190 秒代理预算，避免代理先于后端业务 deadline 关闭连接。PDF 和 DOCX 导入由 FastAPI 使用后端 Secret 直接访问 `http://100.86.10.52:18743/v1/parse`；浏览器不连接 LinkParse，Markdown 在 Worker 内本地转换。详细接口见 [HTTP 契约](../api/http-contracts.md)。
 

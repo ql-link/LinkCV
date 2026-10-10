@@ -183,6 +183,8 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 
 ## 常用命令
 
+根级 `npm run sync`（以及调用它的 `npm run setup`）安装 `apps/autofill` 的锁定依赖。该应用与 `apps/extension` 分别运行、分别侧载；通用 `typecheck` 和 `build` 命令包含两个插件。网申填写插件的 Jev 设置与 JSON 简历通过扩展设置页配置，不读取项目 `.env`，不依赖 FastAPI 或数据库。安装、使用及字段说明见 [网申填写插件](../internals/autofill.md)。`apps/autofill/eval` 是可选的独立评测工具，依赖需在该目录执行 `npm ci`，不包含在默认安装或质量检查中。
+
 | 命令                                  | 作用                                                                 |
 | ------------------------------------- | -------------------------------------------------------------------- |
 | `npm run db:migrate`                  | 将数据库升级到 Alembic 最新版本                                      |
@@ -203,6 +205,10 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run dev:extension:local -- --origin http://127.0.0.1:5175 --port 3002` | 监视插件源码并连接指定本地 Web；输出独立开发版侧载目录，可与正式版并存 |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
+| `npm run dev:autofill`                | 单独启动网申填写插件 WXT 开发模式                                   |
+| `npm run typecheck:autofill`          | 生成 WXT 类型并检查网申填写插件 TypeScript                           |
+| `npm run build:autofill`              | 构建 `apps/autofill/.output/chrome-mv3` 侧载目录                       |
+| `npm run zip:autofill`                | 将网申填写插件打包为独立 ZIP                                         |
 | `uv run --directory apps/backend python ../../scripts/release/build_extension_release.py ...` | 生成并校验 Development/Production 插件发布 ZIP 与 SHA256SUMS |
 | `npm run build:native-renderer`      | 生成原生客户端离线纸面 `paper.html`，并复制进 Mac 与 Windows 资源目录 |
 | `npm run dev:mac`                     | 构建并启动 SwiftUI Mac 原生客户端（需配置 API origin），见 `apps/native/README.md` |
@@ -233,6 +239,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 
 - 独立意图识别的虚构回归用例位于 `apps/backend/tests/fixtures/intent_routing_cases.json`。`LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/dev/verify_intent_routing.py` 默认只列出用例，不调用模型；加 `--live` 才使用当前有效的 Dev 意图模型，重复 `--case` 可限制场景和调用数量，`--output` 可保存安全结果。脚本拒绝 Production，不读取用户资料或创建业务任务，调用来源为 `intent_acceptance`；不能替代真实 Pi 工具、回退和权限验收，详见 [助手人工测试手册](assistant-resume-manual-testing.md#独立意图识别回归)。
 - 跨浏览器插件、BOSS 页面、Web、FastAPI、真实 MySQL 和 Redis 的完整导入流程由浏览器人工验证。侧载目录和步骤见 [`apps/extension/README.md`](../../apps/extension/README.md)。
+- 网申填写插件使用 `typecheck:autofill` 检查类型，`eval` 提供可选的字段决策评测；真实招聘页面的控件交互、站点权限和写入结果需人工验证，评测不等同于浏览器端到端验收。
 
 ### 小程序求职联调
 

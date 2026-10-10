@@ -131,6 +131,25 @@ rules:
       - docs/internals/web.md
       - docs/ops/development.md
 
+  - id: browser-autofill-runtime
+    description: 网申填写插件入口、权限或填写逻辑变化必须同步插件文档
+    when_changed:
+      - apps/autofill/package.json
+      - apps/autofill/wxt.config.ts
+      - apps/autofill/entrypoints/**
+      - apps/autofill/src/**
+    must_update:
+      - docs/internals/autofill.md
+
+  - id: browser-autofill-development
+    description: 网申填写插件安装和构建配置变化必须同步开发文档
+    when_changed:
+      - apps/autofill/package.json
+      - apps/autofill/wxt.config.ts
+      - apps/autofill/tsconfig.json
+    must_update:
+      - docs/ops/development.md
+
   - id: backend-persistence
     description: 数据模型和迁移变化必须同步后端文档
     when_changed:

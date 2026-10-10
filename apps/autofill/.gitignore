@@ -1,0 +1,9 @@
+node_modules/
+.output/
+.wxt/
+eval/node_modules/
+eval/.data/
+eval/models/
+eval/results/
+*.log
+.DS_Store
