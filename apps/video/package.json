@@ -1,0 +1,31 @@
+{
+  "name": "@linkresume/video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts ProductIntro out/linkresume-intro.mp4",
+    "render:teaser": "remotion render src/index.ts ProductTeaser out/linkresume-teaser.mp4",
+    "render:teaser:en": "remotion render src/index.ts ProductTeaser out/linkresume-teaser-en.mp4 --props='{\"locale\":\"en\"}'",
+    "encode:web": "node scripts/encode-web.mjs",
+    "still": "remotion still src/index.ts ProductIntro out/still.png",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/noto-sans-sc": "5.3.0",
+    "@fontsource/inter": "5.3.0",
+    "@fontsource/noto-serif-sc": "5.3.0",
+    "@fontsource/poppins": "5.3.0",
+    "@remotion/cli": "4.0.534",
+    "lucide-react": "1.25.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.534"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "typescript": "6.0.3"
+  }
+}

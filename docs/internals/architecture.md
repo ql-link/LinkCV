@@ -9,6 +9,7 @@
 | Web | `apps/web` | React 19、TypeScript、Vite 单页应用，承载用户工作区、公共分享和管理端界面 |
 | Desktop shell | `apps/desktop` | Electron macOS 桌面壳：加载线上 LinkResume Web 端（开发窗口连本地 Vite，打包产物按目标环境连 Dev 或生产），与业务代码和后端零耦合；窗口采用无标题栏沉浸形态，业务迭代不需要修改壳。打包、环境区分（本地/开发版/正式版）与产物管理由 `desktop-release` Skill 引导 |
 | Native desktop clients | `apps/mac`、`apps/windows`、`apps/native` | SwiftUI（macOS）与 WinUI 3（Windows）原生客户端骨架：界面为系统控件，仅简历纸面嵌入离线网页视图，复用 Web 端 `renderResumePrintDocument`；正式 App 已注入 desktop Bearer HTTP、系统安全存储与扫码会话协调器，支持登录与模板只读列表，其余页面仍为占位，协议边界见 [桌面会话](../api/http-contracts.md#桌面-bearer-会话)，详见 [`apps/native/README.md`](../../apps/native/README.md) |
+| Product video | `apps/video` | Remotion 产品视频：约 92 秒宣传片按真实工作区样式重新绘制界面（虚构数据），约 56 秒短片用抽象画面表现主线功能与能力图谱（中英文两版，压缩后作为落地页 Hero 展示区的视频），均逐帧渲染 1920×1080 视频；只引用 Web 的品牌与模型图标资源，不连接后端，也不进入任何部署产物，详见 [`apps/video/README.md`](../../apps/video/README.md) |
 | Browser extension | `apps/extension` | WXT、React、TypeScript Chrome MV3 插件；读取当前 BOSS 详情页并提交确认后的采集字段 |
 | WeChat miniprogram | `apps/miniprogram` | 原生小程序渠道，提供游客示例、主动登录、扫码确认、本人头像与昵称维护、简历只读浏览及求职跟进；时间表与岗位详情复用面试弹窗、记录编辑器和统一公司标识；详见 [小程序架构](miniprogram.md) |
 | Backend | `apps/backend` | FastAPI 业务 API、内部 Agent 工具、Worker、SQLAlchemy 模型与 SQL-first Alembic 迁移 |
