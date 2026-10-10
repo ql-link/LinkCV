@@ -2038,7 +2038,11 @@ function renderInterviewCalendarEvent({
     );
   }
   return (
-    <span className="interview-calendar-event-content interview-calendar-event-stack">
+    <span
+      className="interview-calendar-event-content interview-calendar-event-stack"
+      // 短场次会按块高收起面试方式甚至改成单行，悬停仍能看到完整信息
+      title={`${visibleStart}–${visibleEnd} ${interview.company} · ${interview.stage}${interview.meetingLabel ? ` · ${interview.meetingLabel}` : ""}`}
+    >
       <span className="interview-calendar-event-time v3-num"><Icon name="clock" size={10} />{visibleStart}–{visibleEnd}</span>
       <strong className="interview-calendar-event-title">{interview.company} · {interview.stage}</strong>
       <span className="interview-calendar-event-meta">{interview.meetingLabel}</span>
@@ -2371,7 +2375,7 @@ function ScheduleView({
           snapDuration={15}
           interval={60}
           // 组件会在目标刻度上方多留 12px；补回这 12px，让起始刻度线正好贴着表头，不再露出一截空白
-          scrollToHour={weekDayStartHour + 12 / 56}
+          scrollToHour={weekDayStartHour + 12 / 64}
           fixedWeeks={false}
           showOutsideDays
           interactions={calendarInteractions}

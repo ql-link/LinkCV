@@ -5045,7 +5045,7 @@
 .career-schedule-v3 .schedule-calendar-panel { display: block; height: auto; border: 0; background: transparent; }
 .v3-career .career-reui-calendar {
   --ec-gutter-width: 52px;
-  --ec-hour-height: 56px;
+  --ec-hour-height: 64px;
   --ec-event-min-h: 22px;
   --ec-slot-line-color: var(--v3-line);
   --ec-grid-line-color: var(--v3-line);
@@ -5111,7 +5111,7 @@
 .v3-career .interview-calendar-more-indicator { color: var(--v3-fnt); font-size: 10px; }
 
 /* 周视图：星期 + 日期（Poppins 14）；今天日期蓝色圆 30；左侧时间刻度 52 宽；每小时 56 */
-.v3-career .career-reui-calendar [data-slot="event-calendar-time-grid"] { --ec-hour-height: 56px !important; height: auto !important; min-height: 0; flex: 1 1 0 !important; border-top: 0; }
+.v3-career .career-reui-calendar [data-slot="event-calendar-time-grid"] { --ec-hour-height: 64px !important; height: auto !important; min-height: 0; flex: 1 1 0 !important; border-top: 0; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-time-grid"] > .min-h-0 { height: 0; min-height: 0; flex: 1 1 auto; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-day-header"] { display: grid; height: 56px; place-items: center; border: 0; padding: 0; color: var(--v3-fnt); }
 .interview-calendar-day-header.is-week { display: grid; justify-items: center; gap: 9px; }
@@ -5223,6 +5223,22 @@
 .v3-career .career-reui-calendar [data-slot="event-calendar-month-day-number"] { margin: 4px 0 0; }
 .v3-career .career-reui-calendar [data-view="month"] .interview-calendar-event-stack { display: flex; }
 .v3-career .career-reui-calendar [data-view="week"].interview-calendar-timed-event { width: calc(100% - 4px); height: calc(100% - 4px); margin: 2px; }
+/* 周视图日程块按实际块高分档：≥52px 三行；不足时先收起面试方式；不足 38px（约 30 分钟）改为「时间 公司 · 阶段」单行，避免文字被横向切开。 */
+.v3-career .career-reui-calendar .interview-calendar-timed-event { container: interview-event / size; }
+@container interview-event (max-height: 51.98px) {
+  .v3-career .career-reui-calendar .interview-calendar-event-stack { grid-template-rows: 12px 16px; }
+  .v3-career .career-reui-calendar .interview-calendar-event-stack .interview-calendar-event-meta { display: none; }
+}
+@container interview-event (max-height: 37.98px) {
+  .v3-career .career-reui-calendar .interview-calendar-event-stack { display: flex; align-items: center; gap: 4px; padding: 0 6px 0 12px; }
+  .v3-career .career-reui-calendar .interview-calendar-event-stack::before { top: 4px; bottom: 4px; }
+  .v3-career .career-reui-calendar .interview-calendar-event-stack .interview-calendar-event-time { flex: 0 0 auto; line-height: 14px; }
+  .v3-career .career-reui-calendar .interview-calendar-event-stack .interview-calendar-event-title { min-width: 0; flex: 1 1 auto; line-height: 14px; }
+}
+@container interview-event (max-height: 19.98px) {
+  .v3-career .career-reui-calendar .interview-calendar-event-stack::before { top: 2px; bottom: 2px; }
+  .v3-career .career-reui-calendar .interview-calendar-event-stack :is(.interview-calendar-event-time,.interview-calendar-event-title) { font-size: 10px; line-height: 10px; }
+}
 .v3-career .career-reui-calendar [data-view="week"][data-slot="event-calendar-event"][aria-pressed="true"] { background: color-mix(in srgb, var(--ec-event-color) 16%, #fff) !important; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ec-event-color) 45%, #fff), 0 2px 6px #00000014 !important; }
 /* 10.3 面试日程时间冲突：右侧「查看」文字按钮 */
 .career-notice-action { flex: 0 0 auto; align-self: center; border: 0; background: transparent; padding: 0 0 0 8px; color: var(--v3-bl); cursor: pointer; font-size: 12px; }
