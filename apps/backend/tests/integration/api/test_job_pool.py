@@ -1,5 +1,7 @@
 from datetime import timedelta
+from pathlib import Path
 import asyncio
+import importlib.util
 
 import pytest
 from fastapi.testclient import TestClient
@@ -182,14 +184,68 @@ def test_source_fencing_and_anomaly_review_once(app, client):
         assert not service.write_observations(db, source, task[1], [observation()], now=now + timedelta(hours=2, seconds=121))
 
 
-def test_admin_bootstrap_and_protected_source_config(app, client):
+def finish_scoped(app, source_id, jobs, *, filtered=0, now):
+    with app.state.session_factory() as db:
+        service.queue_source(db, source_id, enabled=True, now=now)
+        generation = service.claim_source(db, source_id, interval_seconds=43200, now=now)[1]
+        assert service.write_observations(db, source_id, generation, jobs, now=now)
+        assert service.finish(db, source_id, generation, SyncResult(jobs=jobs, is_complete=True, filtered_count=filtered), now=now)
+        return db.get(GlobalJobSource, source_id).last_sync_result
+
+
+def test_new_admission_scope_rebaselines_once_instead_of_reporting_a_drop(app, client):
+    source = seed(app)
+    with app.state.session_factory() as db:
+        # Baseline counted before the scope existed.
+        db.get(GlobalJobSource, source).last_sync_result = {"schema_version": 1, "baseline_count": 100}
+        db.commit()
+    now = utc_now()
+    summary = finish_scoped(app, source, [observation(str(i)) for i in range(30)], filtered=70, now=now)
+    with app.state.session_factory() as db:
+        assert db.get(GlobalJobSource, source).sync_status == "succeeded"
+    assert summary["baseline_count"] == 30 and summary["scope_version"] == service.SCOPE_VERSION
+    assert summary["latest"]["counts"]["filtered"] == 70 and summary["latest"]["observed_count"] == 30
+    summary = finish_scoped(app, source, [observation(str(i)) for i in range(10)], now=now + timedelta(hours=1))
+    with app.state.session_factory() as db:
+        assert db.get(GlobalJobSource, source).sync_status == "anomalous"
+    assert summary["latest"]["error_code"] == "JOB_SOURCE_COUNT_DROP"
+
+
+def test_release_script_closes_out_of_scope_jobs_and_recategorizes_the_rest(app, client):
+    path = Path(__file__).resolve().parents[2] / "scripts/release/close_out_of_scope_jobs.py"
+    spec = importlib.util.spec_from_file_location("linkresume_close_out_of_scope_jobs_test", path)
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    source = seed(app)
+    sync(app, source, [
+        observation("1", job_title="后端开发工程师"),
+        observation("2", job_title="大客户销售", job_category="市场/销售"),
+        observation("3", locations={"schema_version": 1, "cities": ["新加坡"], "raw": ["新加坡"]}),
+        observation("4", locations={"schema_version": 1, "cities": ["上海", "东京"], "raw": ["上海市", "东京"]}),
+    ])
+    assert script.apply_scope(app.state.session_factory, execute=False) == (2, 2)
+    with app.state.session_factory() as db:
+        assert set(db.scalars(select(GlobalJob.availability_status))) == {"active"}
+    assert script.apply_scope(app.state.session_factory, execute=True) == (2, 2)
+    with app.state.session_factory() as db:
+        jobs = {job.source_job_key: job for job in db.scalars(select(GlobalJob))}
+        assert {key for key, job in jobs.items() if job.availability_status == "closed"} == {"id:2", "id:3"}
+        assert jobs["id:1"].job_category == "后端"
+        assert jobs["id:4"].job_category == "研发" and jobs["id:4"].locations["cities"] == ["上海"]
+    assert script.apply_scope(app.state.session_factory, execute=True) == (0, 0)
+
+
+def test_catalog_registers_automatically_and_protected_source_config(app, client):
     assert client.get("/api/admin/job-pool/sources").status_code == 403
     with app.state.session_factory() as db:
         user = db.scalar(select(User))
         user.is_admin = True
         db.commit()
-    result = client.post("/api/admin/job-pool/sources/bootstrap")
+    service.register_catalog(app.state.session_factory)
+    result = client.get("/api/admin/job-pool/sources")
     assert result.status_code == 200, result.text
+    assert "catalog_counts" not in result.json()
+    assert client.post("/api/admin/job-pool/sources/bootstrap").status_code in {404, 405}
     rows = result.json()["items"]
     assert len(rows) == len(CATALOG) and all(not row["is_enabled"] for row in rows)
     catl_sources = [row for row in rows if row["tenant_key"] == "catlhr"]
@@ -198,7 +254,8 @@ def test_admin_bootstrap_and_protected_source_config(app, client):
     xcmg_sources = [row for row in rows if row["tenant_key"] == "xcmg"]
     assert len(xcmg_sources) == 2 and len({row["company_id"] for row in xcmg_sources}) == 1
     assert {row["portal_config"]["site_id"] for row in xcmg_sources} == {148090, 148091}
-    assert len(client.post("/api/admin/job-pool/sources/bootstrap").json()["items"]) == len(CATALOG)
+    service.register_catalog(app.state.session_factory)
+    assert len(client.get("/api/admin/job-pool/sources").json()["items"]) == len(CATALOG)
     dewu = [row for row in rows if row["company_name"] == "得物"]
     assert len(dewu) == 2 and dewu[0]["company_id"] == dewu[1]["company_id"]
     source = next(row for row in rows if row["adapter_key"] == "tencent")
@@ -300,30 +357,55 @@ def test_worker_write_failure_keeps_committed_chunks_without_missing_checks(app,
         assert set(db.scalars(select(GlobalJob.missing_count))) == {0}
 
 
-def test_official_logo_fills_company_and_is_visible_in_pool_and_personal_snapshot(app, client):
-    source_id = seed(app)
-    sync(app, source_id, [observation()])
+def finish_with_logo(app, source_id, storage, data, **values):
     logo = "https://cdn.multilingualres.hr.tencent.com/tencentcareer/static/images/fictional-brand.png"
     with app.state.session_factory() as db:
         service.queue_source(db, source_id, enabled=True)
         task = service.claim_source(db, source_id, interval_seconds=43200)
-        assert service.finish(db, source_id, task[1], SyncResult(jobs=[observation()], is_complete=True, company_logo_url=logo))
+        assert service.finish(db, source_id, task[1], SyncResult(company_logo_url=logo, company_logo_bytes=data,
+            **values), storage=storage)
+        return db.get(GlobalJobSource, source_id).last_sync_result["latest"]["company_logo_error_code"]
+
+
+def test_official_logo_is_stored_on_site_and_is_visible_in_pool_and_personal_snapshot(app, client):
+    from tests.integration.api.test_company_logos import LogoStorage, picture
+    storage = LogoStorage()
+    source_id = seed(app)
+    sync(app, source_id, [observation()])
+    assert finish_with_logo(app, source_id, storage, picture("red"), jobs=[observation()], is_complete=True) is None
     job = client.get("/api/job-pool").json()["items"][0]
-    assert job["company"]["logo_url"] == logo
+    logo = job["company"]["logo_url"]
+    assert logo.startswith("/api/company-logos/") and f"public-company-logos/{logo[19:]}" in storage.objects
     assert client.get("/api/job-pool/" + job["id"]).json()["company"]["logo_url"] == logo
     joined = client.post("/api/job-pool/" + job["id"] + "/join").json()
     with app.state.session_factory() as db:
         assert db.get(JobDescription, int(joined["job_id"])).logo_url == logo
         assert db.get(JobApplication, int(joined["application_id"])).job_snapshot["logo_url"] == logo
         company = db.get(GlobalCompany, db.get(GlobalJobSource, source_id).company_id)
-        company.logo_url = "https://cdn.example.test/manually-chosen.png"
+        assert company.logo_source == "official"
+    # A newer official image replaces the old one; an admin choice is never replaced.
+    assert finish_with_logo(app, source_id, storage, picture("blue"), is_complete=False) is None
+    with app.state.session_factory() as db:
+        company = db.get(GlobalCompany, db.get(GlobalJobSource, source_id).company_id)
+        assert company.logo_url != logo
+        company.logo_source = "admin"
+        chosen = company.logo_url
         db.commit()
-        service.queue_source(db, source_id, enabled=True)
-        task = service.claim_source(db, source_id, interval_seconds=43200)
-        assert service.finish(db, source_id, task[1], SyncResult(is_complete=False, company_logo_url=logo))
-        assert company.logo_url == "https://cdn.example.test/manually-chosen.png"
+    assert finish_with_logo(app, source_id, storage, picture("green"), is_complete=False) is None
+    with app.state.session_factory() as db:
+        assert db.get(GlobalCompany, db.get(GlobalJobSource, source_id).company_id).logo_url == chosen
         assert db.get(JobDescription, int(joined["job_id"])).logo_url == logo
         assert db.get(JobApplication, int(joined["application_id"])).job_snapshot["logo_url"] == logo
+
+
+def test_invalid_official_artwork_is_reported_without_changing_sync_outcome(app, client):
+    from tests.integration.api.test_company_logos import LogoStorage
+    source_id = seed(app)
+    assert finish_with_logo(app, source_id, LogoStorage(), b"<svg></svg>", is_complete=True) == "JOB_SOURCE_LOGO_INVALID"
+    with app.state.session_factory() as db:
+        row = db.get(GlobalJobSource, source_id)
+        assert row.sync_status == "succeeded" and row.last_sync_result["latest"]["error_code"] is None
+        assert db.get(GlobalCompany, row.company_id).logo_url is None
 
 
 def test_stale_or_untrusted_logo_cannot_fill_company_and_logo_failure_is_optional(app, client):
@@ -343,7 +425,7 @@ def test_stale_or_untrusted_logo_cannot_fill_company_and_logo_failure_is_optiona
         assert db.get(GlobalCompany, row.company_id).logo_url is None
 
 
-def test_bootstrap_preserves_existing_source_selection_and_company_logo(app, client):
+def test_catalog_registration_preserves_existing_source_selection_and_company_logo(app, client):
     config = {'schema_version': 1, 'host': 'jobs.bytedance.com', 'portals': ['campus'], 'site_id': None}
     with app.state.session_factory() as db:
         user = db.scalar(select(User))
@@ -357,7 +439,8 @@ def test_bootstrap_preserves_existing_source_selection_and_company_logo(app, cli
         db.add(existing)
         db.commit()
         company_id, source_id = company.id, str(existing.id)
-    rows = client.post('/api/admin/job-pool/sources/bootstrap').json()['items']
+    service.register_catalog(app.state.session_factory)
+    rows = client.get('/api/admin/job-pool/sources').json()['items']
     assert len(rows) == len(CATALOG)
     preserved = next(row for row in rows if row['id'] == source_id)
     assert preserved['is_enabled'] and preserved['portal_config'] == config

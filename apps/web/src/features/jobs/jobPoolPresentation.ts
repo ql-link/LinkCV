@@ -21,6 +21,15 @@ export function poolError(error: unknown): string {
   const messages: Record<string, string> = {
     COMPANY_CONFLICT: "公司资料已被更新，请刷新后重新编辑。",
     COMPANY_INVALID: "请检查别名和图标地址，图标需使用 HTTPS 图片地址。",
+    COMPANY_LOGO_URL_REJECTED: "这个地址不能使用，请填写公网可访问的 HTTPS 图片地址。",
+    COMPANY_LOGO_FETCH_FAILED: "图片下载失败，请确认地址可以直接打开，或改为上传图片。",
+    COMPANY_LOGO_INVALID: "无法识别这张图片，请使用 PNG、JPG、WebP、GIF 或 ICO。",
+    COMPANY_LOGO_TOO_LARGE: "图片超过 2MB，请压缩后再试。",
+    COMPANY_LOGO_RATE_LIMITED: "操作太频繁，请稍后再试。",
+    COMPANY_LOGO_SAVE_FAILED: "图片暂时无法保存，请稍后再试。",
+    COMPANY_ALIAS_TAKEN: "这个名称已经能匹配到其他公司，不能重复归入。",
+    UNMATCHED_NAME_NOT_FOUND: "这个名称已被处理，请刷新列表。",
+    COMPANY_LOGO_FINGERPRINT_NOT_FOUND: "这张图片已不存在，请刷新列表。",
     COMPANY_NOT_FOUND: "未找到该公司，请刷新列表。",
     JOB_POOL_CLOSED: "该岗位已下线，无法新加入求职进程。",
     JOB_POOL_NOT_FOUND: "未找到该岗位。",
@@ -49,4 +58,30 @@ export function poolDate(value: string | null): string {
   yesterday.setDate(now.getDate() - 1);
   const day = date.toDateString() === now.toDateString() ? "今天" : date.toDateString() === yesterday.toDateString() ? "昨天" : date.toLocaleDateString("zh-CN");
   return `${day} ${date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+}
+
+const DAY = 86_400_000;
+
+/** List time: 今天 / N 天前 / N 周前, then a plain month-day. */
+export function poolRelative(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const start = (time: Date) => new Date(time.getFullYear(), time.getMonth(), time.getDate()).getTime();
+  const days = Math.round((start(new Date()) - start(date)) / DAY);
+  if (days <= 0) return "今天";
+  if (days < 7) return `${days} 天前`;
+  if (days < 28) return `${Math.floor(days / 7)} 周前`;
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+/** Collection time in the detail action bar: 今天 10:30 收录 / 10月8日 收录. */
+export function poolCollected(value: string | null): string {
+  if (!value) return "收录时间未知";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "收录时间未知";
+  if (date.toDateString() === new Date().toDateString()) {
+    return `今天 ${date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })} 收录`;
+  }
+  return `${date.getMonth() + 1}月${date.getDate()}日 收录`;
 }

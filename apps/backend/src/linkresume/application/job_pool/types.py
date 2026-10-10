@@ -83,6 +83,8 @@ class JobObservation(BaseModel):
     source_attributes: dict = Field(default_factory=lambda: {"schema_version": 1})
     published_at: datetime | None = None
     source_url: str = Field(max_length=2048)
+    # Upstream category text, kept only for the admission scope; never persisted.
+    source_category: str | None = Field(default=None, exclude=True, repr=False)
 
     @field_validator("job_title", "description")
     @classmethod
@@ -128,9 +130,13 @@ class SyncResult(BaseModel):
     jobs: list[JobObservation] = Field(default_factory=list)
     is_complete: bool = False
     invalid_count: int = 0
+    # Rows outside the admission scope (see scope.py); they still count toward completeness.
+    filtered_count: int = 0
     error_code: str | None = None
     company_logo_url: str | None = Field(default=None, max_length=2048)
     company_logo_error_code: str | None = Field(default=None, max_length=64)
+    # Downloaded artwork for `company_logo_url`; never serialized into the sync summary.
+    company_logo_bytes: bytes | None = Field(default=None, exclude=True, repr=False)
 
 
 class SourceConfig(BaseModel):

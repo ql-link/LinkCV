@@ -1,85 +1,52 @@
-import { useState, type ComponentProps, type ReactNode } from "react";
-import { Button, Dialog, DialogContent, DialogDescription, DialogTitle, Input, SelectField } from "@/components/ui";
-import searchIcon from "../../assets/figma/job-pool/search.svg";
-import downIcon from "../../assets/figma/job-pool/down.svg";
+import { useCallback, useRef, useState, type ReactNode } from "react";
+import { Icon } from "../../v3/Icon";
+import { Popover, SearchBox } from "../../v3/primitives";
 import "./opportunities.css";
 
 export type PoolCompany = { id: string; name: string; logo_url?: string | null; aliases?: string[] };
 
-export function PoolCompanyLogo({ company, size = 24, jobTitle }: { company: Pick<PoolCompany, "name" | "logo_url">; size?: 24 | 32 | 40 | 48 | 64; jobTitle?: string }) {
+/** Company mark shared by the workspace and admin pages; a failed or missing image quietly falls back to the first character. */
+export function PoolCompanyLogo({ company, size = 24 }: { company: Pick<PoolCompany, "name" | "logo_url">; size?: 20 | 24 | 32 | 40 | 48 | 64 }) {
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
-  const [showFailure, setShowFailure] = useState(false);
   const initial = [...company.name.trim()][0] || "企";
-  return <><span className={`pool-company-logo pool-company-logo-${size}`}>
+  return <span className={`pool-company-logo pool-company-logo-${size}`}>
     {company.logo_url && failedUrl !== company.logo_url
       ? <img src={company.logo_url} alt={`${company.name} Logo`} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailedUrl(company.logo_url!)} />
-      : failedUrl && company.logo_url === failedUrl
-        ? <button type="button" className="pool-logo-fallback" aria-label={`查看${company.name}图标加载提示`} title="图标加载失败，点击查看或重试" onClick={() => setShowFailure(true)}>{initial}</button>
-        : <span aria-hidden="true">{initial}</span>}
-  </span>{showFailure && <PoolDialog title="图标加载失败" wide onClose={() => setShowFailure(false)} footer={<>
-    <Button variant="outline" onClick={() => setShowFailure(false)}>关闭</Button>
-    <Button onClick={() => { setFailedUrl(null); setShowFailure(false); }}>重新加载</Button>
-  </>}>
-    <div className="pool-logo-failure-example"><PoolCompanyLogo company={{ name: company.name }} size={40} /><span>{company.name}{jobTitle ? ` · ${jobTitle}` : ""}</span></div>
-    <p>显示公司名称首字，岗位仍可查看和加入求职进程。</p>
-  </PoolDialog>}</>;
+      : <span aria-hidden="true">{initial}</span>}
+  </span>;
 }
 
-export function PoolSearch(props: ComponentProps<typeof Input>) {
-  return <label className="pool-search-field"><img src={searchIcon} alt="" /><Input {...props} /></label>;
+export function PoolTag({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "success" | "warning" }) {
+  return <span className={`v3-pill pool-tag pool-tag-${tone}`}>{children}</span>;
 }
 
-export function PoolSelect(props: ComponentProps<typeof SelectField>) {
-  return <span className="pool-filter"><SelectField {...props} /></span>;
-}
-
-export function PoolTag({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "success" | "warning" | "accent" }) {
-  return <span className={`pool-tag pool-tag-${tone}`}>{children}</span>;
-}
-
-export function PoolDialog({ title, description, children, footer, onClose, wide = false, busy = false }: {
-  title: string; description?: string; children?: ReactNode; footer?: ReactNode; onClose: () => void; wide?: boolean; busy?: boolean;
-}) {
-  return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
-    <DialogContent className={`pool-theme pool-dialog${wide ? " pool-dialog-wide" : ""}`} onEscapeKeyDown={(event) => { if (busy) event.preventDefault(); }} onInteractOutside={(event) => { if (busy) event.preventDefault(); }}>
-      <DialogTitle>{title}</DialogTitle>
-      {description ? <DialogDescription>{description}</DialogDescription> : <DialogDescription className="sr-only">{title}</DialogDescription>}
-      {children}
-      {footer && <div className="pool-dialog-actions">{footer}</div>}
-    </DialogContent>
-  </Dialog>;
-}
-
-export function PoolState({ title, description, children, error = false }: { title: string; description: string; children?: ReactNode; error?: boolean }) {
-  return <section className="pool-empty" role={error ? "alert" : undefined}>
-    <h2>{title}</h2><p>{description}</p>{children && <div className="pool-state-actions">{children}</div>}
-  </section>;
-}
-
-export function CompanyPicker({ companies, selected, onApply, multiple = true }: {
-  companies: PoolCompany[]; selected: string[]; onApply: (ids: string[]) => void; multiple?: boolean;
-}) {
+/** Searchable multi-select; every tick applies at once, so there is no draft state or confirm step. */
+export function CompanyFilter({ companies, selected, onChange }: { companies: PoolCompany[]; selected: string[]; onChange: (ids: string[]) => void }) {
+  const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(selected);
   const [search, setSearch] = useState("");
-  const selectedNames = companies.filter((c) => selected.includes(c.id)).map((c) => c.name);
-  const options = companies.filter((c) => [c.name, ...(c.aliases ?? [])].some((v) => v.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())));
-  const toggle = (id: string) => setDraft((old) => old.includes(id) ? old.filter((v) => v !== id) : multiple ? old.length < 200 ? [...old, id] : old : [id]);
+  const close = useCallback(() => setOpen(false), []);
+  const names = companies.filter((company) => selected.includes(company.id)).map((company) => company.name);
+  const text = search.trim().toLocaleLowerCase();
+  const options = companies.filter((company) => [company.name, ...(company.aliases ?? [])].some((name) => name.toLocaleLowerCase().includes(text)));
+  const toggle = (id: string) => onChange(selected.includes(id) ? selected.filter((value) => value !== id) : selected.length < 200 ? [...selected, id] : selected);
   return <>
-    <Button className="pool-company-trigger" variant="outline" aria-label="全部企业" aria-haspopup="dialog" aria-expanded={open} onClick={() => { setDraft(selected); setSearch(""); setOpen(true); }}>
-      <span>{selectedNames.length ? `${selectedNames[0]}${selectedNames.length > 1 ? ` 等 ${selectedNames.length} 家` : ""}` : "全部企业"}</span><img src={downIcon} alt="" />
-    </Button>
-    {open && <PoolDialog title="选择企业" onClose={() => setOpen(false)} footer={<>
-      <Button variant="outline" onClick={() => setDraft([])}>清空</Button>
-      <Button onClick={() => { onApply(draft); setOpen(false); }}>应用筛选</Button>
-    </>}>
-      <PoolSearch aria-label="搜索企业" placeholder={companies.some((company) => company.aliases?.length) ? "搜索公司名称 / 别名" : "搜索公司名称"} value={search} onChange={(event) => setSearch(event.target.value)} autoFocus />
-      {draft.length > 0 && <div className="pool-selected-companies">{companies.filter((c) => draft.includes(c.id)).map((c) => <button key={c.id} type="button" className="pool-selected-company" onClick={() => toggle(c.id)} aria-label={`移除${c.name}`}>{c.name} ×</button>)}</div>}
-      <p className="pool-picker-hint">已选 {draft.length} 家{multiple ? draft.length >= 200 ? " · 最多选择 200 家" : " · 可继续添加" : ""}</p>
-      <div className="pool-company-options">{options.length ? options.map((company) => <label className="pool-company-option" key={company.id}>
-        <input type="checkbox" aria-label={company.name} checked={draft.includes(company.id)} disabled={multiple && draft.length >= 200 && !draft.includes(company.id)} onChange={() => toggle(company.id)} />
-        <PoolCompanyLogo company={company} /><span>{company.name}</span>
-      </label>) : <p className="pool-muted">没有匹配的企业</p>}</div>
-    </PoolDialog>}
+    <button ref={anchor} type="button" className={`v3-select is-sm pool-company-trigger${names.length ? " is-active" : ""}`} aria-label="筛选企业" aria-haspopup="dialog" aria-expanded={open} onClick={() => { setSearch(""); setOpen((value) => !value); }}>
+      <span className="v3-select-value">{names.length ? `${names[0]}${names.length > 1 ? ` 等 ${names.length} 家` : ""}` : "企业"}</span>
+      <Icon className="v3-select-chev" name="chevd" size={12} />
+    </button>
+    <Popover anchorRef={anchor} open={open} onClose={close} label="选择企业" className="pool-company-menu">
+      <SearchBox label="搜索企业" placeholder="搜索公司名称 / 别名" value={search} onChange={setSearch} />
+      <div className="pool-company-options">
+        {options.length ? options.map((company) => <label className="pool-company-option" key={company.id}>
+          <input type="checkbox" aria-label={company.name} checked={selected.includes(company.id)} disabled={selected.length >= 200 && !selected.includes(company.id)} onChange={() => toggle(company.id)} />
+          <PoolCompanyLogo company={company} size={20} /><span>{company.name}</span>
+        </label>) : <p className="pool-muted">没有匹配的企业</p>}
+      </div>
+      <div className="pool-company-menu-foot">
+        <span>{selected.length ? `已选 ${selected.length} 家 · ${selected.length >= 200 ? "最多 200 家" : "勾选即生效"}` : "勾选即生效，未选显示全部企业"}</span>
+        {selected.length > 0 && <button type="button" className="v3-link" onClick={() => onChange([])}>清空</button>}
+      </div>
+    </Popover>
   </>;
 }

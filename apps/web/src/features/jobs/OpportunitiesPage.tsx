@@ -1,11 +1,22 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, poolQueryParams, type PoolFilters, type PoolJob, type PoolQuery } from "../../api/client";
-import { Button, FeedbackNotice, PageHeader, buttonVariants } from "@/components/ui";
-import { careerApplicationPath, navigateTo } from "../../routing";
-import { CompanyPicker, PoolCompanyLogo, PoolDialog, PoolSearch, PoolSelect, PoolState, PoolTag } from "./PoolUi";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { api, ApiRequestError, poolQueryParams, type PoolFilters, type PoolJob, type PoolQuery } from "../../api/client";
+import { navigateTo } from "../../routing";
+import { Icon } from "../../v3/Icon";
+import { PageEyebrow, SearchBox, Select } from "../../v3/primitives";
+import { Sk } from "../../v3/skeletons";
+import { ErrorCardV3 } from "../../v3/states";
+import { PoolEmptyArt, PoolUnavailableArt } from "./PoolArt";
 import { PoolJoinButton, usePoolJoin } from "./PoolJoin";
-import { poolDate, poolError, poolRecruitment } from "./jobPoolPresentation";
+import { CompanyFilter, PoolCompanyLogo } from "./PoolUi";
+import { poolCollected, poolError, poolRecruitment, poolRelative } from "./jobPoolPresentation";
+import { loadPreferredPoolQuery } from "./jobPoolPreferences";
 import "./opportunities.css";
+
+const LIST_PATH = "/career/opportunities";
+const KEYWORD_ERROR = "关键词需要包含 2～100 个字符。";
+const RECRUITMENT = [{ value: "", label: "全部" }, { value: "campus", label: "校招" }, { value: "internship", label: "实习" }, { value: "experienced", label: "社招" }] as const;
+/** Below this content width the two columns collapse into list → detail. */
+const WIDE_MIN = 900;
 
 const readQuery = (): PoolQuery => {
   const params = new URLSearchParams(window.location.search);
@@ -14,18 +25,34 @@ const readQuery = (): PoolQuery => {
   if (ids.length) query.company_ids = ids;
   return query;
 };
+const jobPath = (id: string) => `${LIST_PATH}/${encodeURIComponent(id)}${window.location.search}`;
+const followLink = (event: MouseEvent<HTMLAnchorElement>) => {
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button !== 0) return;
+  event.preventDefault();
+  navigateTo(event.currentTarget.getAttribute("href")!);
+};
+
+function useWide() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [wide, setWide] = useState(true);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const measure = () => setWide(node.clientWidth === 0 || node.clientWidth >= WIDE_MIN);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, wide] as const;
+}
+
+/** Master-detail: the list stays mounted while `jobId` (from the URL) picks the job on the right. */
 export function OpportunitiesPage({ jobId }: { jobId?: string }) {
-  return jobId ? <OpportunityDetail key={jobId} jobId={jobId} /> : <OpportunityList />;
-}
-function PoolLoading({ detail = false }: { detail?: boolean }) {
-  return <section className={detail ? "pool-detail-loading" : "pool-loading-grid"} role="status" aria-label={detail ? "正在加载岗位详情…" : "正在加载官网岗位…"}>
-    {Array.from({ length: detail ? 3 : 9 }, (_, index) => <div className="pool-loading-card" key={index}><span /><span /><span /></div>)}
-    <span className="sr-only">正在加载</span>
-  </section>;
-}
-function OpportunityList() {
+  const [rootRef, wide] = useWide();
   const [query, setQuery] = useState<PoolQuery>(readQuery);
   const [keyword, setKeyword] = useState(query.keyword ?? "");
+  const [keywordError, setKeywordError] = useState(false);
   const [filters, setFilters] = useState<PoolFilters>({ companies: [], cities: [], categories: [], recruitment_types: [] });
   const [filterError, setFilterError] = useState(false);
   const [jobs, setJobs] = useState<PoolJob[]>([]);
@@ -33,15 +60,31 @@ function OpportunityList() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
+  const [moreError, setMoreError] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [details, setDetails] = useState<Record<string, PoolJob>>({});
   const sequence = useRef(0);
   const queryKey = JSON.stringify(query);
-  const join = usePoolJoin((jobId, id) => setJobs((previous) => previous.map((item) => item.id === jobId ? { ...item, joined_application_id: id } : item)),
-    (id) => setJobs((previous) => previous.map((item) => item.id === id ? { ...item, availability_status: "closed" } : item)));
+  const patchJob = (id: string, change: Partial<PoolJob>) => {
+    setJobs((previous) => previous.map((item) => item.id === id ? { ...item, ...change } : item));
+    setDetails((previous) => previous[id] ? { ...previous, [id]: { ...previous[id]!, ...change } } : previous);
+  };
+  const join = usePoolJoin((id, applicationId) => patchJob(id, { joined_application_id: applicationId }), (id) => patchJob(id, { availability_status: "closed" }));
+
   useEffect(() => {
     const onNavigation = () => { const next = readQuery(); setQuery(next); setKeyword(next.keyword ?? ""); };
     window.addEventListener("popstate", onNavigation);
     return () => window.removeEventListener("popstate", onNavigation);
+  }, []);
+  useEffect(() => {
+    // Preferences only seed an unfiltered visit; links with filters keep their own.
+    if (Object.keys(readQuery()).length) return;
+    let cancelled = false;
+    loadPreferredPoolQuery().then((preferred) => {
+      if (!cancelled && preferred && !Object.keys(readQuery()).length) changeQuery(preferred);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     let cancelled = false;
@@ -50,112 +93,211 @@ function OpportunityList() {
   }, [revision]);
   useEffect(() => {
     const current = ++sequence.current;
-    setLoading(true); setLoadingMore(false); setError(""); setCursor(null); setJobs([]);
+    setLoading(true); setLoadingMore(false); setError(""); setMoreError(false); setCursor(null); setJobs([]);
     api.listPoolJobs(JSON.parse(queryKey) as PoolQuery).then((page) => {
       if (current === sequence.current) { setJobs(page.items); setCursor(page.next_cursor); }
     }).catch((reason) => { if (current === sequence.current) setError(poolError(reason)); })
       .finally(() => { if (current === sequence.current) setLoading(false); });
     return () => { sequence.current++; };
   }, [queryKey, revision]);
+
   const changeQuery = (next: PoolQuery) => {
     const params = poolQueryParams(next);
-    navigateTo(`/career/opportunities${params.size ? `?${params}` : ""}`, { replace: true });
+    navigateTo(`${LIST_PATH}${params.size ? `?${params}` : ""}`, { replace: true });
   };
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const text = keyword.trim();
-    if (text && (text.length < 2 || text.length > 100)) { setError("关键词需要包含 2～100 个字符。"); return; }
-    setError("");
+    if (text && (text.length < 2 || text.length > 100)) { setKeywordError(true); return; }
+    setKeywordError(false);
     changeQuery({ ...query, keyword: text || undefined });
   };
   const loadMore = async () => {
     if (!cursor || loadingMore) return;
     const current = sequence.current;
-    setLoadingMore(true); setError("");
+    setLoadingMore(true); setMoreError(false);
     try {
       const page = await api.listPoolJobs({ ...query, cursor });
       if (current === sequence.current) {
         setJobs((previous) => [...previous, ...page.items.filter((item) => !previous.some((old) => old.id === item.id))]);
         setCursor(page.next_cursor);
       }
-    } catch (reason) { if (current === sequence.current) setError(poolError(reason)); }
+    } catch { if (current === sequence.current) setMoreError(true); }
     finally { if (current === sequence.current) setLoadingMore(false); }
   };
-  const select = (label: string, key: "city" | "job_category", options: Array<{ value: string; label: string }>) =>
-    <PoolSelect label={label} value={query[key] ?? "all"} options={[{ value: "all", label }, ...options]} onChange={({ target }) => changeQuery({ ...query, [key]: target.value === "all" ? undefined : target.value })} />;
-  return <main className="pool-theme pool-page">
-    <PageHeader eyebrow={null} title="发现岗位" description="从企业官方招聘渠道，发现下一份工作。" actions={<Button variant="outline" onClick={() => setRevision((value) => value + 1)}>刷新</Button>} />
-    <div className="pool-toolbar">
-      <div className="pool-channels" role="group" aria-label="招聘类型">{[["", "全部"], ["campus", "校招"], ["internship", "实习"], ["experienced", "社招"]].map(([value, label]) => <button type="button" key={value} aria-pressed={(query.recruitment_type ?? "") === value} onClick={() => changeQuery({ ...query, recruitment_type: value || undefined })}>{label}</button>)}</div>
-      <form className="pool-search" onSubmit={submit}><PoolSearch aria-label="搜索岗位标题或正文" placeholder="搜索岗位名称 / 关键词" maxLength={100} value={keyword} onChange={(event) => setKeyword(event.target.value)} /><button type="submit" className="sr-only">搜索</button></form>
+
+  const selectedCompanies = [...new Set([...(query.company_ids ?? []), ...(query.company_id ? [query.company_id] : [])])];
+  const narrowed = Boolean(selectedCompanies.length || query.city || query.job_category || query.recruitment_type);
+  const filtered = narrowed || Boolean(query.keyword);
+  const clear = () => { setKeyword(""); setKeywordError(false); changeQuery({}); };
+  const select = (placeholder: string, all: string, key: "city" | "job_category", values: string[]) =>
+    <Select size="sm" className="pool-filter" label={placeholder} placeholder={placeholder} value={query[key] ?? ""}
+      options={[{ value: "all", label: all }, ...values.map((value) => ({ value, label: value }))]}
+      onChange={(value) => changeQuery({ ...query, [key]: value === "all" ? undefined : value })} />;
+
+  // Wide screens always show a job on the right; narrow screens open one only when chosen.
+  const selectedId = jobId ?? (wide && !loading ? jobs[0]?.id : undefined);
+  const singleDetail = !wide && Boolean(jobId);
+  const companyNames = filters.companies.filter((company) => selectedCompanies.includes(company.id)).map((company) => company.name);
+  const summary = [query.keyword, RECRUITMENT.find((item) => item.value && item.value === query.recruitment_type)?.label, query.city, query.job_category,
+    companyNames.length ? `${companyNames[0]}${companyNames.length > 1 ? ` 等 ${companyNames.length} 家` : ""}` : undefined].filter(Boolean).join(" · ");
+  const empty = !loading && !error && !jobs.length && !jobId;
+
+  return <div ref={rootRef} className={`v3-page pool-page${wide ? " is-wide" : " is-narrow"}${singleDetail ? " is-detail" : ""}`}>
+    {singleDetail ? <button type="button" className="v3-link pool-back" onClick={() => navigateTo(`${LIST_PATH}${window.location.search}`)}><Icon name="chevl" size={12} />返回岗位列表</button> : <>
+      <header className="pool-head">
+        <div>
+          <PageEyebrow segments={["OPPORTUNITIES", "企业官网直招"]} />
+          <h1 className="v3-page-title">发现岗位</h1>
+        </div>
+        <form className="pool-search" role="search" onSubmit={submit}>
+          <SearchBox label="搜索岗位名称、职责或技能" placeholder="搜索岗位名称、职责或技能" value={keyword} onChange={(value) => { setKeyword(value); setKeywordError(false); }} />
+          <button type="submit" className="sr-only">搜索</button>
+        </form>
+      </header>
+      <div className="pool-bar">
+        <div className="pool-tabs" role="tablist" aria-label="招聘类型">
+          {RECRUITMENT.map((item) => <button key={item.value} type="button" role="tab" aria-selected={(query.recruitment_type ?? "") === item.value}
+            className={(query.recruitment_type ?? "") === item.value ? "is-active" : undefined} onClick={() => changeQuery({ ...query, recruitment_type: item.value || undefined })}>{item.label}</button>)}
+        </div>
+        <div className="pool-filters" aria-label="筛选岗位">
+          {filtered && <button type="button" className="v3-link pool-clear" onClick={clear}>清除筛选</button>}
+          <CompanyFilter companies={filters.companies} selected={selectedCompanies} onChange={(ids) => changeQuery({ ...query, company_id: undefined, company_ids: ids.length ? ids : undefined })} />
+          {select("城市", "全部城市", "city", filters.cities)}
+          {select("类别", "全部类别", "job_category", filters.categories)}
+        </div>
+      </div>
+      {keywordError && <p className="pool-note is-warn" role="alert">{KEYWORD_ERROR}</p>}
+      {filterError && <p className="pool-note is-warn">筛选项暂时无法加载，关键词搜索仍可使用。<button type="button" className="v3-link" onClick={() => setRevision((value) => value + 1)}>重试</button></p>}
+    </>}
+    {error ? <div className="pool-state"><ErrorCardV3 title="岗位暂时无法加载" description="网络不稳定或服务暂时不可用，筛选条件已保留。" onRetry={() => setRevision((value) => value + 1)} /></div>
+      : empty ? <div className="pool-state">
+        <section className="v3-empty pool-empty">
+          <div className="v3-stage has-dots"><PoolEmptyArt summary={filtered ? summary : "企业官网直招"} /></div>
+          {filtered ? <>
+            <h3>没有符合条件的岗位</h3>
+            <p>换个关键词，或减少企业、城市、类别的筛选条件试试。</p>
+            <div className="v3-empty-actions">
+              <button type="button" className="v3-btn v3-btn-dark" onClick={clear}>清除筛选</button>
+              {query.keyword && narrowed && <button type="button" className="v3-link" onClick={() => changeQuery({ keyword: query.keyword })}>只用关键词搜索</button>}
+            </div>
+          </> : <>
+            <h3>暂时还没有岗位</h3>
+            <p>企业官网的岗位同步后会出现在这里，稍后再来看看。</p>
+          </>}
+        </section>
+      </div>
+      : <div className="pool-split">
+        {!singleDetail && <nav className="pool-list" aria-label="岗位列表">
+          {loading ? <ul role="status" aria-label="正在加载官网岗位…">
+            {Array.from({ length: 7 }, (_, index) => <li key={index} className="pool-item is-loading" aria-hidden="true">
+              <Sk w={32} h={32} r={7} /><span className="pool-item-body"><Sk w="62%" h={13} /><Sk w="40%" h={10} /><Sk w="30%" h={10} /></span>
+            </li>)}
+          </ul> : <ul>
+            {jobs.map((job) => <li key={job.id}>
+              <a className={`pool-item${job.id === selectedId ? " is-selected" : ""}${job.availability_status === "closed" ? " is-closed" : ""}`} href={jobPath(job.id)}
+                aria-current={job.id === selectedId ? "true" : undefined} onClick={followLink}>
+                <PoolCompanyLogo company={job.company} size={32} />
+                <span className="pool-item-body">
+                  <span className="pool-item-top"><strong title={job.title}>{job.title}</strong><time dateTime={job.first_seen_at}>{poolRelative(job.first_seen_at)}</time></span>
+                  <span className="pool-item-company">{job.company.name} · {job.locations.cities.join(" / ") || "地点未标明"}</span>
+                  <span className="pool-item-meta">
+                    <span>{[poolRecruitment(job), job.category].filter(Boolean).join(" · ")}{job.salary_text && <b> · {job.salary_text}</b>}</span>
+                    {job.joined_application_id ? <em className="is-joined"><Icon name="check" size={10} />已加入</em>
+                      : job.availability_status === "closed" ? <em>已下线</em>
+                        : job.availability_status === "missing" ? <em className="is-warn">本轮未发现</em> : null}
+                  </span>
+                </span>
+              </a>
+            </li>)}
+          </ul>}
+          {!loading && <footer className="pool-list-foot">
+            {moreError ? <span role="alert">加载失败，<button type="button" className="v3-link is-blue" onClick={() => void loadMore()}>重试</button></span>
+              : loadingMore ? <span role="status">正在加载…</span>
+                : cursor ? <button type="button" className="v3-btn v3-btn-ghost" onClick={() => void loadMore()}>加载更多</button>
+                  : <span>没有更多了</span>}
+          </footer>}
+        </nav>}
+        {(wide || singleDetail) && <section className="pool-detail" aria-label="岗位详情">
+          {selectedId ? <OpportunityDetail key={selectedId} jobId={selectedId} cached={details[selectedId]} joiningId={join.joiningId}
+            onLoaded={(job) => setDetails((previous) => ({ ...previous, [job.id]: job }))} onJoin={(job) => void join.join(job)} />
+            : loading ? <DetailSkeleton /> : null}
+        </section>}
+      </div>}
+    {join.feedback}
+  </div>;
+}
+
+function DetailSkeleton() {
+  return <div className="pool-detail-scroll" role="status" aria-label="正在加载岗位详情…">
+    <div className="pool-detail-skeleton" aria-hidden="true">
+      <Sk w={120} h={14} /><Sk w="55%" h={28} r={6} /><Sk w="35%" h={12} />
+      <Sk w="100%" h={1} /><Sk w={80} h={14} /><Sk w="90%" h={12} /><Sk w="80%" h={12} /><Sk w="85%" h={12} />
     </div>
-    <div className="pool-filters" aria-label="筛选岗位">
-      <CompanyPicker companies={filters.companies} selected={[...new Set([...(query.company_ids ?? []), ...(query.company_id ? [query.company_id] : [])])]} onApply={(ids) => changeQuery({ ...query, company_id: undefined, company_ids: ids.length ? ids : undefined })} />
-      {select("全部城市", "city", filters.cities.map((city) => ({ value: city, label: city })))}
-      {select("全部类别", "job_category", filters.categories.map((category) => ({ value: category, label: category })))}
-      <button className="pool-clear" type="button" onClick={() => changeQuery({})}>清除筛选</button>
-    </div>
-    {filterError && <FeedbackNotice kind="warning">筛选项暂时无法加载，可刷新重试；关键词搜索仍可使用。</FeedbackNotice>}
-    <div className="pool-results-summary"><span>官网岗位</span><span>按最近收录展示</span></div>
-    {error && (error === "关键词需要包含 2～100 个字符。" ? <FeedbackNotice kind="warning">{error}</FeedbackNotice> : <PoolState title="加载失败" description={error} error><Button variant="outline" onClick={() => jobs.length && cursor ? void loadMore() : setRevision((value) => value + 1)}>重新加载</Button></PoolState>)}
-    {loading ? <PoolLoading /> : !jobs.length && !error ? <PoolState title="没有符合条件的岗位" description="换个关键词，或减少企业、城市和岗位类别限制。"><Button onClick={() => changeQuery({})}>清除筛选</Button></PoolState> : <ul className="pool-list">
-      {jobs.map((job) => <li key={job.id} className="pool-card">
-        <div className="pool-card-company"><PoolCompanyLogo company={job.company} jobTitle={job.title} /><span>{job.company.name}</span><span className="pool-card-origin">官网</span></div>
-        <a className="pool-title" href={`/career/opportunities/${job.id}${window.location.search}`} title={job.title} onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) { event.preventDefault(); navigateTo(event.currentTarget.getAttribute("href")!); } }}>{job.title}</a>
-        <p className="pool-card-meta" title={`${job.locations.cities.join(" / ")} · ${poolRecruitment(job)}${job.category ? ` · ${job.category}` : ""}`}>{job.locations.cities.join(" / ") || "地点未标明"} · {poolRecruitment(job)}{job.category ? ` · ${job.category}` : ""}</p>
-        <div className="pool-card-footer"><span className={job.availability_status === "missing" ? "pool-card-warning" : ""}>{job.availability_status === "missing" ? "本轮未发现 · 暂保留" : job.salary_text || "薪资未标明"}</span><PoolJoinButton job={job} joiningId={join.joiningId} onJoin={(item) => void join.join(item)} compact /></div>
-      </li>)}
-    </ul>}
-    <footer className="pool-list-footer"><span>招聘信息以企业官网为准</span>{cursor && <Button variant="outline" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "正在加载…" : "加载更多"}</Button>}</footer>
-    {join.dialog}
-  </main>;
+  </div>;
 }
 
 function Description({ text }: { text?: string }) {
   const sections: Array<{ title: string; lines: string[] }> = [];
   for (const line of (text ?? "").split("\n")) {
     const heading = /^(工作职责|岗位职责|职位描述|任职要求|岗位要求|职位要求|工作地点)[:：]?\s*$/.exec(line.trim());
-    if (heading) sections.push({ title: heading[1], lines: [] });
+    if (heading) sections.push({ title: heading[1]!, lines: [] });
     else { if (!sections.length) sections.push({ title: "岗位描述", lines: [] }); sections[sections.length - 1]!.lines.push(line); }
   }
-  return <section className="pool-body" aria-label="岗位描述">{sections.length ? sections.map((section, i) => <div key={i}><h2>{section.title}</h2><p>{section.lines.join("\n")}</p></div>) : <><h2>岗位描述</h2><p>官网暂未提供岗位正文，请查看招聘官网。</p></>}</section>;
+  const visible = sections.filter((section) => section.lines.join("").trim());
+  return <div className="pool-body">{visible.length ? visible.map((section, index) => <section key={index}><h2>{section.title}</h2><p>{section.lines.join("\n").trim()}</p></section>)
+    : <section><h2>岗位描述</h2><p>官网暂未提供岗位正文，请查看招聘官网。</p></section>}</div>;
 }
-function OpportunityDetail({ jobId }: { jobId: string }) {
-  const [job, setJob] = useState<PoolJob | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+
+/** Join / offline changes reach `cached` through the page's shared patch, so list and detail stay in step. */
+function OpportunityDetail({ jobId, cached, joiningId, onLoaded, onJoin }: {
+  jobId: string; cached?: PoolJob; joiningId: string | null; onLoaded: (job: PoolJob) => void; onJoin: (job: PoolJob) => void;
+}) {
+  const [state, setState] = useState<"loading" | "ready" | "error" | "missing">(cached ? "ready" : "loading");
   const [revision, setRevision] = useState(0);
-  const [showAvailability, setShowAvailability] = useState(false);
-  const join = usePoolJoin((_jobId, id) => setJob((item) => item && { ...item, joined_application_id: id }), () => setJob((item) => item && { ...item, availability_status: "closed" }));
+  const loaded = useRef(onLoaded);
+  loaded.current = onLoaded;
+  const hasCache = useRef(Boolean(cached));
   useEffect(() => {
+    // A job opened before reuses its detail; "重新加载" always fetches again.
+    if (hasCache.current && revision === 0) return;
     let cancelled = false;
-    setLoading(true); setError("");
-    api.getPoolJob(jobId).then((data) => { if (!cancelled) setJob(data); }).catch((reason) => { if (!cancelled) setError(poolError(reason)); }).finally(() => { if (!cancelled) setLoading(false); });
+    setState("loading");
+    api.getPoolJob(jobId).then((data) => { if (!cancelled) { loaded.current(data); setState("ready"); } })
+      .catch((reason) => { if (!cancelled) setState(reason instanceof ApiRequestError && reason.message === "JOB_POOL_NOT_FOUND" ? "missing" : "error"); });
     return () => { cancelled = true; };
   }, [jobId, revision]);
-  return <main className="pool-theme pool-page pool-detail">
-    <button type="button" className="pool-back" onClick={() => navigateTo(`/career/opportunities${window.location.search}`)}>← 返回发现岗位</button>
-    {error && <PoolState title="加载失败" description={error} error><Button variant="outline" onClick={() => setRevision((value) => value + 1)}>重新加载</Button></PoolState>}
-    {loading ? <PoolLoading detail /> : job && <>
-      <header className="pool-detail-heading"><PoolCompanyLogo company={job.company} jobTitle={job.title} size={48} /><div><p>{job.company.name}</p><h1>{job.title}</h1><p>{job.locations.cities.join(" / ") || "地点未标明"} · {poolRecruitment(job)}{job.category ? ` · ${job.category}` : ""}</p></div></header>
-      {job.availability_status !== "active" && <FeedbackNotice kind="warning">{job.availability_status === "closed" ? "该岗位已从官网下线，已有求职记录仍可继续管理。" : "本轮同步未发现该岗位，暂时保留；请到官网确认招聘状态。"}</FeedbackNotice>}
-      <div className="pool-detail-columns"><Description text={job.description} /><aside className="pool-detail-info">
-        <h2>岗位信息</h2><dl><div><dt>招聘类型</dt><dd>{poolRecruitment(job)}</dd></div><div><dt>岗位类别</dt><dd>{job.category || "官网未标明"}</dd></div><div><dt>薪资待遇</dt><dd>{job.salary_text || "官网未标明"}</dd></div></dl>
-        <PoolJoinButton job={job} joiningId={join.joiningId} onJoin={(item) => void join.join(item)} />
-        <a className={buttonVariants({ variant: "outline" })} href={job.source_url} target="_blank" rel="noopener noreferrer">查看招聘官网 ↗</a>
-        <p className="pool-snapshot-rule">加入后保存为个人岗位，后续官网更新不会覆盖你的记录。</p><hr />
-        {job.availability_status === "active" ? <PoolTag tone="success">官网在招</PoolTag> : <button type="button" className="pool-availability" aria-label="查看岗位招聘状态" onClick={() => setShowAvailability(true)}><PoolTag tone="warning">{job.availability_status === "closed" ? "岗位已下线" : "暂未发现"}</PoolTag></button>}
-        <p className="pool-muted">最近发现 · {poolDate(job.last_seen_at)}</p>
-        {!job.source.is_enabled && <p className="pool-muted">来源已暂停 · 上次完整同步 {poolDate(job.source.last_complete_at)}</p>}
-      </aside></div>
-      <footer className="pool-source"><p>岗位描述来自企业官方招聘页面</p><a href={job.source_url} target="_blank" rel="noopener noreferrer">查看企业官网原文 ↗</a></footer>
-    </>}
-    {job && showAvailability && <PoolDialog title={job.availability_status === "closed" ? "岗位已下线" : "暂未发现岗位"} onClose={() => setShowAvailability(false)} footer={job.availability_status === "closed" && job.joined_application_id
-      ? <Button onClick={() => navigateTo(careerApplicationPath(job.joined_application_id!))}>查看求职记录</Button>
-      : <a className={buttonVariants()} href={job.source_url} target="_blank" rel="noopener noreferrer">查看招聘官网</a>}>
-      <PoolTag tone="warning">提示</PoolTag>
-      <p>{job.availability_status === "closed" ? "该岗位已从官网下线。已有求职记录仍可继续管理。" : "本轮同步暂未发现该岗位，仍保留岗位信息。请到招聘官网核实。"}</p>
-    </PoolDialog>}
-    {join.dialog}
-  </main>;
+  if (state === "missing") return <div className="pool-detail-state">
+    <section className="v3-empty pool-empty is-compact" role="alert">
+      <div className="v3-stage has-dots"><PoolUnavailableArt tag="链接已失效" /></div>
+      <h3>没有找到这个岗位</h3>
+      <p>岗位可能已被移除，或链接不完整。可以在左侧继续浏览其他岗位。</p>
+      <div className="v3-empty-actions"><button type="button" className="v3-link is-blue" onClick={() => navigateTo(LIST_PATH)}>返回全部岗位</button></div>
+    </section>
+  </div>;
+  if (state === "error") return <div className="pool-detail-state">
+    <ErrorCardV3 title="岗位详情暂时无法加载" description="左侧列表仍可继续浏览，稍后重试即可。" onRetry={() => setRevision((value) => value + 1)} />
+  </div>;
+  if (!cached || state === "loading") return <DetailSkeleton />;
+  const job = cached;
+  const status = job.joined_application_id ? { tone: "success", text: "已加入求职进程" }
+    : job.availability_status === "closed" ? { tone: "muted", text: "官网已下线" }
+      : job.availability_status === "missing" ? { tone: "warn", text: "本轮未发现，暂时保留" } : { tone: "success", text: "官网在招" };
+  const meta = [job.locations.cities.join(" / ") || "地点未标明", poolRecruitment(job), job.category].filter(Boolean).join(" · ");
+  return <article className="pool-detail-inner">
+    <div className="pool-detail-scroll">
+      <div className="pool-detail-company"><PoolCompanyLogo company={job.company} size={32} /><span>{job.company.name}</span></div>
+      <h1 className="pool-detail-title">{job.title}</h1>
+      <p className="pool-detail-meta">{job.salary_text && <><b>{job.salary_text}</b><i aria-hidden="true" /></>}{meta}</p>
+      {job.availability_status !== "active" && !job.joined_application_id && <p className="pool-note is-warn" role="status"><Icon name="alert" size={14} />
+        {job.availability_status === "closed" ? "该岗位已从官网下线，无法再加入；已有求职记录仍可继续管理。" : "本轮同步未发现该岗位，暂时保留；请到官网确认招聘状态。"}</p>}
+      <hr />
+      <Description text={job.description} />
+    </div>
+    <footer className="pool-actions">
+      <p className={`pool-status is-${status.tone}`}><span aria-hidden="true" />{status.text} · {poolCollected(job.first_seen_at)}</p>
+      <a className="v3-btn v3-btn-ghost is-lg" href={job.source_url} target="_blank" rel="noopener noreferrer">查看招聘官网<Icon name="ext" size={12} /></a>
+      <PoolJoinButton job={job} joiningId={joiningId} onJoin={onJoin} />
+    </footer>
+  </article>;
 }

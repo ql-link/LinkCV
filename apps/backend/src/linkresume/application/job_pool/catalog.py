@@ -16,6 +16,10 @@ class CompanySource:
     site_id: int | None = None
     channels: tuple[str, ...] = ()
     portal_type: int = 2  # Tenant metadata, not an administrator-controlled endpoint parameter.
+    # Upstream top-level job categories requested by the scoped worker, matched by name in the
+    # tenant's filter config. Only for tenants whose category tree is reliable and whose
+    # unfiltered list exceeds the Feishu 10000 result cap.
+    source_categories: tuple[str, ...] = ()
 
     def config(self):
         return SourceConfig(host=self.host, portals=list(self.portals), site_id=self.site_id).model_dump()
@@ -23,7 +27,7 @@ class CompanySource:
 
 CATALOG = (
     CompanySource("tencent", "腾讯", "tencent", "careers.tencent.com", ("social",), "https://careers.tencent.com/", channels=("experienced",)),
-    CompanySource("bytedance", "字节跳动", "feishu", "jobs.bytedance.com", ("default", "campus"), "https://jobs.bytedance.com/", channels=("experienced", "campus", "internship")),
+    CompanySource("bytedance", "字节跳动", "feishu", "jobs.bytedance.com", ("default", "campus"), "https://jobs.bytedance.com/", channels=("experienced", "campus", "internship"), source_categories=("研发",)),
     CompanySource("minimax", "MiniMax", "feishu", "vrfi1sk8a0.jobs.feishu.cn", ("index",), "https://vrfi1sk8a0.jobs.feishu.cn/", channels=("experienced",)),
     CompanySource("meituan", "美团", "meituan", "zhaopin.meituan.com", ("social", "campus", "intern"), "https://zhaopin.meituan.com/", channels=("experienced", "campus", "internship")),
     CompanySource("moonshot", "月之暗面", "moka", "moonshot", ("social",), "https://app.mokahr.com/social-recruitment/moonshot/148506", site_id=148506, channels=("experienced",)),

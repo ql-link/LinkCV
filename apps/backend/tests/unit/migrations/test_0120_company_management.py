@@ -21,7 +21,7 @@ def test_company_migration_is_additive_forward_only_and_latest_head():
     cfg = Config(str(BACKEND / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND / "migrations"))
     scripts = ScriptDirectory.from_config(cfg)
-    assert scripts.get_heads() == ["0121"]
+    assert scripts.get_heads() == ["0122"]
     revision = scripts.get_revision("0120")
     assert revision.down_revision == "0119"
     assert "raise RuntimeError" in Path(revision.path).read_text()

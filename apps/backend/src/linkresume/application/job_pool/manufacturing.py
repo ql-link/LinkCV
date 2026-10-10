@@ -235,5 +235,5 @@ async def normalize(http, sessions, adapter, tenant, portal, row, categorize):
     if identifier is None or isinstance(identifier, bool) or not str(identifier).strip():
         raise ValueError("missing public job identity")
     return JobObservation(source_job_key=job_key(identifier, url), job_title=title, description=body,
-        job_category=categorize(raw_category), recruitment_channel=channel, employment_type=employment,
+        job_category=categorize(raw_category), source_category=str(raw_category or "").strip()[:200] or None, recruitment_channel=channel, employment_type=employment,
         salary_text=salary, locations=cities(places), source_attributes=attrs, published_at=published, source_url=url)

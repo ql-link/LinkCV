@@ -54,8 +54,14 @@ def mysql():
             db.execute(text("INSERT INTO job_description (user_id,job_title,company_name,description,skills,source_type) VALUES (:uid,'已有岗位','示例科技','已有个人正文',JSON_ARRAY(),'manual')"), {"uid": user_id})
             db.execute(text("INSERT INTO global_company (company_name,normalized_name,logo_url) VALUES ('已有公司','已有公司','https://cdn.example.test/legacy.png')"))
         command.upgrade(cfg, "0120")
+        with engine.begin() as db:
+            db.execute(text("INSERT INTO global_company (company_name,normalized_name,logo_url,logo_source) VALUES "
+                "('插件外链公司','插件外链公司','https://img.example.test/plugin.png','plugin'),"
+                "('站内图标公司','站内图标公司','/api/company-logos/" + "b" * 64 + ".webp','plugin'),"
+                "('管理员外链公司','管理员外链公司','https://cdn.example.test/admin.png','admin')"))
+        command.upgrade(cfg, "head")
         # A repeated upgrade is a no-op through Alembic's recorded revision.
-        command.upgrade(cfg, "0120")
+        command.upgrade(cfg, "head")
         yield engine
     finally:
         if previous is None:
@@ -79,13 +85,26 @@ def test_forward_migration_schema_indexes_and_legacy_data(mysql):
     indexes = schema.get_indexes("global_job")
     assert {index["name"] for index in indexes} == {"uk_global_job_source_key", "idx_global_job_search", "idx_global_job_create_time"}
     with mysql.connect() as db:
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0120"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0122"
         assert db.scalar(text("SELECT description FROM job_description WHERE global_job_id IS NULL")) == "已有个人正文"
         legacy = db.execute(text("SELECT aliases,logo_source,lock_version,logo_url FROM global_company WHERE normalized_name='已有公司'")).first()
         assert legacy.aliases == "[]" and legacy.logo_source == "unknown" and legacy.lock_version == 0
         assert legacy.logo_url == "https://cdn.example.test/legacy.png"
         ddl = db.execute(text("SHOW CREATE TABLE global_job")).first()[1]
         assert "FULLTEXT KEY" in ddl and "ngram" in ddl
+        rows = {row.normalized_name: row for row in db.execute(text(
+            "SELECT normalized_name,logo_url,logo_source,logo_dhash,lock_version FROM global_company"))}
+        # 0122 clears plugin external defaults and keeps hosted images and other sources; fingerprints are backfilled by script.
+        assert rows["插件外链公司"].logo_url is None and rows["插件外链公司"].logo_source == "unknown"
+        assert rows["插件外链公司"].lock_version == 1
+        assert rows["站内图标公司"].logo_url.endswith("b" * 64 + ".webp") and rows["站内图标公司"].logo_dhash is None
+        assert rows["管理员外链公司"].logo_url == "https://cdn.example.test/admin.png"
+        assert rows["已有公司"].logo_url == "https://cdn.example.test/legacy.png"
+    for table in ("global_company_logo_fingerprint", "global_company_unmatched_name"):
+        assert schema.has_table(table)
+    assert not schema.has_table("global_company_logo_observation")
+    assert {index["name"] for index in inspect(mysql).get_indexes("global_company_unmatched_name")} >= {
+        "idx_global_company_unmatched_name_ignored_hits", "uk_global_company_unmatched_name_normalized_name"}
 
 
 def test_real_ngram_json_city_filter_and_concurrent_idempotent_join(mysql):
@@ -118,20 +137,25 @@ def test_real_ngram_json_city_filter_and_concurrent_idempotent_join(mysql):
         assert len(list(db.scalars(select(JobDescription).where(JobDescription.global_job_id == int(identifier))))) == 1
 
 
-def test_0120_concurrent_company_logo_fill_preserves_one_default(mysql):
-    from linkresume.application.job_descriptions.company_service import fill_logo
+def test_0122_concurrent_plugin_logo_fill_preserves_one_default(mysql):
+    from linkresume.application.job_descriptions.company_service import set_company_logo
+    from linkresume.application.job_descriptions.logo_service import normalize_logo
+    from tests.integration.api.test_company_logos import LogoStorage, picture
     factory = sessionmaker(mysql, expire_on_commit=False)
+    storage = LogoStorage()
     with factory.begin() as db:
         company = GlobalCompany(company_name="并发图标测试公司", normalized_name="并发图标测试公司")
         db.add(company)
         db.flush()
         identifier = company.id
+    images = [normalize_logo(picture(color)) for color in ("red", "blue")]
     def fill(index):
         with factory.begin() as db:
-            return fill_logo(db, db.get(GlobalCompany, identifier), f"https://cdn.example.test/logo-{index}.png", "plugin")
+            return set_company_logo(db, storage, identifier, "plugin", images[index])
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(fill, range(2)))
     assert sorted(results) == [False, True]
     with factory() as db:
         company = db.get(GlobalCompany, identifier)
         assert company.logo_source == "plugin" and company.lock_version == 1
+        assert company.logo_url.startswith("/api/company-logos/") and len(company.logo_dhash) == 16

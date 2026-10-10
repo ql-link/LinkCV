@@ -398,7 +398,7 @@ class JobDescriptionUpdateRequest(BaseModel):
 
 
 class CompanyLogoResponse(BaseModel):
-    logo_url: str
+    logo_url: str | None
     revision: str
 
 

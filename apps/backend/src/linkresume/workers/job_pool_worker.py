@@ -16,10 +16,11 @@ logger = logging.getLogger(__name__)
 
 
 class JobPoolProcessor:
-    def __init__(self, session_factory, settings, http_factory=OfficialHTTP):
+    def __init__(self, session_factory, settings, http_factory=OfficialHTTP, storage=None):
         self.session_factory = session_factory
         self.settings = settings
         self.http_factory = http_factory
+        self.storage = storage
 
     async def process(self, source_id):
         with self.session_factory() as db:
@@ -28,7 +29,7 @@ class JobPoolProcessor:
             return
         source_id, generation, adapter_key, tenant, config = task
         http = self.http_factory(timeout=self.settings.job_pool_sync_timeout_seconds, max_bytes=self.settings.job_pool_sync_max_response_bytes)
-        reader = OfficialAdapter(http, max_pages=self.settings.job_pool_sync_max_pages)
+        reader = OfficialAdapter(http, max_pages=self.settings.job_pool_sync_max_pages, scoped=True)
         collection = asyncio.create_task(reader.collect(adapter_key, tenant, config))
 
         async def heartbeat():
@@ -60,7 +61,7 @@ class JobPoolProcessor:
                         return
                 await asyncio.sleep(0)
             with self.session_factory() as db:
-                committed = service.finish(db, source_id, generation, result)
+                committed = service.finish(db, source_id, generation, result, storage=self.storage)
             if committed:
                 logger.info("job_pool_sync source_id=%s generation=%s count=%s complete=%s error_code=%s",
                     source_id, generation, len(result.jobs), result.is_complete, result.error_code)
@@ -74,6 +75,7 @@ class JobPoolProcessor:
             logger.error("job_pool_sync source_id=%s generation=%s error_code=JOB_SOURCE_WRITE_FAILED", source_id, generation)
             result.is_complete = False
             result.error_code = "JOB_SOURCE_WRITE_FAILED"
+            result.company_logo_bytes = None
             with self.session_factory() as db:
                 service.finish(db, source_id, generation, result)
         finally:

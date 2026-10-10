@@ -14,6 +14,7 @@ from linkresume.application.interviews.service import ensure_pending_application
 from linkresume.application.job_descriptions.service import DuplicateJobDescription, create_or_resolve_job
 from linkresume.application.job_pool.catalog import CATALOG, entry_for
 from linkresume.application.job_pool.logos import safe_logo_url
+from linkresume.application.job_pool.scope import SCOPE_VERSION
 from linkresume.application.job_pool.types import JobObservation, SyncResult
 from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.database import utc_now
@@ -44,6 +45,22 @@ def source_row(db, source_id, *, lock=False):
     return source
 
 
+def register_catalog(session_factory) -> None:
+    """Idempotently create every preset company and source; existing rows are untouched."""
+    from sqlalchemy.exc import IntegrityError
+
+    for attempt in range(2):
+        with session_factory() as db:
+            try:
+                bootstrap(db)
+                return
+            except IntegrityError:
+                # Another instance registered the same entries concurrently; unique keys win.
+                db.rollback()
+                if attempt:
+                    raise
+
+
 def bootstrap(db: Session):
     # Serialize first-time registration without needing another table or Redis key.
     companies = list(db.scalars(select(GlobalCompany).order_by(GlobalCompany.id).with_for_update()))
@@ -62,10 +79,11 @@ def bootstrap(db: Session):
 
 
 def summary_for(source, now):
-    baseline = (source.last_sync_result or {}).get("baseline_count")
-    return {"schema_version": 1, "baseline_count": baseline, "latest": {
+    previous = source.last_sync_result or {}
+    baseline = previous.get("baseline_count")
+    return {"schema_version": 1, "baseline_count": baseline, "scope_version": previous.get("scope_version"), "latest": {
         "generation": str(source.sync_generation), "baseline_count": baseline,
-        "observed_count": 0, "counts": {key: 0 for key in ("created", "updated", "missing", "closed", "restored", "invalid")},
+        "observed_count": 0, "counts": {key: 0 for key in ("created", "updated", "missing", "closed", "restored", "invalid", "filtered")},
         "is_complete": False, "is_reviewed": False, "error_code": None, "company_logo_error_code": None,
         "started_at": now.isoformat(), "finished_at": None}}
 
@@ -190,24 +208,49 @@ def missing_jobs(db, source, now, counts):
         job.update_time = now
 
 
-def finish(db, source_id, generation, result: SyncResult, now=None):
+def official_logo(db, storage, source, result: SyncResult) -> str | None:
+    """Store the careers page artwork through the shared company logo pipeline.
+
+    Returns an artwork error code; artwork never changes the job sync outcome.
+    """
+    from linkresume.application.job_descriptions.company_service import _placeholder_match, set_company_logo
+    from linkresume.application.job_descriptions.logo_service import logo_dhash, normalize_logo
+
+    if result.company_logo_bytes is None or storage is None:
+        return result.company_logo_error_code
+    if not safe_logo_url(entry_for(source.adapter_key, source.tenant_key, source.portal_config), result.company_logo_url):
+        return "JOB_SOURCE_LOGO_NOT_FOUND"
+    try:
+        normalized = normalize_logo(result.company_logo_bytes)
+    except ApiError:
+        return "JOB_SOURCE_LOGO_INVALID"
+    if _placeholder_match(db, logo_dhash(normalized)) is not None:
+        return "JOB_SOURCE_LOGO_PLACEHOLDER"
+    try:
+        with db.begin_nested():
+            set_company_logo(db, storage, source.company_id, "official", normalized)
+    except Exception:
+        return "JOB_SOURCE_LOGO_STORAGE_FAILED"
+    return None
+
+
+def finish(db, source_id, generation, result: SyncResult, now=None, storage=None):
     now = now or utc_now()
     source = leased_source(db, source_id, generation, now)
     if source is None:
         return False
     summary = copy.deepcopy(source.last_sync_result)
     latest = summary["latest"]
+    logo_error = official_logo(db, storage, source, result)
     latest.update(observed_count=len(result.jobs), is_complete=result.is_complete, error_code=result.error_code,
-        company_logo_error_code=result.company_logo_error_code, finished_at=now.isoformat())
-    logo_url = safe_logo_url(entry_for(source.adapter_key, source.tenant_key, source.portal_config), result.company_logo_url)
-    if logo_url:
-        company = db.scalar(select(GlobalCompany).where(GlobalCompany.id == source.company_id).with_for_update())
-        if company is not None and not company.logo_url:
-            from linkresume.application.job_descriptions.company_service import fill_logo
-            fill_logo(db, company, logo_url, "official")
+        company_logo_error_code=logo_error, finished_at=now.isoformat())
     latest["counts"]["invalid"] = result.invalid_count
+    latest["counts"]["filtered"] = result.filtered_count
     baseline = latest["baseline_count"]
-    anomaly = result.is_complete and baseline is not None and baseline >= 20 and len(result.jobs) < baseline * .5
+    # A baseline counted under older admission rules cannot judge a drop; re-baseline once instead.
+    rescoped = summary.get("scope_version") != SCOPE_VERSION
+    anomaly = (not rescoped and result.is_complete and baseline is not None and baseline >= 20
+        and len(result.jobs) < baseline * .5)
     source.lease_until = None
     if anomaly:
         source.sync_status = "anomalous"
@@ -217,6 +260,7 @@ def finish(db, source_id, generation, result: SyncResult, now=None):
         source.sync_status = "succeeded"
         source.last_complete_at = now
         summary["baseline_count"] = len(result.jobs)
+        summary["scope_version"] = SCOPE_VERSION
     else:
         source.sync_status = "partial" if result.jobs else "failed"
     source.last_sync_result = summary
@@ -242,6 +286,7 @@ def accept(db, source_id, generation, now=None):
     source.sync_status = "succeeded"
     source.last_complete_at = now
     summary["baseline_count"] = latest["observed_count"]
+    summary["scope_version"] = SCOPE_VERSION
     source.last_sync_result = summary
     db.commit()
     return source
