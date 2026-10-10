@@ -53,9 +53,9 @@ def mysql():
             user_id = db.scalar(text("SELECT id FROM `user` WHERE email='zhangsan@example.test'"))
             db.execute(text("INSERT INTO job_description (user_id,job_title,company_name,description,skills,source_type) VALUES (:uid,'已有岗位','示例科技','已有个人正文',JSON_ARRAY(),'manual')"), {"uid": user_id})
             db.execute(text("INSERT INTO global_company (company_name,normalized_name,logo_url) VALUES ('已有公司','已有公司','https://cdn.example.test/legacy.png')"))
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "0120")
         # A repeated upgrade is a no-op through Alembic's recorded revision.
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "0120")
         yield engine
     finally:
         if previous is None:

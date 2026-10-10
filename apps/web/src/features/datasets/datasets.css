@@ -8,7 +8,6 @@
 /* ── 页头：眉标 / 面包屑 → 衬线标题 → 摘要 → 分隔线（y=160） */
 .ds-head { position: relative; padding-top: 52px; }
 /* 文件夹内与资料库首页的标题小字在同一位置（统一样式，见 PageEyebrow） */
-.ds-eyebrow { height: 13px; margin: 0 0 9px; }
 .ds-crumb { display: flex; height: 14px; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 11.5px; line-height: 14px; }
 .ds-crumb-back { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; color: var(--v3-sub); cursor: pointer; font-size: 11.5px; font-weight: 500; }
 .ds-crumb-back:hover { color: var(--v3-txt); }
@@ -23,9 +22,6 @@
 .ds-divider { height: 1px; margin-top: 24px; background: var(--v3-line); }
 
 /* ── 06.1 文件夹网格（3 列 273×172，间距 20）。正文列随窗口变宽时卡片按 273:172 等比放大，文字行贴底保持设计稿间距 */
-.ds-section-head { display: flex; height: 16px; align-items: center; justify-content: space-between; margin: 23px 0 12px; }
-.ds-section-head strong { font-size: var(--ui-text-md); font-weight: var(--ui-weight-semibold); font-family: var(--ui-font-display); line-height: var(--ui-line-subsection-title); }
-.ds-section-head span { color: var(--v3-fnt); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); }
 .ds-folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 273px), 1fr)); gap: 20px; }
 .ds-folder { position: relative; aspect-ratio: 273 / 172; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .ds-folder:hover { border-color: var(--v3-sk2); box-shadow: 0 6px 20px rgb(0 0 0 / 6%); }
@@ -49,18 +45,6 @@
 .ds-new-folder strong { margin-top: 12px; font-size: 13px; font-weight: 500; line-height: 16px; }
 .ds-new-folder small { margin-top: 6px; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
 
-/* 最近上传：卡片内 56 高的行 */
-.ds-recent-head { margin: 32px 0 12px; font-size: var(--ui-text-md); font-weight: var(--ui-weight-semibold); line-height: var(--ui-line-subsection-title); font-family: var(--ui-font-display); }
-.ds-recent { overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); }
-.ds-recent-row { position: relative; display: grid; width: 100%; height: 56px; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 0; background: transparent; padding: 0 17px; color: inherit; cursor: pointer; text-align: left; }
-.ds-recent-row + .ds-recent-row::before { position: absolute; top: 0; right: 17px; left: 17px; height: 1px; background: var(--v3-line); content: ""; }
-.ds-recent-row:hover { background: #fafaf8; }
-.ds-recent-name { display: grid; min-width: 0; grid-template-columns: minmax(0, 346px) auto; align-items: center; gap: 12px; }
-.ds-recent-name strong { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.ds-recent-time { color: var(--v3-fnt); font-family: var(--v3-num); font-size: 11.5px; white-space: nowrap; }
-.ds-folder-chip { display: inline-flex; overflow: hidden; max-width: 200px; height: 22px; align-items: center; gap: 5px; justify-self: start; border-radius: 11px; background: var(--v3-field); padding: 0 10px 0 8px; color: var(--v3-sub); font-size: 11px; font-weight: 500; white-space: nowrap; }
-.ds-folder-chip span { overflow: hidden; text-overflow: ellipsis; }
-.ds-foot-note { margin: 20px 0 0; color: var(--v3-fnt); font-size: var(--ui-text-sm); line-height: var(--ui-line-body); }
 
 /* 格式方块（32×32，浅色底 + 同色文字） */
 .ds-fmt { display: grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border-radius: 8px; font-family: var(--v3-num); font-size: 8px; font-weight: 700; line-height: 1; }
@@ -244,6 +228,94 @@
 .ds-toast-action .v3-link { color: var(--v3-txt); white-space: nowrap; }
 .ds-one-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ── V4 项目首页：页头无眉标，标题下方是「我的项目 / 求职进程」两个文字标签 */
+.ds-head:not(.has-crumb) .ds-actions { top: 62px; }
+.ds-head.has-crumb .ds-actions { top: 92px; }
+.ds-tabs { display: flex; height: 44px; align-items: flex-end; gap: 24px; margin-top: 14px; margin-bottom: 18px; border-bottom: 1px solid var(--v3-line); }
+.ds-tabs button { position: relative; display: inline-flex; height: 36px; align-items: center; gap: 6px; border: 0; background: transparent; padding: 0; color: var(--v3-fnt); cursor: pointer; font-size: var(--ui-text-sm); font-weight: 500; }
+.ds-tabs button .v3-num { color: var(--v3-fnt); font-size: 11.5px; font-weight: 400; }
+.ds-tabs button:hover { color: var(--v3-txt); }
+.ds-tabs button.is-active { color: var(--v3-txt); }
+.ds-tabs button.is-active::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 1px; background: var(--v3-dark); content: ""; }
+.ds-tabs button:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+
+/* 求职进程卡：与项目卡同尺寸，浅灰舞台里放字标、岗位、状态与阶段进度条 */
+.ds-job-card { display: block; width: 100%; padding: 0; color: inherit; font: inherit; text-align: left; }
+.ds-job-card.is-archived .ds-job-stage { opacity: .62; }
+.ds-job-stage { position: absolute; top: 7px; right: 7px; bottom: 67px; left: 7px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; border-radius: 11px; background: var(--v3-stage); padding: 12px 14px 10px; }
+.ds-job-stage-head { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.ds-job-mono { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 6px; background: var(--v3-dark); color: #fff; font-family: var(--v3-serif); font-size: 12.5px; font-weight: 600; }
+.ds-job-role { overflow: hidden; min-width: 0; flex: 1 1 auto; color: var(--v3-sub); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-job-status { overflow: hidden; max-width: 50%; flex: 0 1 auto; border-radius: 10px; background: rgb(29 29 27 / 7%); padding: 3px 8px; color: var(--v3-txt); font-size: 10.5px; font-weight: 500; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-job-status.is-offer { background: var(--v3-dark); color: #fff; }
+.ds-job-track { position: relative; display: block; }
+.ds-job-track-line { position: absolute; display: block; top: 4px; right: var(--ds-track-inset); left: var(--ds-track-inset); height: 1.5px; border-radius: 1px; background: var(--v3-sk2); }
+.ds-job-track-line i { display: block; width: var(--ds-track-progress); height: 100%; border-radius: inherit; background: var(--v3-dark); }
+.ds-job-track-nodes { position: relative; display: grid; }
+.ds-job-node { display: grid; min-width: 0; justify-items: center; gap: 2px; }
+.ds-job-dot { display: block; width: 9px; height: 9px; box-sizing: border-box; border-radius: 50%; background: var(--v3-dark); margin-bottom: 4px; }
+.ds-job-node.is-current .ds-job-dot { border: 2px solid var(--v3-dark); background: var(--v3-stage); }
+.ds-job-node.is-upcoming .ds-job-dot { border: 1.5px dashed var(--v3-fnt2); background: var(--v3-stage); }
+.ds-job-node.is-offer .ds-job-dot { background: var(--v3-bl); }
+.ds-job-node strong { overflow: hidden; max-width: 100%; color: var(--v3-txt); font-size: 10.5px; font-weight: 500; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-job-node.is-upcoming strong { color: var(--v3-fnt); font-weight: 400; }
+.ds-job-node small { color: var(--v3-fnt); font-family: var(--v3-num); font-size: 9.5px; line-height: 11px; }
+
+/* ── V4-2 求职进程项目详情：Hero → 竖向阶段时间线 */
+.ds-job-detail { padding-top: 40px; }
+.ds-job-hero .ds-crumb { margin-bottom: 22px; }
+.ds-job-hero-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: start; gap: 18px; }
+.ds-job-hero-mono { display: grid; width: 56px; height: 56px; place-items: center; border-radius: 14px; background: var(--v3-dark); color: #fff; font-family: var(--v3-serif); font-size: 26px; font-weight: 600; }
+.ds-job-hero-text { min-width: 0; }
+.ds-job-hero-text .ds-title { max-width: 100%; font-size: 26px; line-height: 34px; }
+.ds-job-hero-status { display: inline-flex; height: 22px; align-items: center; margin-top: 10px; border-radius: 11px; background: rgb(63 111 216 / 9%); padding: 0 10px; color: var(--v3-bl); font-size: 11.5px; font-weight: 500; }
+.ds-job-hero-status.is-offer { background: var(--v3-bl); color: #fff; }
+.ds-job-hero-open { height: 32px; gap: 6px; margin-top: 2px; }
+.ds-job-readonly { margin: 16px 0 0; color: var(--v3-fnt); font-size: 12px; }
+.ds-timeline { margin: 32px 0 0; border-top: 1px solid var(--v3-line); padding: 8px 0 0; list-style: none; }
+.ds-timeline-item { position: relative; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 20px; padding: 20px 0 22px; }
+.ds-timeline-item + .ds-timeline-item { border-top: 1px solid var(--v3-line); }
+.ds-timeline-rail { position: relative; padding-left: 20px; }
+.ds-timeline-dot { position: absolute; top: 6px; left: 0; width: 10px; height: 10px; box-sizing: border-box; border-radius: 50%; background: var(--v3-dark); }
+.ds-timeline-item.is-current .ds-timeline-dot { border: 2px solid var(--v3-dark); background: #fff; }
+.ds-timeline-item.is-upcoming .ds-timeline-dot { border: 1.5px dashed var(--v3-fnt2); background: #fff; }
+.ds-timeline-item.is-offer .ds-timeline-dot { background: var(--v3-bl); }
+.ds-timeline-rail h2 { overflow: hidden; margin: 0; font-family: var(--v3-serif); font-size: 17px; font-weight: 600; line-height: 22px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-timeline-item.is-upcoming .ds-timeline-rail h2 { color: var(--v3-fnt); }
+.ds-timeline-rail small { display: block; margin-top: 4px; color: var(--v3-fnt); font-family: var(--v3-num); font-size: 11.5px; line-height: 14px; }
+.ds-timeline-body { display: grid; min-width: 0; align-content: start; gap: 10px; }
+.ds-timeline-note { margin: 3px 0 0; color: var(--v3-fnt); font-size: 12px; line-height: 18px; }
+
+.ds-rec { display: grid; min-width: 0; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 6px 14px; border: 1px solid var(--v3-cl); border-radius: 12px; background: #fff; padding: 12px 16px 12px 12px; }
+.ds-rec-play { display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 50%; background: var(--v3-dark); color: #fff; cursor: pointer; }
+.ds-rec-play:disabled { cursor: default; opacity: .4; }
+.ds-rec-play:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+.ds-rec-main { display: grid; min-width: 0; gap: 3px; }
+.ds-rec-main strong { overflow: hidden; color: var(--v3-txt); font-size: 13px; font-weight: 500; line-height: 17px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-rec-main small { overflow: hidden; color: var(--v3-fnt); font-size: 11.5px; line-height: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-rec-main small.is-processing { color: var(--v3-bl); }
+.ds-rec-main small.is-failed { color: var(--v3-rd); }
+.ds-rec-transcript { font-size: 12px; white-space: nowrap; }
+.ds-rec-wave { grid-column: 1 / -1; display: flex; height: 28px; min-width: 0; align-items: center; gap: 2px; overflow: hidden; }
+.ds-rec-wave i { display: block; min-width: 1.5px; flex: 1 1 0; border-radius: 1px; background: var(--v3-or); opacity: .5; }
+
+.ds-doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 10px; }
+.ds-doc-card { display: flex; min-width: 0; align-items: center; gap: 10px; border: 1px solid var(--v3-cl); border-radius: 10px; background: #fafaf8; padding: 9px 12px 9px 9px; color: inherit; cursor: pointer; font: inherit; text-align: left; }
+.ds-doc-card:hover:not(:disabled) { border-color: var(--v3-sk2); background: #fff; }
+.ds-doc-card:disabled { cursor: default; }
+.ds-doc-card:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+.ds-doc-card-name { display: grid; min-width: 0; gap: 2px; }
+.ds-doc-card-name strong { overflow: hidden; color: var(--v3-txt); font-size: 12.5px; font-weight: 500; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-doc-card-name small { overflow: hidden; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-doc-card-name small.is-processing { color: var(--v3-bl); }
+.ds-doc-card-name small.is-failed { color: var(--v3-rd); }
+
+.ds-stage-drop { display: flex; min-height: 56px; align-items: center; justify-content: space-between; gap: 12px; border: 1px dashed var(--v3-fnt2); border-radius: 12px; padding: 10px 12px 10px 16px; color: var(--v3-fnt); font-size: 12.5px; }
+.ds-stage-drop.is-compact { min-height: 0; border-color: transparent; padding: 0; }
+.ds-stage-drop.is-compact .v3-btn { height: 26px; border-color: transparent; background: transparent; padding: 0 6px; color: var(--v3-sub); }
+.ds-stage-drop.is-dragging { border-color: var(--v3-dark); background: #fbfbfa; color: var(--v3-txt); }
+.ds-stage-drop .v3-btn { height: 30px; gap: 6px; }
+
 /* 列表只在自己的区域里滚动：页头（标题、搜索、上传）固定，文件夹与文件区单独滚动 */
 .ds-root:not(.is-embedded) { height: 100%; min-height: 0; }
 .ds-root:not(.is-embedded) .ds-page { display: flex; height: 100%; flex-direction: column; overflow: hidden; padding-bottom: 0; }
@@ -260,13 +332,15 @@
   .ds-actions .v3-search, .ds-actions.is-folder .v3-search { width: auto; min-width: 160px; flex: 1; }
   .ds-table { overflow-x: auto; overscroll-behavior-x: contain; }
   .ds-cols { min-width: 720px; }
+  .ds-job-hero-row { grid-template-columns: 44px minmax(0, 1fr); }
+  .ds-job-hero-mono { width: 44px; height: 44px; font-size: 20px; }
+  .ds-job-hero-open { grid-column: 2; justify-self: start; }
+  .ds-timeline-item { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .ds-rec-wave { display: none; }
 }
 @container workspace (max-width: 560px) {
   .ds-head { padding-top: 28px; }
   .ds-root.is-embedded .ds-page { padding-inline: 16px; }
-  .ds-recent-row { height: auto; min-height: 64px; gap: 8px; padding: 12px; grid-template-columns: 32px minmax(0, 1fr); }
-  .ds-recent-name { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  .ds-recent-time { grid-column: 2; }
 }
 @media (max-width: 1023px) {
   .ds-batch-bar { left: 50%; width: max-content; max-width: calc(100vw - 24px); height: auto; flex-wrap: wrap; gap: 8px 12px; padding: 12px; }
@@ -276,3 +350,28 @@
   .ds-root:not(.is-embedded) { height: auto; min-height: 100%; }
   .ds-root:not(.is-embedded) .ds-page { height: auto; min-height: 100%; overflow: visible; padding-bottom: 24px; }
 }
+
+/* 投递阶段的 JD / 简历卡：不是资料库文件，用中性方块标识，右侧提示跳转 */
+.ds-source-tag { background: var(--v3-field); color: var(--v3-sub); }
+.ds-doc-card-ext { flex: 0 0 auto; margin-left: auto; color: var(--v3-fnt); }
+
+/* 从资料库选择：带搜索的多选列表 */
+.ds-picker-search { margin: 16px 0 10px; }
+.ds-picker-search .v3-search { width: 100%; }
+.ds-pick-item.ds-pick-file { height: 48px; gap: 10px; padding: 0 10px 0 8px; }
+.ds-pick-item.ds-pick-file[aria-checked="true"] { background: var(--v3-field); }
+.ds-pick-file small { overflow: hidden; max-width: 140px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-pick-box { display: grid; width: 16px; height: 16px; flex: 0 0 auto; place-items: center; border: 1.5px solid var(--v3-fnt2); border-radius: 4px; color: #fff; }
+.ds-pick-box.is-checked { border-color: var(--v3-dark); background: var(--v3-dark); }
+
+/* 我的项目：项目说明（左侧细竖线引用）与「添加资料」 */
+.ds-add-btn { gap: 6px; padding: 0 14px; }
+.ds-desc { display: flex; max-width: 620px; align-items: flex-start; gap: 14px; margin-top: 14px; border-left: 2px solid var(--v3-dark); padding: 2px 0 2px 12px; }
+.ds-desc-text { margin: 0; min-width: 0; flex: 1 1 auto; color: var(--v3-sub); font-size: var(--ui-text-sm); line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ds-desc-text.is-empty { color: var(--v3-fnt); }
+.ds-desc-edit { flex: 0 0 auto; font-size: 12px; line-height: 20px; }
+.ds-desc.is-editing { display: grid; gap: 8px; border-left-color: var(--v3-fnt2); }
+.ds-desc-input { width: 100%; min-height: 0; resize: vertical; padding: 8px 10px; font: inherit; font-size: var(--ui-text-sm); line-height: 20px; }
+.ds-desc-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.ds-desc-actions .v3-num { margin-right: auto; color: var(--v3-fnt); font-size: 11px; }
+.ds-desc-actions .v3-btn { height: 28px; }

@@ -122,8 +122,7 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   const datasetDetail = normalizedPath.match(/^\/datasets\/(\d+)$/);
   if (datasetDetail) return {kind: "datasets"};
   if (normalizedPath === "/datasets") {
-    const folderId = new URLSearchParams(search).get("folder") ?? undefined;
-    return { kind: "datasets", folderId };
+    return { kind: "datasets", folderId: datasetsLocationFromSearch(search) };
   }
   if (normalizedPath === "/account-deletion") return { kind: "accountDeletion" };
   if (normalizedPath === "/account") return { kind: "account" };
@@ -304,10 +303,21 @@ export function legacyCareerRedirect(pathname: string, search = ""): string | nu
   return null;
 }
 
+// 资料库只有一个路由：folderId 同时编码首页标签、全部文件和求职进程项目，与 datasetsPath 互逆
+export function datasetsLocationFromSearch(search: string): string | undefined {
+  const params = new URLSearchParams(search);
+  const application = params.get("application");
+  return params.get("folder")
+    ?? (application ? `app:${application}` : params.get("view") === "files" ? "files" : params.get("tab") === "jobs" ? "jobs" : undefined);
+}
+
+// folderId：all / 空 = 首页「我的项目」，jobs = 首页「求职进程」，files = 全部文件，app:<id> = 求职进程项目，其余为我的项目（文件夹）ID
 export function datasetsPath(folderId?: string | null) {
-  return folderId && folderId !== "all"
-    ? `/datasets?folder=${encodeURIComponent(folderId)}`
-    : "/datasets";
+  if (!folderId || folderId === "all") return "/datasets";
+  if (folderId === "jobs") return "/datasets?tab=jobs";
+  if (folderId === "files") return "/datasets?view=files";
+  if (folderId.startsWith("app:")) return `/datasets?application=${encodeURIComponent(folderId.slice(4))}`;
+  return `/datasets?folder=${encodeURIComponent(folderId)}`;
 }
 
 export function authPath(mode: "login" | "register", next?: string | null) {

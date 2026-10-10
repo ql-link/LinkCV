@@ -975,6 +975,51 @@ def test_folder_crud_and_validation() -> None:
         assert not_found_del.status_code == 404
 
 
+def test_folder_description_create_update_and_validation() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        register(client)
+
+        created = client.post(
+            "/api/datasets/folders",
+            json={"name": "面试冲刺", "description": "  三面前的行为面试准备\n重点：项目复盘  "},
+        )
+        assert created.status_code == 201
+        folder_id = created.json()["id"]
+        assert created.json()["description"] == "三面前的行为面试准备\n重点：项目复盘"
+
+        # 旧客户端只传名称：说明保持不变
+        renamed = client.patch(f"/api/datasets/folders/{folder_id}", json={"name": "行为面试冲刺"})
+        assert renamed.status_code == 200
+        assert renamed.json()["name"] == "行为面试冲刺"
+        assert renamed.json()["description"] == "三面前的行为面试准备\n重点：项目复盘"
+
+        # 只改说明：名称保持不变，可以清空
+        updated = client.patch(f"/api/datasets/folders/{folder_id}", json={"description": ""})
+        assert updated.status_code == 200
+        assert updated.json()["name"] == "行为面试冲刺"
+        assert updated.json()["description"] == ""
+
+        listed = client.get("/api/datasets/folders").json()["folders"]
+        assert [(item["name"], item["description"]) for item in listed] == [("行为面试冲刺", "")]
+
+        default = client.post("/api/datasets/folders", json={"name": "没有说明"})
+        assert default.json()["description"] == ""
+
+        for bad_description in ["x" * 501, "带有\x00控制字符"]:
+            bad = client.patch(f"/api/datasets/folders/{folder_id}", json={"description": bad_description})
+            assert bad.status_code == 400
+            assert bad.json() == {"error": "INVALID_FOLDER_DESCRIPTION"}
+            bad_create = client.post(
+                "/api/datasets/folders", json={"name": "非法说明", "description": bad_description}
+            )
+            assert bad_create.status_code == 400
+
+        empty = client.patch(f"/api/datasets/folders/{folder_id}", json={})
+        assert empty.status_code == 400
+        assert empty.json() == {"error": "INVALID_FOLDER_UPDATE"}
+
+
 def test_folder_delete_requires_confirmation_and_removes_contents() -> None:
     app = build_test_app()
     with TestClient(app) as client:
