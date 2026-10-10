@@ -116,7 +116,7 @@ export function FullLanding() {
           <div className="fl-hero-copy">
             <img className="fl-hero-wordmark" src={wordmark} alt="DrawOffer" width="1701" height="349" />
             <h1>{lt("懂你经历的求职搭档")}</h1>
-            <p>{lt("导入简历和项目资料，AI 帮你改简历、对照 JD、模拟面试。")}<br />{lt("每处修改都由你确认后再写入简历。")}</p>
+            <p>{lt("导入简历和项目资料，AI 帮你改简历、对照 JD、模拟面试。")}{/* 手机上换行隐藏，英文两句之间需要空格 */}{locale === "en-US" && " "}<br />{lt("每处修改都由你确认后再写入简历。")}</p>
             <div className="fl-hero-cta"><div className="fl-cta-row"><PrimaryLink /><a className="fl-button-secondary" href="#demo" onClick={event => { event.preventDefault(); showcase.current?.watch(); }}>{lt("看 1 分钟短片")}</a></div><small>{lt("免费使用 · 支持导入 PDF / Word / Markdown 简历")}</small></div>
           </div>
           <HeroShowcase ref={showcase} />

@@ -104,6 +104,10 @@ body:has(.marketing-landing) { background: #fcfcfc; }
 .fl-showcase-bar button { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: #2b3038; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .fl-showcase-bar button:hover { color: #3f6fd8; }
 .fl-showcase-bar button:focus-visible { outline: 2px solid #3f6fd8; outline-offset: 3px; border-radius: 4px; }
+/* 自动播放被拦截时的播放按钮，盖在封面中央 */
+.fl-showcase-play { position: absolute; left: 50%; top: 50%; z-index: 2; display: grid; place-items: center; width: 64px; height: 64px; padding: 0 0 0 3px; border: 0; border-radius: 999px; background: #17191cc7; color: #fff; cursor: pointer; translate: -50% -50%; box-shadow: 0 8px 24px #17191c33; transition: transform .2s ease, background .2s ease; -webkit-tap-highlight-color: transparent; }
+.fl-showcase-play:hover { background: #17191c; transform: scale(1.05); }
+.fl-showcase-play:focus-visible { outline: 2px solid #3f6fd8; outline-offset: 3px; }
 .fl-showcase-bg { position: absolute; inset: 0; background: #f1f1ef; opacity: 0; }
 .fl-showcase-piece { position: absolute; background-repeat: no-repeat; will-change: transform, opacity; }
 .fl-showcase-card { position: absolute; background: #fff; box-shadow: 0 0 0 1px #e5e6e3; will-change: transform, opacity; }

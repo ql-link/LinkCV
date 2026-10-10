@@ -29,4 +29,19 @@ describe("HeroShowcase", () => {
     expect(container.querySelector("video")).toHaveAttribute("src", expect.stringMatching(/zh-CN\/teaser-(720|1080)\.mp4/));
     expect(play).toHaveBeenCalled();
   });
+
+  it("浏览器拦截自动播放时显示播放按钮，点击后再次播放", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(new DOMException("blocked", "NotAllowedError"));
+    const { container } = render(<HeroShowcase />);
+
+    fireEvent.ended(container.querySelector("video")!);
+    fireEvent.click(screen.getByRole("button", { name: "重看短片" }));
+    const button = await screen.findByRole("button", { name: "播放短片" });
+
+    play.mockClear();
+    fireEvent.click(button);
+    expect(play).toHaveBeenCalledTimes(1);
+    fireEvent.playing(container.querySelector("video")!);
+    expect(screen.queryByRole("button", { name: "播放短片" })).not.toBeInTheDocument();
+  });
 });

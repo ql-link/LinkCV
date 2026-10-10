@@ -20,7 +20,7 @@ const en: Record<string, string> = {
   "看 1 分钟短片": "Watch the 1-min film",
   "免费使用 · 支持导入 PDF / Word / Markdown 简历": "Free to use · Import PDF / Word / Markdown resumes",
   "DrawOffer 产品首页演示": "DrawOffer product demo", "互动演示 · 示例数据": "Interactive demo · Sample data",
-  "DrawOffer 产品短片": "DrawOffer product film", "产品短片 · 示例数据": "Product film · Sample data", "跳过短片": "Skip film", "重看短片": "Watch again", "观看短片": "Watch the film",
+  "DrawOffer 产品短片": "DrawOffer product film", "产品短片 · 示例数据": "Product film · Sample data", "跳过短片": "Skip film", "播放短片": "Play film", "重看短片": "Watch again", "观看短片": "Watch the film",
   "示例数据": "Sample data", "演示侧栏": "Demo sidebar", "查看对话记录": "View chat", "新建对话": "New chat",
   "首页": "Home", "我的简历": "My resumes", "简历模板": "Templates", "面试日程": "Interview schedule", "资料库": "Library",
   // CTA
