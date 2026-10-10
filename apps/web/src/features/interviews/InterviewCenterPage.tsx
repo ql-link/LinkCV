@@ -2018,8 +2018,17 @@ function scheduleToolbarTitle(view: ScheduleGranularity, anchor: Date, weekStart
   return t("{value0}年{value1}", { value0: anchor.getFullYear(), value1: formatDate(anchor) });
 }
 
+// 周视图每小时 64px：不足 55 分钟放不下三行，不足 40 分钟只放得下一行；跨天横条没有分钟数，也按单行处理
+function interviewEventDensity(segment: EventCalendarRenderEventProps<Interview | null>["segment"]) {
+  const minutes = segment.startMin === undefined || segment.endMin === undefined ? 0 : segment.endMin - segment.startMin;
+  if (minutes >= 55) return "stack";
+  if (minutes >= 40) return "pair";
+  return minutes > 0 && minutes < 20 ? "tiny" : "row";
+}
+
 function renderInterviewCalendarEvent({
   occurrence,
+  segment,
   view,
   isSelected,
 }: EventCalendarRenderEventProps<Interview | null>) {
@@ -2060,7 +2069,8 @@ function renderInterviewCalendarEvent({
   return (
     <span
       className="interview-calendar-event-content interview-calendar-event-stack"
-      // 短场次会按块高收起面试方式甚至改成单行，悬停仍能看到完整信息
+      data-density={interviewEventDensity(segment)}
+      // 短场次会按时长收起面试方式甚至改成单行，悬停仍能看到完整信息
       title={`${visibleStart}–${visibleEnd} ${interview.company} · ${interview.stage}${interview.meetingLabel ? ` · ${interview.meetingLabel}` : ""}`}
     >
       <span className="interview-calendar-event-time v3-num"><Icon name="clock" size={10} />{visibleStart}–{visibleEnd}</span>
