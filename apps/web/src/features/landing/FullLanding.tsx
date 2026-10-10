@@ -4,7 +4,7 @@ import { setLocale, useLocale } from "@/i18n";
 import wordmark from "@/assets/linkresume-wordmark.png";
 import brandMark from "@/assets/linkresume-mark-132.png";
 import groupQr from "@/assets/linkresume-qq-group-qr.svg";
-import { HeroVideo } from "./HeroVideo";
+import { HeroShowcase, type HeroShowcaseHandle } from "./HeroShowcase";
 import { HeroBackdrop } from "./HeroBackdrop";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
@@ -74,6 +74,7 @@ export function FullLanding() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const nav = useRef<HTMLElement>(null);
   const page = useRef<HTMLDivElement>(null);
+  const showcase = useRef<HeroShowcaseHandle>(null);
   const motion = useScrollReveal(page);
   useEffect(() => {
     const close = (event: PointerEvent) => { if (menu && !nav.current?.contains(event.target as Node)) setMenu(null); };
@@ -116,9 +117,9 @@ export function FullLanding() {
             <img className="fl-hero-wordmark" src={wordmark} alt="LinkResume" width="1701" height="349" />
             <h1>{lt("懂你经历的求职搭档")}</h1>
             <p>{lt("导入简历和项目资料，AI 帮你改简历、对照 JD、模拟面试。")}<br />{lt("每处修改都由你确认后再写入简历。")}</p>
-            <div className="fl-hero-cta"><div className="fl-cta-row"><PrimaryLink /><a className="fl-button-secondary" href="#demo">{lt("看 1 分钟短片")}</a></div><small>{lt("免费使用 · 支持导入 PDF / Word / Markdown 简历")}</small></div>
+            <div className="fl-hero-cta"><div className="fl-cta-row"><PrimaryLink /><a className="fl-button-secondary" href="#demo" onClick={event => { event.preventDefault(); showcase.current?.watch(); }}>{lt("看 1 分钟短片")}</a></div><small>{lt("免费使用 · 支持导入 PDF / Word / Markdown 简历")}</small></div>
           </div>
-          <HeroVideo />
+          <HeroShowcase ref={showcase} />
         </div>
       </section>
       <FeatureShowcase />
