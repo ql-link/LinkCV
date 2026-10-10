@@ -96,6 +96,12 @@ body:has(.marketing-landing) { background: #fcfcfc; }
 .fl-demo-page[data-loaded="false"] { opacity: 0; }
 .fl-demo-nav { position: absolute; inset: 0 auto 0 0; width: 216px; }
 .fl-demo-hotspot { position: absolute; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+/* Hero 产品短片：16:9 舞台，封面先出，视频静音循环；控制按钮悬停、聚焦或暂停时显示 */
+.fl-hero-video { aspect-ratio: 16 / 9; }
+.fl-hero-video video { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; background: #fcfcfc; }
+.fl-video-toggle { position: absolute; right: 14px; bottom: 14px; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 999px; background: #17191cb3; color: #fff; cursor: pointer; opacity: 0; transition: opacity .2s ease; }
+.fl-video-toggle[data-playing="false"], .fl-demo-viewport:hover .fl-video-toggle, .fl-video-toggle:focus-visible { opacity: 1; }
+.fl-video-toggle:focus-visible { outline: 2px solid #3f6fd8; outline-offset: 2px; }
 .fl-demo-hotspot:hover { background: #1d1d1b0a; }
 .fl-demo-hotspot:focus-visible { outline: 2px solid #3f6fd8; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .fl-demo-selected, .fl-demo-page { transition: none; } }

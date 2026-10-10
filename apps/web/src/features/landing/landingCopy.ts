@@ -17,9 +17,10 @@ const en: Record<string, string> = {
   "懂你经历的求职搭档": "The job-search partner that knows your story",
   "导入简历和项目资料，AI 帮你改简历、对照 JD、模拟面试。": "Import your resume and project notes. AI edits your resume, checks it against the JD and runs mock interviews.",
   "每处修改都由你确认后再写入简历。": "No edit reaches your resume until you approve it.",
-  "看 2 分钟演示": "Watch the 2-min demo",
+  "看 1 分钟短片": "Watch the 1-min film",
   "免费使用 · 支持导入 PDF / Word / Markdown 简历": "Free to use · Import PDF / Word / Markdown resumes",
   "LinkResume 产品首页演示": "LinkResume product demo", "互动演示 · 示例数据": "Interactive demo · Sample data",
+  "LinkResume 产品短片": "LinkResume product film", "产品短片 · 示例数据": "Product film · Sample data", "播放短片": "Play film", "暂停短片": "Pause film",
   "示例数据": "Sample data", "演示侧栏": "Demo sidebar", "查看对话记录": "View chat", "新建对话": "New chat",
   "首页": "Home", "我的简历": "My resumes", "简历模板": "Templates", "面试日程": "Interview schedule", "资料库": "Library",
   // CTA
