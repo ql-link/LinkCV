@@ -155,7 +155,7 @@ export function JobPoolPanel() {
                 <span><strong>{row.company_name}</strong><small>{hostOf(row)}</small></span>
               </span> },
               { key: "channels", label: "覆盖渠道", width: "minmax(110px, 1.2fr)", render: (row) => channelText(row)
-                ? <span aria-label={`覆盖渠道：${channelText(row).replaceAll(" / ", "、")}`}>{channelText(row)}</span> : <span className="pool-faint">尚未确认</span> },
+                ? <span aria-label={`覆盖渠道：${channelText(row).split(" / ").join("、")}`}>{channelText(row)}</span> : <span className="pool-faint">尚未确认</span> },
               { key: "status", label: "同步状态", width: "minmax(120px, 1.3fr)", render: (row) => <StatusDot tone={STATUS[statusOf(row)].tone}>{STATUS[statusOf(row)].label}</StatusDot> },
               { key: "count", label: "本轮岗位", width: "72px", align: "right", render: (row) => row.last_sync_result.latest?.finished_at ? row.last_sync_result.latest.observed_count : "—" },
               { key: "complete", label: "上次完整同步", width: "minmax(100px, 1fr)", render: (row) => shortWhen(row.last_complete_at) },
@@ -165,7 +165,7 @@ export function JobPoolPanel() {
                 onClick={(event) => { event.stopPropagation(); syncNow(row); }}><RefreshCw size={13} aria-hidden="true" />{ACTIVE.has(row.sync_status) ? "同步中…" : "立即同步"}</Button> },
             ]} />}
     </ListPanel>
-    {selected && <SourceModal source={selected} syncEnabled={syncEnabled} busy={busy !== null} error={error}
+    {selected && <SourceModal key={selected.id} source={selected} syncEnabled={syncEnabled} busy={busy !== null} error={error}
       onClose={() => { setSelectedId(null); setError(""); }} onToggle={(next) => toggle(selected, next)} onSync={() => syncNow(selected)}
       onAccept={() => void run(selected.id, () => api.acceptPoolSync(selected))} />}
   </>;
