@@ -35,12 +35,12 @@ export function MoveToFolderDialog({
 
   // 标题保留旧版文案结构，便于辅助技术区分单条与批量
   const label = singleItemName
-    ? t("移动「{value0}」到文件夹", { value0: singleItemName })
-    : t("批量移动 {value0} 份资料到文件夹", { value0: itemCount });
+    ? t("移动「{value0}」到项目", { value0: singleItemName })
+    : t("批量移动 {value0} 份资料到项目", { value0: itemCount });
   const sub = singleItemName
-    ? t("「{value0}」 · 选择目标文件夹", { value0: singleItemName })
-    : t("已选择 {value0} 份资料 · 选择目标文件夹", { value0: itemCount });
-  const targetName = folders.find((folder) => folder.id === selectedTarget)?.name ?? t("文件夹");
+    ? t("「{value0}」 · 选择目标项目", { value0: singleItemName })
+    : t("已选择 {value0} 份资料 · 选择目标项目", { value0: itemCount });
+  const targetName = folders.find((folder) => folder.id === selectedTarget)?.name ?? t("项目");
   const artTag = (singleItemFormat ?? "").toUpperCase().slice(0, 4) || String(itemCount);
 
   const handleSubmit = async () => {
@@ -64,14 +64,14 @@ export function MoveToFolderDialog({
   return (
     <Dialog open={open} width={480} label={label} className="ds-dialog" closable={!moving} onClose={() => { if (!moving) onOpenChange(false); }}>
       <div className="v3-dialog-body">
-        <h2 className="v3-dialog-title">{singleItemName ? t("移动资料到文件夹") : t("移动 {value0} 份资料到文件夹", { value0: itemCount })}</h2>
+        <h2 className="v3-dialog-title">{singleItemName ? t("移动资料到项目") : t("移动 {value0} 份资料到项目", { value0: itemCount })}</h2>
         <p className="v3-dialog-sub ds-one-line" title={sub}>{sub}</p>
         <div className="v3-stage ds-dialog-art" style={{ height: 84 }}>
           <MoveArt tag={artTag} folderName={targetName} />
         </div>
         <div className="ds-list-label"><span>{t("选择目标分类")}</span></div>
-        <div className="ds-pick" role="radiogroup" aria-label={t("目标文件夹列表")} style={{ maxHeight: 228 }}>
-          {folders.length === 0 && <p className="ds-pick-empty">{t("还没有其他文件夹")}</p>}
+        <div className="ds-pick" role="radiogroup" aria-label={t("目标项目列表")} style={{ maxHeight: 228 }}>
+          {folders.length === 0 && <p className="ds-pick-empty">{t("还没有其他项目")}</p>}
           {folders.map((folder) => {
             const isSelected = selectedTarget === folder.id;
             return (

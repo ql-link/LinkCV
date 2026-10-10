@@ -13,12 +13,16 @@ class DatasetFolderCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(strict=True)
+    description: str = Field(default="", strict=True)
 
 
 class DatasetFolderRenameRequest(BaseModel):
+    """PATCH 文件夹：名称与说明都可单独修改，至少提供一项。"""
+
     model_config = ConfigDict(extra="forbid")
 
-    name: str = Field(strict=True)
+    name: str | None = Field(default=None, strict=True)
+    description: str | None = Field(default=None, strict=True)
 
 
 class DatasetFolderRecord(BaseModel):
@@ -26,6 +30,7 @@ class DatasetFolderRecord(BaseModel):
 
     id: str
     name: str
+    description: str = ""
     dataset_count: int = 0
     created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
     updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))

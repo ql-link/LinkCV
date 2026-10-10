@@ -696,6 +696,8 @@ export type DatasetRecord = {
 export type DatasetFolder = {
   id: string;
   name: string;
+  /** 项目说明；旧接口响应没有该字段 */
+  description?: string;
   dataset_count: number;
   created_at: string;
   updated_at: string;
@@ -2002,10 +2004,15 @@ export const api = {
       method: "DELETE",
     }),
   listDatasetFolders: () => request<DatasetFolderListResponse>("/api/datasets/folders"),
-  createDatasetFolder: (name: string) =>
+  createDatasetFolder: (name: string, description?: string) =>
     request<DatasetFolder>("/api/datasets/folders", {
       method: "POST",
-      body: { name },
+      body: description ? { name, description } : { name },
+    }),
+  updateDatasetFolderDescription: (folderId: string, description: string) =>
+    request<DatasetFolder>(`/api/datasets/folders/${folderId}`, {
+      method: "PATCH",
+      body: { description },
     }),
   renameDatasetFolder: (folderId: string, name: string) =>
     request<DatasetFolder>(`/api/datasets/folders/${folderId}`, {

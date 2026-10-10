@@ -4521,3 +4521,30 @@ def test_mysql_0117_normalizes_builtin_sample_names_without_touching_user_conten
             assert rerun == after
     finally:
         engine.dispose()
+
+
+def test_mysql_0118_adds_folder_description_with_empty_default_for_existing_rows() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0117")
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            user_id = connection.execute(text(
+                "INSERT INTO `user` (email, password_hash, nickname) "
+                "VALUES ('folder-description@example.invalid', '$2b$12$fictional', '张三')"
+            )).lastrowid
+            connection.execute(
+                text("INSERT INTO user_dataset_folder (user_id, name) VALUES (:user_id, '已有文件夹')"),
+                {"user_id": user_id},
+            )
+        run_alembic(database_url, "upgrade", "0118")
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT description FROM user_dataset_folder")).scalars().all() == [""]
+            column = connection.execute(text(
+                "SELECT column_type, is_nullable, column_default, column_comment FROM information_schema.columns "
+                "WHERE table_schema = DATABASE() AND table_name = 'user_dataset_folder' AND column_name = 'description'"
+            )).one()
+            assert tuple(column) == ("varchar(500)", "NO", "", "项目说明")
+    finally:
+        engine.dispose()
