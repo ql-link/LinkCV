@@ -23,8 +23,8 @@ for (const [locale, source] of Object.entries(sources)) {
   mkdirSync(dir, { recursive: true });
   ffmpeg(["-i", input, ...h264, join(dir, "teaser-1080.mp4")]);
   ffmpeg(["-i", input, "-vf", "scale=1280:-2", ...h264, join(dir, "teaser-720.mp4")]);
-  // 封面取片尾品牌落版
-  ffmpeg(["-sseof", "-0.6", "-i", input, "-frames:v", "1", "-vf", "scale=1280:-2", "-q:v", "4", join(dir, "poster.jpg")]);
+  // 封面取开场“散乱”的画面：片尾落版与 Hero 文案重复，且播完后会拼装成工作区
+  ffmpeg(["-ss", "2.6", "-i", input, "-frames:v", "1", "-vf", "scale=1280:-2", "-q:v", "4", join(dir, "poster.jpg")]);
   for (const name of ["teaser-1080.mp4", "teaser-720.mp4", "poster.jpg"]) {
     console.log(`${locale}/${name}  ${(statSync(join(dir, name)).size / 1024 / 1024).toFixed(2)} MB`);
   }

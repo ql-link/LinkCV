@@ -13,8 +13,8 @@ import { INTERVIEW_HAND, INTERVIEW_SECONDS, InterviewScene } from "./interview";
 import { OPENING_OUT, OpeningScene } from "./opening";
 import { RESUME_HAND, RESUME_SECONDS, ResumeScene } from "./resume";
 
-/** 脚本按约 41.5 秒编排，整体放慢 PACE 倍播放。 */
-const SCRIPT_SECONDS = 41.5;
+/** 脚本按约 42.7 秒编排，整体放慢 PACE 倍播放。 */
+const SCRIPT_SECONDS = 42.7;
 export const TEASER_SECONDS = Math.ceil(SCRIPT_SECONDS * PACE);
 
 /* 一镜到底：每段在交接时刻把承接元素交给下一段，下一段原位接住。
@@ -24,7 +24,7 @@ const APPLY_AT = RESUME_AT + RESUME_HAND;
 const INTERVIEW_AT = APPLY_AT + APPLY_HAND;
 const GRAPH_AT = INTERVIEW_AT + INTERVIEW_HAND;
 
-/** 约 54 秒的产品短片：黑白编辑风格的抽象画面。简历 → 投递 → 面试三段为能力图谱提供数据，
+/** 约 56 秒的产品短片：黑白编辑风格的抽象画面。简历 → 投递 → 面试三段为能力图谱提供数据，
  * 图谱段聚焦短板并专项补强，最后拉远落版。 */
 export function ProductTeaser() {
   const [handle] = useState(() => delayRender("fonts"));
