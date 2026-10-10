@@ -34,7 +34,12 @@ import { UsersPage } from "./UsersPage";
 import "./admin.css";
 import "./console.css";
 
+import { CompaniesPage } from "./CompaniesPage";
+import { JobPoolPanel } from "./JobPoolPanel";
+
 export type AdminPage =
+  | "companies"
+  | "jobPool"
   | "overview"
   | "users"
   | "funnel"
@@ -52,6 +57,8 @@ export type AdminPage =
   | "audit";
 
 export const adminPagePaths: Record<AdminPage, string> = {
+  jobPool: "/admin/job-pool",
+  companies: "/admin/companies",
   overview: "/admin",
   users: "/admin/users",
   funnel: "/admin/funnel",
@@ -88,7 +95,7 @@ const navGroups: NavGroup[] = [
   { id: "overview", label: "总览", icon: LayoutDashboard, pages: [{ page: "overview", label: "总览" }] },
   { id: "users", label: "用户管理", icon: Users, pages: [{ page: "users", label: "用户管理" }] },
   { id: "funnel", label: "转化漏斗", icon: Filter, pages: [{ page: "funnel", label: "转化漏斗" }] },
-  { id: "content", label: "内容管理", icon: FileText, pages: [{ page: "templates", label: "简历模板" }, { page: "plugins", label: "浏览器插件" }] },
+  { id: "content", label: "内容管理", icon: FileText, pages: [{ page: "templates", label: "简历模板" }, { page: "plugins", label: "浏览器插件" }, { page: "jobPool", label: "官网岗位池" }, { page: "companies", label: "公司图标" }] },
   { id: "announcements", label: "通知管理", icon: Bell, pages: [{ page: "announcements", label: "应用内公告" }] },
   { id: "models", label: "模型管理", icon: Bot, pages: [{ page: "connections", label: "接入连接" }, { page: "models", label: "模型与线路" }, { page: "capabilities", label: "能力配置" }, { page: "usage", label: "使用情况" }] },
   {
@@ -197,6 +204,8 @@ function AdminWorkspace({ user, onLogout, onSessionExpired }: { user: User; onLo
             {page === "funnel" && <FunnelPage />}
             {page === "templates" && <TemplatesPage />}
             {page === "plugins" && <PluginReleasePanel />}
+            {page === "jobPool" && <JobPoolPanel />}
+            {page === "companies" && <CompaniesPage />}
             {page === "announcements" && <AnnouncementsPage />}
             {page === "connections" && <ConnectionsPage />}
             {page === "models" && <ModelsPage />}

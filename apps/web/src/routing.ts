@@ -12,6 +12,7 @@ export type AppRoute =
   | { kind: "editor"; resumeId: string }
   | { kind: "interviews"; view: InterviewView; applicationId?: string; sessionId?: string; jobId?: string; createApplication?: boolean; importJob?: boolean }
   | { kind: "jobDetail"; jobId: string }
+  | { kind: "opportunities"; jobId?: string }
   | { kind: "datasets"; folderId?: string }
   | { kind: "account" }
   | { kind: "accountDeletion" }
@@ -107,6 +108,9 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
       importJob: params.get("import") === "1" || undefined,
     };
   }
+  if (normalizedPath === "/career/opportunities") return { kind: "opportunities" };
+  const poolMatch = normalizedPath.match(/^\/career\/opportunities\/([1-9][0-9]{0,19})$/);
+  if (poolMatch) return { kind: "opportunities", jobId: poolMatch[1] };
   if (normalizedPath === "/career/schedule") return { kind: "interviews", view: "schedule" };
   if (normalizedPath === "/career/reviews") {
     const params = new URLSearchParams(search);

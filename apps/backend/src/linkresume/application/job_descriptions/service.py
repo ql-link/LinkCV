@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from linkresume.application.interviews.service import delete_application_records
 from linkresume.application.job_descriptions.logo_service import sync_application_logos
+from linkresume.application.job_descriptions.company_service import apply_company_default
 from linkresume.application.mock_interviews.links import (
     detach_job as detach_mock_interview_job,
 )
@@ -121,6 +122,7 @@ def create_or_resolve_job(
         update_time=now,
     )
     try:
+        apply_company_default(db, job)
         db.add(job)
         db.flush()
         db.refresh(job)
@@ -382,6 +384,7 @@ def _resolve_duplicate(
         target.logo_sha256 = None
     for field, value in values.items():
         setattr(target, field, value)
+    apply_company_default(db, target)
     target.lock_version += 1
     target.update_time = now
     try:

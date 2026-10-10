@@ -17,6 +17,7 @@ from linkresume.services.resume_import_service import ResumeImportService
 from linkresume.workers.dataset_parse_worker import DatasetParseProcessor
 from linkresume.workers.document_parse_consumer import run_consumer
 from linkresume.workers.rag_sync_worker import run_rag_sync_loop
+from linkresume.workers.job_pool_worker import JobPoolProcessor, run_job_pool_loop
 from linkresume.workers.resume_import_worker import ResumeImportProcessor
 from linkresume.application.interviews.transcription_service import TranscriptionRunner
 from linkresume.modules.speech.file_transcription import DashScopeFileTranscriber
@@ -111,13 +112,21 @@ async def main() -> None:
                 interval_seconds=settings.interview_transcription_poll_seconds,
             )
         )
+    job_pool_task = None
     try:
+        job_pool_task = asyncio.create_task(run_job_pool_loop(JobPoolProcessor(session_factory, settings))) if settings.job_pool_sync_enabled else None
         await run_consumer(
             resume_processor=resume_processor,
             dataset_processor=dataset_processor,
             settings=settings,
         )
     finally:
+        if job_pool_task is not None:
+            job_pool_task.cancel()
+            try:
+                await job_pool_task
+            except asyncio.CancelledError:
+                pass
         if transcription_task is not None:
             transcription_task.cancel()
             try:

@@ -1,5 +1,33 @@
 # HTTP 接口契约
 
+## 官网岗位池
+
+共享池接口使用 `get_current_user` 的 Cookie 登录，不接受浏览器插件 Career Bearer 令牌代替登录。管理端使用 `get_current_admin`，普通用户返回 403。所有标识和同步代次在 JSON 中均为十进制字符串。
+
+| 接口 | 请求与响应 |
+| --- | --- |
+| `GET /api/job-pool` | keyword（去空白后 2～100 字符）、company_id（兼容单企业）、company_ids（重复 Query，最多200项，去重后按企业并集过滤）、city、job_category、recruitment_type（campus/internship/experienced）、cursor、limit（1～100，默认20）；返回 items、next_cursor，仅展示 active/missing |
+| `GET /api/job-pool/filters` | 返回 companies（id/name/aliases/logo_url/logo_source/lock_version）、cities、categories、recruitment_types；城市与类别来自当前可见岗位 |
+| `GET /api/job-pool/{id}` | 返回完整共享岗位及本人的 joined_application_id；closed 仍可查看 |
+| `POST /api/job-pool/{id}/join` | 无请求正文；返回 job_id、application_id、created；新建 201，复用 200，已下线新加入 409 |
+| `GET /api/admin/job-pool/sources` | items、sync_enabled、catalog_counts{companies,sources}（服务端目录统计，与已登记/启用数量独立），含 company_logo_url、真实支持渠道、配置、代次、状态、摘要 |
+| `POST /api/admin/job-pool/sources/bootstrap` | 幂等登记预置来源，首次默认停用，不采集、不覆盖已有来源配置 |
+| `POST /api/admin/job-pool/sources` | company_id、adapter_key、portal_config、is_enabled；仅接受白名单来源，重复身份 409 |
+| `PATCH /api/admin/job-pool/sources/{id}` | base_generation 与 is_enabled/portal_config；旧代次 409，禁止更换租户或缩减现有门户覆盖，取消旧任务写入 |
+| `POST /api/admin/job-pool/sources/{id}/sync` | 同步与来源均需开启；新排队 202，已有活动任务 200 |
+| `POST /api/admin/job-pool/sources/{id}/sync/accept` | expected_generation；仅最新完整异常结果可确认，重复确认幂等，旧结果 409 |
+| `GET /api/admin/companies` | 管理员专用，返回 items：id、name、aliases、logo_url、logo_source（unknown/official/plugin/admin）、lock_version（十进制字符串） |
+| `PATCH /api/admin/companies/{id}` | 管理员专用；base_version + aliases（最多30个、每个1～200字符；按 NFKC/大小写/空白规范化去重）和/或 logo_url（无凭据 HTTPS 地址）；成功增加版本，过期409 COMPANY_CONFLICT，非法400 COMPANY_INVALID，缺失404 COMPANY_NOT_FOUND |
+| `GET /api/company-logos/{sha256}.webp` | 无需登录，只读取已发布共享命名空间中的规范化 WebP；未发布或格式非法404，存储读取失败503；public immutable 缓存、ETag/304；不能读取个人图片命名空间 |
+
+公司匹配将展示名、规范名、工商全称和管理员别名做 NFKC、大小写与空白规范化后的精确比较，仅唯一公司匹配时使用默认图或共享插件图片。多个公司同名/同别名时不自动匹配。官网和插件仅补空默认图；插件上传可将同一次导入的外链默认图升级为规范化共享 WebP，不能覆盖管理员或官网图。管理端修改默认图不会重写个人岗位和求职快照，也不会批量回填历史岗位。公共图片版本地址保持可读，以保留既有个人快照。共享存储失败不阻止个人图片保存。
+
+岗位摘要包含 id、company{id,name,logo_url}、title、category、recruitment_channel、employment_type、salary_text、locations{schema_version:1,cities,raw}、availability_status、published_at、first_seen_at、last_seen_at、source_url、joined_application_id，以及 source{name,is_enabled,sync_status,last_complete_at}；详情增加 description 和 source_attributes。`company.logo_url` 为可空 HTTPS 外链或 `/api/company-logos/{sha256}.webp` 公共托管地址，官网同步只补空，不覆盖已有公司图；新加入时复制到个人岗位和求职快照，重复加入不刷新。列表不返回正文或来源扩展属性。个人岗位响应兼容增加 `global_job_id: string|null`，不会自动刷新个人快照。同步摘要 `latest.company_logo_error_code` 单独表达图标未找到或请求失败，不改变岗位同步 `is_complete`、`error_code` 和上下线语义。
+
+来源 `portal_config` 为 `{schema_version:1,host,portals,site_id}`；未知键、非白名单 host/portal/site_id、重复门户都拒绝。来源状态为 idle/queued/running/succeeded/partial/failed/anomalous/cancelled。摘要 `{schema_version:1,baseline_count,latest}`，latest 含 generation、baseline_count、observed_count、counts{created,updated,missing,closed,restored,invalid}、is_complete、is_reviewed、error_code、started_at、finished_at。
+
+错误保持现有 JSON 错误结构：400 `JOB_POOL_INVALID_QUERY`/`JOB_POOL_INVALID_CURSOR`/`JOB_SOURCE_INVALID`/`JOB_SOURCE_COVERAGE_REDUCTION`；404 `JOB_POOL_NOT_FOUND`/`JOB_SOURCE_NOT_FOUND`；409 `JOB_POOL_CLOSED`/`JOB_POOL_SOURCE_CONFLICT`/`JOB_SOURCE_CONFLICT`/`JOB_SOURCE_EXISTS`/`JOB_POOL_SYNC_DISABLED`/`JOB_SOURCE_DISABLED`/`JOB_SYNC_STALE`/`JOB_SYNC_NOT_REVIEWABLE`。游标绑定筛选条件，改变筛选后不能复用。
+
 本文记录当前调用方可观察的 HTTP 行为。全部 `/api` 路径由 FastAPI 提供，Swagger UI 位于 `/api/docs`，OpenAPI JSON 位于 `/api/openapi.json`。未匹配的 `/api` 路径返回 JSON 404，不会被 SPA fallback 转成 HTML。
 
 客户端可以发送最长 64 字符、仅包含字母数字、下划线和连字符的 `X-Request-ID`；不合法或缺失时服务端生成新值。所有正常及受控错误响应回传最终 `X-Request-ID`。命中状态变更审计映射的响应还带 `X-Audit-Recorded: true|false`，表示本地日志 sink 是否接受该次审计；它不表示事件已经同步到 Loki。
@@ -383,7 +411,7 @@ Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和
 
 智能导入使用 `multipart/form-data`，必须且只能提交一个非空 `text` 或一个 `image`。文字去除首尾空白后最长 60,000 字符，使用 `job_text_extraction` 场景；图片只接受实际内容可解码的 PNG、JPEG 或 WebP，最大 10 MiB、最多 4,000 万像素，使用独立的 `job_image_extraction` 场景。响应中的 `draft` 与普通创建字段同构但全部可空，明确的币种别名规范化为三字母代码。文字仅对能与输入对应、币种及周期明确且已有值不冲突的薪资片段补全缺失数值；图片不做数值补全。`warnings` 提示未识别的核心字段、薪资来源/结构问题及模型识别出的岗位目标歧义，不阻止返回草稿，也不能代替最终创建校验；调用方必须先让用户核对或补充，再另行调用创建接口。规范化不增加模型调用。输入缺失或同时提供两种输入返回 `400 JD_IMPORT_INPUT_REQUIRED|JD_IMPORT_INPUT_AMBIGUOUS`，大小、格式或内容非法返回对应的 `JD_IMPORT_TEXT_TOO_LARGE`、`JD_IMPORT_IMAGE_TOO_LARGE`、`JD_IMPORT_IMAGE_UNSUPPORTED` 或 `JD_IMPORT_IMAGE_INVALID`。能力未绑定返回 `503 JD_IMPORT_MODEL_NOT_CONFIGURED`，超时返回 `504 JD_IMPORT_PARSE_TIMEOUT`，其他模型或结构化结果失败返回 `502 JD_IMPORT_PARSE_FAILED`；模型调用已建立记录时错误详情包含脱敏的 `callId` 和 `inputType`。
 
-创建必填 `job_title`、`company_name` 和 `source_type=manual|external_import`；手工创建的 `description` 可省略或留空，服务端统一保存为空字符串。普通更新同样允许把 `description` 清空为空字符串，但不接受 `null`；`job_title` 和 `company_name` 更新后仍必须非空。可选 `logo_url` 最长 2048 字符且必须是无内嵌凭据的 HTTPS 绝对 URL，此字段只保存外链；托管图片通过独立 Logo 上传接口写入。`external_import` 仍必须带非空 `description` 和 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
+创建必填 `job_title`、`company_name` 和 `source_type=manual|external_import`；手工创建的 `description` 可省略或留空，服务端统一保存为空字符串。普通更新同样允许把 `description` 清空为空字符串，但不接受 `null`；`job_title` 和 `company_name` 更新后仍必须非空。可选 `logo_url` 最长 2048 字符，允许无内嵌凭据的 HTTPS 绝对 URL 或严格匹配 `/api/company-logos/{sha256}.webp` 的公共公司版本地址；个人托管图片仍通过独立 Logo 上传接口写入。`external_import` 仍必须带非空 `description` 和 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
 
 浏览器导入请求使用 `source_url` 和嵌套 `capture`。当前只接受 `zhipin.com` 的 `/job_detail/{source_job_id}.html`；`capture.job_title`、`capture.company_name`、`capture.description_text` 清洗后必须非空。可选采集字段包括 `logo_url`、`skills`、就业类型原文、学历、经验、工作时间、城市、地址、薪资原文、公司字段/标签和招聘者字段。后端去除不可见字符、压缩空白、删除明确的详情标题与举报页尾，并确定性映射常见就业类型、远程/混合工作、`K·N薪` 和人民币时/日/月/年区间；无法可靠识别的字段保持为空，不做分析或模型推断。
 
@@ -403,7 +431,7 @@ Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和
 
 `GET /api/job-descriptions/{job_id}/logo?v={sha256}` 先检查登录、岗位归属和当前图片指纹，返回 `image/webp`、`Cache-Control: private, no-cache`、ETag 和 `nosniff`；命中 ETag 返回 304。越权、岗位不存在或指纹过期返回 404；未登录为 401；对象缺失为 `404 COMPANY_LOGO_NOT_FOUND`，存储故障为 `503 COMPANY_LOGO_READ_FAILED`。不会返回 MinIO 对象地址，也没有跨用户指纹查询接口。
 
-岗位响应增加 `resolved_logo_url` 和 `logo_revision`；原 `logo_url` 继续表达可编辑 HTTPS 外链。求职响应的 `company_logo_url` 允许 HTTPS 外链或本记录关联岗位的受控本站 Logo 路径。普通全量表单提交未变化的外链不清空托管图；明确改变外链才解除托管引用并同步图标。
+岗位响应增加 `resolved_logo_url` 和 `logo_revision`；原 `logo_url` 表达可编辑 HTTPS 外链或公共公司图片版本地址。求职响应的 `company_logo_url` 允许 HTTPS 外链、公共公司图片版本地址或本记录关联岗位的受控本站 Logo 路径。普通全量表单提交未变化的外链不清空托管图；明确改变外链才解除托管引用并同步图标。
 
 ## 求职中心
 

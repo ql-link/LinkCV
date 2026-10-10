@@ -148,7 +148,7 @@ function itemFromServer(item: SectionReviewItem, number: number | null): Item {
   return {
     id: item.id,
     number,
-    kind: fromDraft ? "missing" : item.kind,
+    kind: item.kind === "draft" ? "missing" : item.kind,
     note: item.note,
     instruction: item.instruction || (fromDraft ? t("按你的回答起草") : ""),
     fromDraft,
