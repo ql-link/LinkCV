@@ -95,7 +95,8 @@ describe("official opportunities", () => {
     expect(await screen.findByRole("heading", { name: "没有符合条件的岗位" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "只用关键词搜索" }));
     await waitFor(() => expect(api.listPoolJobs).toHaveBeenLastCalledWith({ keyword: "FPGA" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "清除筛选" }).at(-1)!);
+    const clear = screen.getAllByRole("button", { name: "清除筛选" });
+    fireEvent.click(clear[clear.length - 1]!);
     await waitFor(() => expect(window.location.search).toBe(""));
   });
 

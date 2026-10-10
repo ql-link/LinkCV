@@ -25,7 +25,7 @@ it("routes to company management, filters by logo source and searches aliases", 
   expect(await screen.findByText("企业官网")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("tab", { name: /暂无图标/ }));
   expect(screen.queryByText("企业官网")).not.toBeInTheDocument();
-  expect(screen.getByText("示例制造")).toBeInTheDocument();
+  expect(screen.getByRole("row", { name: "编辑示例制造" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("tab", { name: /全部/ }));
   fireEvent.change(screen.getByLabelText("搜索公司名称 / 别名"), { target: { value: "EXAMPLE" } });
   expect(screen.getByRole("row", { name: "编辑示例科技" })).toBeInTheDocument();
@@ -50,7 +50,7 @@ it("saves aliases and a logo address together with the current version", async (
   fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
   await waitFor(() => expect(api.updateSharedCompany).toHaveBeenCalledWith(company, { aliases: ["示例品牌"], logo_url: "https://cdn.example.test/new.png" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  expect(screen.getByText("管理员设置")).toBeInTheDocument();
+  expect(within(screen.getByRole("row", { name: "编辑示例科技" })).getByText("管理员设置")).toBeInTheDocument();
 });
 
 it("uploads a file before saving aliases and can clear a logo", async () => {
@@ -100,7 +100,8 @@ it("assigns or ignores unmatched names", async () => {
 it("reviews suspected placeholder images", async () => {
   render(<CompaniesPage />);
   fireEvent.click(await screen.findByRole("tab", { name: /疑似默认图/ }));
-  expect(await screen.findByText("23 家公司使用")).toBeInTheDocument();
+  // Names are stored up to 20 per image, so larger counts read as "20+".
+  expect(await screen.findByText("20+ 家公司使用")).toBeInTheDocument();
   expect(screen.getByText("示例科技、示例制造、示例能源 等")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "标记为默认图" }));
   await waitFor(() => expect(api.reviewLogoFingerprint).toHaveBeenCalledWith("3", "mark-placeholder"));
